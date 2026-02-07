@@ -22,8 +22,7 @@ const Users = () => {
   const [form] = Form.useForm()
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
-  const [branches, setBranches] = useState(['All', 'Branch 1', 'Branch 2', 'Branch 3'])
-  const [newBranchName, setNewBranchName] = useState('')
+  const [branches] = useState(['All', 'Branch 1', 'Branch 2', 'Branch 3'])
   const [users, setUsers] = useState([
     {
       key: '1',
@@ -176,23 +175,6 @@ const Users = () => {
     form.resetFields()
   }
 
-  const handleAddBranch = (e) => {
-    e?.stopPropagation()
-    if (!newBranchName.trim()) {
-      message.error('Please enter a branch name')
-      return
-    }
-    if (branches.includes(newBranchName.trim())) {
-      message.error('Branch already exists')
-      return
-    }
-    const newBranch = newBranchName.trim()
-    setBranches([...branches, newBranch])
-    form.setFieldsValue({ branch: newBranch })
-    message.success('Branch added successfully')
-    setNewBranchName('')
-  }
-
   return (
     <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
       <div style={{ 
@@ -281,37 +263,7 @@ const Users = () => {
             label="Branch"
             rules={[{ required: true, message: 'Please select branch' }]}
           >
-            <Select 
-              placeholder="Select branch"
-              dropdownRender={(menu) => (
-                <>
-                  {menu}
-                  <div style={{ padding: '8px', borderTop: '1px solid #333' }}>
-                    <Space.Compact style={{ width: '100%' }}>
-                      <Input
-                        placeholder="Enter new branch name"
-                        value={newBranchName}
-                        onChange={(e) => {
-                          e.stopPropagation()
-                          setNewBranchName(e.target.value)
-                        }}
-                        onPressEnter={handleAddBranch}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ flex: 1 }}
-                      />
-                      <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={handleAddBranch}
-                        style={{ background: '#D4AF37', borderColor: '#D4AF37' }}
-                      >
-                        Add
-                      </Button>
-                    </Space.Compact>
-                  </div>
-                </>
-              )}
-            >
+            <Select placeholder="Select branch">
               {branches.map((branch) => (
                 <Option key={branch} value={branch}>
                   {branch === 'All' ? 'All Branches' : branch}
