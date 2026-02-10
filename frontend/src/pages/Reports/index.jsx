@@ -17,6 +17,7 @@ import {
   FilePdfOutlined,
   UpOutlined,
   DownOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons'
 import {
   LineChart,
@@ -34,6 +35,8 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { useResponsive } from '../../hooks/useResponsive'
+import { getBranchOptions } from '../../utils/branches'
+import { isSuperAdmin, isAdmin, isSupervisor } from '../../utils/permissions'
 import dayjs from 'dayjs'
 
 const { RangePicker } = DatePicker
@@ -42,6 +45,10 @@ const { Option } = Select
 const Reports = () => {
   const { isMobile, isTablet, isSmallLaptop, isDesktop } = useResponsive()
   const [reportType, setReportType] = useState('lead')
+  const [selectedBranch, setSelectedBranch] = useState('all')
+  
+  // Check if user should see branch dropdown
+  const showBranchDropdown = isSuperAdmin() || isAdmin() || isSupervisor()
   
   // Calculate chart height based on screen size
   const getChartHeight = () => {
@@ -430,6 +437,23 @@ const Reports = () => {
       }}>
         <h1 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '20px' : '24px' }}>Reports & Analytics</h1>
         <Space wrap style={{ width: isMobile ? '100%' : 'auto' }}>
+          {showBranchDropdown && (
+            <Select
+              value={selectedBranch}
+              onChange={(value) => setSelectedBranch(value || 'all')}
+              allowClear={selectedBranch !== 'all'}
+              clearIcon={<CloseCircleOutlined style={{ color: '#ffffff' }} />}
+              style={{ width: isMobile ? '100%' : 200 }}
+              size={isMobile ? 'small' : 'middle'}
+              placeholder="Select Branch"
+            >
+              {getBranchOptions().map((branch) => (
+                <Option key={branch.value} value={branch.value}>
+                  {branch.label}
+                </Option>
+              ))}
+            </Select>
+          )}
           <Select
             value={reportType}
             onChange={setReportType}

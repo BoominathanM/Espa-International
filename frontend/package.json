@@ -2,6 +2,7 @@
   "name": "espa-international-crm",
   "version": "1.0.0",
   "description": "ESPA International CRM Frontend",
+  "type": "module",
   "private": true,
   "dependencies": {
     "react": "^18.2.0",

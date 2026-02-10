@@ -1,5 +1,5 @@
-import React from 'react'
-import { Row, Col, Card, Statistic, Table, Tag } from 'antd'
+import React, { useState } from 'react'
+import { Row, Col, Card, Statistic, Table, Tag, Select, Space } from 'antd'
 import {
   UserAddOutlined,
   PhoneOutlined,
@@ -7,6 +7,7 @@ import {
   TeamOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons'
 import {
   LineChart,
@@ -26,11 +27,19 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useResponsive } from '../../hooks/useResponsive'
+import { getBranchOptions } from '../../utils/branches'
+import { isSuperAdmin, isAdmin, isSupervisor } from '../../utils/permissions'
+
+const { Option } = Select
 
 const Dashboard = () => {
   const { isMobile, isTablet, isSmallLaptop, isDesktop } = useResponsive()
   const navigate = useNavigate()
   const { user } = useAuth()
+  const [selectedBranch, setSelectedBranch] = useState('all')
+  
+  // Check if user should see branch dropdown
+  const showBranchDropdown = isSuperAdmin() || isAdmin() || isSupervisor()
   
   // Calculate chart height based on screen size
   const getChartHeight = () => {
@@ -165,7 +174,34 @@ const Dashboard = () => {
 
   return (
     <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <h1 style={{ color: '#D4AF37', marginBottom: 24 }}>Dashboard</h1>
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: isMobile ? 'column' : 'row',
+        justifyContent: 'space-between', 
+        alignItems: isMobile ? 'flex-start' : 'center',
+        marginBottom: 24,
+        gap: 12,
+      }}>
+        <h1 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '20px' : '24px' }}>Dashboard</h1>
+        {showBranchDropdown && (
+          <Space>
+            <Select
+              value={selectedBranch}
+              onChange={(value) => setSelectedBranch(value || 'all')}
+              allowClear={selectedBranch !== 'all'}
+              clearIcon={<CloseCircleOutlined style={{ color: '#ffffff' }} />}
+              style={{ width: isMobile ? 150 : 200 }}
+              size={isMobile ? 'small' : 'middle'}
+            >
+              {getBranchOptions().map((branch) => (
+                <Option key={branch.value} value={branch.value}>
+                  {branch.label}
+                </Option>
+              ))}
+            </Select>
+          </Space>
+        )}
+      </div>
 
       {/* Alerts */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
