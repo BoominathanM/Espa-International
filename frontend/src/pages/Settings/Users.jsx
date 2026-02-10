@@ -8,7 +8,7 @@ import {
   Select,
   Space,
   Tag,
-  message,
+  App,
   Popconfirm,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
@@ -18,6 +18,7 @@ import { useResponsive } from '../../hooks/useResponsive'
 const { Option } = Select
 
 const Users = () => {
+  const { message } = App.useApp()
   const { isMobile } = useResponsive()
   const [form] = Form.useForm()
   const [isModalVisible, setIsModalVisible] = useState(false)

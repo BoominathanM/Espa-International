@@ -1,49 +1,63 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Table,
   Button,
   Modal,
   Form,
   Input,
+  Select,
   Space,
-  message,
+  App,
   Popconfirm,
+  Tag,
+  Tooltip,
+  Badge,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons'
 import { canCreate, canEdit, canDelete, isSuperAdmin } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
+import {
+  useGetBranchesQuery,
+  useCreateBranchMutation,
+  useUpdateBranchMutation,
+  useDeleteBranchMutation,
+} from '../../store/api/branchApi'
+import { useGetUnassignedUsersQuery, useGetUsersQuery } from '../../store/api/userApi'
+
+const { Option } = Select
 
 const Branch = () => {
+  const { message } = App.useApp()
   const { isMobile } = useResponsive()
   const [form] = Form.useForm()
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedBranch, setSelectedBranch] = useState(null)
-  const [branches, setBranches] = useState([
-    {
-      key: '1',
-      name: 'Branch 1',
-      address: '123 Main Street, City',
-      phone: '+91 9876543210',
-      email: 'branch1@gmail.com',
-      manager: 'Manager A',
-    },
-    {
-      key: '2',
-      name: 'Branch 2',
-      address: '456 Park Avenue, City',
-      phone: '+91 9876543211',
-      email: 'branch2@gmail.com',
-      manager: 'Manager B',
-    },
-    {
-      key: '3',
-      name: 'Branch 3',
-      address: '789 Market Road, City',
-      phone: '+91 9876543212',
-      email: 'branch3@gmail.com',
-      manager: 'Manager C',
-    },
-  ])
+
+  // API hooks
+  const { data: branchesData, isLoading: branchesLoading, refetch: refetchBranches } = useGetBranchesQuery()
+  const { data: unassignedUsersData, refetch: refetchUnassignedUsers } = useGetUnassignedUsersQuery()
+  const { data: allUsersData } = useGetUsersQuery()
+  const [createBranch, { isLoading: createLoading }] = useCreateBranchMutation()
+  const [updateBranch, { isLoading: updateLoading }] = useUpdateBranchMutation()
+  const [deleteBranch] = useDeleteBranchMutation()
+
+  const branches = branchesData?.branches || []
+  const unassignedUsers = unassignedUsersData?.users || []
+  const allUsers = allUsersData?.users || []
+
+  // Get available users for dropdown (unassigned + users from current branch if editing)
+  const getAvailableUsers = () => {
+    if (selectedBranch) {
+      // When editing, include users already assigned to this branch
+      const branchUsers = selectedBranch.assignedUsers?.map((u) => u._id || u.id) || []
+      return allUsers.filter(
+        (user) => !user.branch || branchUsers.includes(user._id || user.id)
+      )
+    }
+    return unassignedUsers
+  }
+
+  const availableUsers = getAvailableUsers()
 
   const columns = [
     {
@@ -67,9 +81,46 @@ const Branch = () => {
       key: 'email',
     },
     {
-      title: 'Manager',
-      dataIndex: 'manager',
-      key: 'manager',
+      title: 'User Count',
+      key: 'userCount',
+      render: (_, record) => {
+        const count = record.assignedUsers?.length || 0
+        return (
+          <Badge
+            count={count}
+            showZero
+            style={{ backgroundColor: '#D4AF37' }}
+            title={`${count} user(s) assigned`}
+          >
+            <UserOutlined style={{ fontSize: 18, color: '#D4AF37' }} />
+          </Badge>
+        )
+      },
+    },
+    {
+      title: 'Assigned Users',
+      key: 'assignedUsers',
+      render: (_, record) => {
+        const users = record.assignedUsers || []
+        if (users.length === 0) {
+          return <Tag color="default">No users assigned</Tag>
+        }
+        return (
+          <Space wrap>
+            {users.slice(0, 3).map((user) => (
+              <Tooltip
+                key={user._id || user.id}
+                title={`${user.name} (${user.email}) - ${user.role}`}
+              >
+                <Tag color="blue">{user.name}</Tag>
+              </Tooltip>
+            ))}
+            {users.length > 3 && (
+              <Tag color="default">+{users.length - 3} more</Tag>
+            )}
+          </Space>
+        )
+      },
     },
     {
       title: 'Actions',
@@ -87,7 +138,7 @@ const Branch = () => {
               </Button>
               <Popconfirm
                 title="Delete this branch?"
-                onConfirm={() => handleDelete(record.key)}
+                onConfirm={() => handleDelete(record._id || record.id)}
                 okText="Yes"
                 cancelText="No"
               >
@@ -110,47 +161,67 @@ const Branch = () => {
 
   const handleEdit = (record) => {
     setSelectedBranch(record)
-    form.setFieldsValue(record)
+    const assignedUserIds = record.assignedUsers?.map((u) => u._id || u.id) || []
+    form.setFieldsValue({
+      ...record,
+      assignedUsers: assignedUserIds,
+    })
     setIsModalVisible(true)
   }
 
-  const handleDelete = (key) => {
-    setBranches(branches.filter((branch) => branch.key !== key))
-    message.success('Branch deleted successfully')
+  const handleDelete = async (id) => {
+    try {
+      await deleteBranch(id).unwrap()
+      message.success('Branch deleted successfully')
+      refetchBranches()
+      refetchUnassignedUsers()
+    } catch (error) {
+      message.error(error?.data?.message || 'Failed to delete branch')
+    }
   }
 
-  const handleSubmit = (values) => {
-    if (selectedBranch) {
-      setBranches(
-        branches.map((branch) =>
-          branch.key === selectedBranch.key ? { ...branch, ...values } : branch
-        )
-      )
-      message.success('Branch updated successfully')
-    } else {
-      const newBranch = {
-        key: Date.now().toString(),
-        ...values,
+  const handleSubmit = async (values) => {
+    try {
+      if (selectedBranch) {
+        await updateBranch({
+          id: selectedBranch._id || selectedBranch.id,
+          ...values,
+        }).unwrap()
+        message.success('Branch updated successfully')
+      } else {
+        await createBranch(values).unwrap()
+        message.success('Branch created successfully')
       }
-      setBranches([...branches, newBranch])
-      message.success('Branch created successfully')
+      setIsModalVisible(false)
+      form.resetFields()
+      refetchBranches()
+      refetchUnassignedUsers()
+    } catch (error) {
+      message.error(error?.data?.message || 'Operation failed')
     }
-    setIsModalVisible(false)
-    form.resetFields()
   }
 
   return (
     <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between', 
-        marginBottom: 16,
-        gap: 12,
-      }}>
-        <h2 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '18px' : '20px' }}>Branch Configuration</h2>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between',
+          marginBottom: 16,
+          gap: 12,
+        }}
+      >
+        <h2 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '18px' : '20px' }}>
+          Branch Configuration
+        </h2>
         {isSuperAdmin() && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} size={isMobile ? 'small' : 'middle'}>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={handleAdd}
+            size={isMobile ? 'small' : 'middle'}
+          >
             {isMobile ? 'Add' : 'Add Branch'}
           </Button>
         )}
@@ -160,6 +231,8 @@ const Branch = () => {
         <Table
           columns={columns}
           dataSource={branches}
+          loading={branchesLoading}
+          rowKey={(record) => record._id || record.id}
           pagination={{ pageSize: 10 }}
           style={{ background: '#1a1a1a' }}
           scroll={{ x: 'max-content' }}
@@ -176,11 +249,7 @@ const Branch = () => {
         footer={null}
         width={isMobile ? '95%' : 600}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSubmit}
-        >
+        <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Form.Item
             name="name"
             label="Branch Name"
@@ -216,25 +285,59 @@ const Branch = () => {
             <Input placeholder="Enter email" />
           </Form.Item>
 
-          <Form.Item name="manager" label="Manager">
-            <Input placeholder="Enter manager name" />
+          <Form.Item
+            name="assignedUsers"
+            label="Assign Users"
+            tooltip="Select users to assign to this branch. Users already assigned to other branches will not appear."
+          >
+            <Select
+              mode="multiple"
+              placeholder="Select users to assign"
+              showSearch
+              filterOption={(input, option) =>
+                (option?.children?.toLowerCase() || '').includes(input.toLowerCase())
+              }
+              notFoundContent={
+                availableUsers.length === 0
+                  ? 'No unassigned users available'
+                  : 'No users found'
+              }
+            >
+              {availableUsers.map((user) => (
+                <Option key={user._id || user.id} value={user._id || user.id}>
+                  {user.name} ({user.email}) - {user.role}
+                </Option>
+              ))}
+            </Select>
           </Form.Item>
 
+          {availableUsers.length === 0 && (
+            <div style={{ marginBottom: 16, padding: 12, background: '#2a2a2a', borderRadius: 4 }}>
+              <p style={{ color: '#ffa940', margin: 0 }}>
+                <strong>Note:</strong> All users are currently assigned to other branches. Unassign
+                users from other branches first to assign them here.
+              </p>
+            </div>
+          )}
+
           <Form.Item>
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: isMobile ? 'column' : 'row',
-              gap: 8,
-              width: '100%'
-            }}>
-              <Button 
-                type="primary" 
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
+                gap: 8,
+                width: '100%',
+              }}
+            >
+              <Button
+                type="primary"
                 htmlType="submit"
+                loading={createLoading || updateLoading}
                 style={{ width: isMobile ? '100%' : 'auto' }}
               >
                 {selectedBranch ? 'Update' : 'Create'}
               </Button>
-              <Button 
+              <Button
                 onClick={() => setIsModalVisible(false)}
                 style={{ width: isMobile ? '100%' : 'auto' }}
               >

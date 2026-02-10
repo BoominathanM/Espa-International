@@ -18,6 +18,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { hasPermission } from '../utils/permissions'
 import { useResponsive } from '../hooks/useResponsive'
+import { useLogoutMutation } from '../store/api/authApi'
 
 const { Header, Sider, Content } = AntLayout
 
@@ -28,6 +29,7 @@ const Layout = ({ children }) => {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, logout } = useAuth()
+  const [logoutMutation] = useLogoutMutation()
 
   // Use drawer for mobile (< 576px), tablet (576px - 767px), and small laptop (768px - 992px)
   // Desktop (992px+) uses normal fixed sidebar
@@ -89,9 +91,15 @@ const Layout = ({ children }) => {
     }
   }
 
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
+  const handleLogout = async () => {
+    try {
+      await logoutMutation().unwrap()
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      logout()
+      navigate('/login')
+    }
   }
 
   const userMenuItems = [

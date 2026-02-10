@@ -25,14 +25,23 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   const login = (userData) => {
-    // Add default permissions if not present
-    if (!userData.permissions) {
-      userData.permissions = getDefaultPermissions(userData.role)
+    // Ensure all required fields are present
+    const completeUserData = {
+      _id: userData._id || userData.id,
+      id: userData._id || userData.id,
+      name: userData.name || '',
+      email: userData.email || '',
+      role: userData.role || 'staff',
+      branch: userData.branch || null,
+      status: userData.status || 'active',
+      phoneNumbers: Array.isArray(userData.phoneNumbers) ? userData.phoneNumbers : [],
+      permissions: userData.permissions || getDefaultPermissions(userData.role || 'staff'),
+      token: userData.token,
     }
     
-    localStorage.setItem('crm_user', JSON.stringify(userData))
-    localStorage.setItem('crm_token', userData.token || 'mock_token_' + Date.now())
-    setUser(userData)
+    localStorage.setItem('crm_user', JSON.stringify(completeUserData))
+    localStorage.setItem('crm_token', completeUserData.token || 'mock_token_' + Date.now())
+    setUser(completeUserData)
   }
 
   const logout = () => {
