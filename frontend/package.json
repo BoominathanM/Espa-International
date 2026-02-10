@@ -12,15 +12,14 @@
     "@ant-design/icons": "^5.2.6",
     "recharts": "^2.10.3",
     "dayjs": "^1.11.10",
-    "axios": "^1.6.2"
-  },
-  "devDependencies": {
+    "axios": "^1.6.2",
     "@vitejs/plugin-react": "^4.2.1",
     "vite": "^5.0.8"
   },
+  "devDependencies": {},
   "scripts": {
     "dev": "vite",
-    "build": "npx vite build",
+    "build": "vite build",
     "preview": "vite preview"
   }
 }
