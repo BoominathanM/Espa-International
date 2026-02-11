@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Row, Col, Card, Statistic, Table, Tag, Select, Space } from 'antd'
+import React, { useState, useMemo } from 'react'
+import { Row, Col, Card, Statistic, Table, Tag, Select, Space, DatePicker } from 'antd'
 import {
   UserAddOutlined,
   PhoneOutlined,
@@ -29,6 +29,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useResponsive } from '../../hooks/useResponsive'
 import { getBranchOptions } from '../../utils/branches'
 import { isSuperAdmin, isAdmin, isSupervisor } from '../../utils/permissions'
+import dayjs from 'dayjs'
 
 const { Option } = Select
 
@@ -37,6 +38,7 @@ const Dashboard = () => {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [selectedBranch, setSelectedBranch] = useState('all')
+  const [selectedDate, setSelectedDate] = useState(null)
   
   // Check if user should see branch dropdown
   const showBranchDropdown = isSuperAdmin() || isAdmin() || isSupervisor()
@@ -72,6 +74,7 @@ const Dashboard = () => {
     { name: 'Call', value: 30, color: '#D4AF37' },
     { name: 'WhatsApp', value: 25, color: '#25D366' },
     { name: 'Facebook', value: 20, color: '#1877F2' },
+    { name: 'Insta', value: 18, color: '#E4405F' },
     { name: 'AI Bot', value: 15, color: '#4A90E2' },
     { name: 'Website', value: 10, color: '#9B59B6' },
   ]
@@ -83,7 +86,100 @@ const Dashboard = () => {
     { name: 'Branch 4', leads: 65, calls: 180 },
   ]
 
-  const recentLeads = [
+  const agentPerformanceData = [
+    { name: 'Agent A', leads: 45, calls: 120, converted: 15 },
+    { name: 'Agent B', leads: 38, calls: 110, converted: 12 },
+    { name: 'Agent C', leads: 42, calls: 105, converted: 14 },
+    { name: 'Agent D', leads: 35, calls: 95, converted: 10 },
+    { name: 'Agent E', leads: 30, calls: 85, converted: 8 },
+  ]
+
+  const topAgentsData = [
+    {
+      key: '1',
+      agent: 'Agent A',
+      branch: 'Branch 1',
+      leads: 45,
+      calls: 120,
+      converted: 15,
+      conversionRate: '33.3%',
+    },
+    {
+      key: '2',
+      agent: 'Agent B',
+      branch: 'Branch 2',
+      leads: 38,
+      calls: 110,
+      converted: 12,
+      conversionRate: '31.6%',
+    },
+    {
+      key: '3',
+      agent: 'Agent C',
+      branch: 'Branch 1',
+      leads: 42,
+      calls: 105,
+      converted: 14,
+      conversionRate: '33.3%',
+    },
+    {
+      key: '4',
+      agent: 'Agent D',
+      branch: 'Branch 3',
+      leads: 35,
+      calls: 95,
+      converted: 10,
+      conversionRate: '28.6%',
+    },
+    {
+      key: '5',
+      agent: 'Agent E',
+      branch: 'Branch 2',
+      leads: 30,
+      calls: 85,
+      converted: 8,
+      conversionRate: '26.7%',
+    },
+  ]
+
+  const topAgentsColumns = [
+    {
+      title: 'Agent',
+      dataIndex: 'agent',
+      key: 'agent',
+    },
+    {
+      title: 'Branch',
+      dataIndex: 'branch',
+      key: 'branch',
+    },
+    {
+      title: 'Leads',
+      dataIndex: 'leads',
+      key: 'leads',
+      sorter: (a, b) => a.leads - b.leads,
+    },
+    {
+      title: 'Calls',
+      dataIndex: 'calls',
+      key: 'calls',
+      sorter: (a, b) => a.calls - b.calls,
+    },
+    {
+      title: 'Converted',
+      dataIndex: 'converted',
+      key: 'converted',
+      sorter: (a, b) => a.converted - b.converted,
+    },
+    {
+      title: 'Conversion Rate',
+      dataIndex: 'conversionRate',
+      key: 'conversionRate',
+      render: (rate) => <Tag color="green">{rate}</Tag>,
+    },
+  ]
+
+  const allRecentLeads = [
     {
       key: '1',
       name: 'John Doe',
@@ -92,6 +188,7 @@ const Dashboard = () => {
       status: 'New',
       branch: 'Branch 1',
       agent: 'Agent A',
+      date: dayjs().subtract(1, 'day'),
     },
     {
       key: '2',
@@ -101,6 +198,7 @@ const Dashboard = () => {
       status: 'In Progress',
       branch: 'Branch 2',
       agent: 'Agent B',
+      date: dayjs(),
     },
     {
       key: '3',
@@ -110,8 +208,38 @@ const Dashboard = () => {
       status: 'Follow-Up',
       branch: 'Branch 1',
       agent: 'Agent C',
+      date: dayjs(),
+    },
+    {
+      key: '4',
+      name: 'Sarah Williams',
+      mobile: '+91 9876543213',
+      source: 'Insta',
+      status: 'New',
+      branch: 'Branch 2',
+      agent: 'Agent D',
+      date: dayjs().subtract(2, 'day'),
+    },
+    {
+      key: '5',
+      name: 'David Brown',
+      mobile: '+91 9876543214',
+      source: 'Facebook',
+      status: 'Converted',
+      branch: 'Branch 1',
+      agent: 'Agent A',
+      date: dayjs(),
     },
   ]
+
+  // Filter recent leads based on selected date
+  const recentLeads = useMemo(() => {
+    if (!selectedDate) return allRecentLeads
+    return allRecentLeads.filter(lead => {
+      if (!lead.date) return false
+      return lead.date.isSame(selectedDate, 'day')
+    })
+  }, [selectedDate])
 
   const alerts = [
     { type: 'error', message: '8 missed calls need attention' },
@@ -139,6 +267,7 @@ const Dashboard = () => {
           Call: 'gold',
           WhatsApp: 'green',
           Facebook: 'blue',
+          Insta: 'magenta',
           'AI Bot': 'cyan',
           Website: 'purple',
         }
@@ -199,6 +328,15 @@ const Dashboard = () => {
                 </Option>
               ))}
             </Select>
+            <DatePicker
+              value={selectedDate}
+              onChange={(date) => setSelectedDate(date || null)}
+              allowClear
+              style={{ width: isMobile ? 150 : 200 }}
+              size={isMobile ? 'small' : 'middle'}
+              format="YYYY-MM-DD"
+              placeholder="Select Date"
+            />
           </Space>
         )}
       </div>
@@ -405,6 +543,75 @@ const Dashboard = () => {
                   onClick: () => navigate(`/leads/${record.key}`),
                   style: { cursor: 'pointer' },
                 })}
+              />
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Agent Performance Row */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={24} md={24} lg={12} xl={12}>
+          <Card 
+            title={<span style={{ color: '#D4AF37' }}>Agent Performance</span>} 
+            style={{ 
+              background: '#1a1a1a', 
+              border: '1px solid #333',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+            bodyStyle={{ 
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: chartHeight
+            }}
+          >
+            <ResponsiveContainer width="100%" height={chartHeight}>
+              <BarChart data={agentPerformanceData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                <XAxis type="number" stroke="#ffffff" />
+                <YAxis dataKey="name" type="category" stroke="#ffffff" />
+                <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', color: '#ffffff' }} />
+                <Legend />
+                <Bar dataKey="leads" fill="#D4AF37" name="Leads" />
+                <Bar dataKey="calls" fill="#25D366" name="Calls" />
+                <Bar dataKey="converted" fill="#52c41a" name="Converted" />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </Col>
+        <Col xs={24} sm={24} md={24} lg={12} xl={12}>
+          <Card 
+            title={<span style={{ color: '#D4AF37' }}>Top Agents</span>} 
+            style={{ 
+              background: '#1a1a1a', 
+              border: '1px solid #333',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+            bodyStyle={{ 
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              padding: 0,
+              minHeight: isMobile || isTablet ? 250 : 300
+            }}
+          >
+            <div style={{ 
+              flex: 1,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              maxHeight: chartHeight
+            }}>
+              <Table
+                dataSource={topAgentsData}
+                columns={topAgentsColumns}
+                pagination={false}
+                size="small"
+                scroll={{ x: 'max-content', y: chartHeight }}
               />
             </div>
           </Card>
