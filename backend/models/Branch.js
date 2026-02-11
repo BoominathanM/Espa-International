@@ -17,7 +17,7 @@ const branchSchema = new mongoose.Schema(
     },
     email: {
       type: String,
-      required: true,
+      required: false,
       lowercase: true,
       trim: true,
       match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],

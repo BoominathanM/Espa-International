@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Check for stored user on mount
+    // Check for stored user in localStorage on mount
     const storedUser = getStoredUser()
     if (storedUser) {
       setUser(storedUser)
@@ -34,19 +34,19 @@ export const AuthProvider = ({ children }) => {
       role: userData.role || 'staff',
       branch: userData.branch || null,
       status: userData.status || 'active',
-      phoneNumbers: Array.isArray(userData.phoneNumbers) ? userData.phoneNumbers : [],
+      phone: userData.phone || '',
       permissions: userData.permissions || getDefaultPermissions(userData.role || 'staff'),
-      token: userData.token,
+      // Token is stored in HTTP-only cookie by backend, not in userData
     }
     
+    // Store user data in localStorage (token is stored in HTTP-only cookie by backend)
     localStorage.setItem('crm_user', JSON.stringify(completeUserData))
-    localStorage.setItem('crm_token', completeUserData.token || 'mock_token_' + Date.now())
     setUser(completeUserData)
   }
 
   const logout = () => {
+    // Remove user data from localStorage (backend will clear token cookie)
     localStorage.removeItem('crm_user')
-    localStorage.removeItem('crm_token')
     setUser(null)
   }
 

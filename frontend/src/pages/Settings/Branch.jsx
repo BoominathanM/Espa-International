@@ -78,11 +78,6 @@ const Branch = () => {
       key: 'phone',
     },
     {
-      title: 'Email',
-      dataIndex: 'email',
-      key: 'email',
-    },
-    {
       title: 'User Count',
       key: 'userCount',
       render: (_, record) => {
@@ -211,6 +206,7 @@ const Branch = () => {
       // Remove temporary fields
       delete formData.phoneNumber
       delete formData.countryCode
+      delete formData.email
 
       if (selectedBranch) {
         await updateBranch({
@@ -367,17 +363,6 @@ const Branch = () => {
                 />
               </Form.Item>
             </Space.Compact>
-          </Form.Item>
-
-          <Form.Item
-            name="email"
-            label="Email"
-            rules={[
-              { required: true, message: 'Please enter email' },
-              { type: 'email', message: 'Please enter valid email' },
-            ]}
-          >
-            <Input placeholder="Enter email" />
           </Form.Item>
 
           <Form.Item

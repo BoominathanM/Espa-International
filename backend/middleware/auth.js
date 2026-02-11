@@ -3,7 +3,9 @@ import User from '../models/User.js'
 
 export const authenticate = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '')
+    // Try to get token from cookie first, then from Authorization header (for backward compatibility)
+    let token = req.cookies?.crm_token || req.header('Authorization')?.replace('Bearer ', '')
+    
     if (!token) {
       return res.status(401).json({ message: 'No token, authorization denied' })
     }

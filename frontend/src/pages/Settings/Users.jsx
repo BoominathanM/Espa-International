@@ -86,14 +86,9 @@ const Users = () => {
     },
     {
       title: 'Phone Number',
-      dataIndex: 'phoneNumbers',
-      key: 'phoneNumbers',
-      render: (numbers) => {
-        if (Array.isArray(numbers) && numbers.length > 0) {
-          return numbers[0]
-        }
-        return '-'
-      },
+      dataIndex: 'phone',
+      key: 'phone',
+      render: (phone) => phone || '-',
     },
     {
       title: 'Actions',
@@ -140,9 +135,8 @@ const Users = () => {
     // Parse phone number if exists
     let phoneNumber = ''
     let countryCode = '+1'
-    if (record.phoneNumbers && record.phoneNumbers.length > 0) {
-      const firstPhone = record.phoneNumbers[0]
-      const parsed = parsePhoneNumber(firstPhone)
+    if (record.phone) {
+      const parsed = parsePhoneNumber(record.phone)
       countryCode = parsed.dialCode
       phoneNumber = parsed.number
     }
@@ -176,7 +170,7 @@ const Users = () => {
       
       const formData = {
         ...values,
-        phoneNumbers: fullPhoneNumber ? [fullPhoneNumber] : [],
+        phone: fullPhoneNumber || '',
       }
       
       // Remove temporary fields

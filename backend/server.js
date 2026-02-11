@@ -2,10 +2,13 @@ import express from 'express'
 import mongoose from 'mongoose'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import cookieParser from 'cookie-parser'
 import authRoutes from './routes/auth.js'
 import userRoutes from './routes/users.js'
 import branchRoutes from './routes/branches.js'
 import roleRoutes from './routes/roles.js'
+import User from './models/User.js'
+import Role from './models/Role.js'
 
 dotenv.config()
 
@@ -45,6 +48,7 @@ app.use(cors({
   origin: getCorsOrigins(),
   credentials: true
 }))
+app.use(cookieParser())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
@@ -70,10 +74,112 @@ app.use('/api/*', (req, res) => {
 // Connect to MongoDB
 const PORT = process.env.PORT || 3001
 
+// Function to seed super admin if it doesn't exist
+const seedSuperAdminIfNeeded = async () => {
+  try {
+    const existingSuperAdmin = await User.findOne({ email: 'superadmin@gmail.com' })
+    
+    if (existingSuperAdmin) {
+      console.log('ℹ️  Super admin already exists')
+      return
+    }
+
+    console.log('🌱 No super admin found. Seeding default data...')
+
+    // Initialize default roles
+    const defaultRoles = [
+      {
+        name: 'superadmin',
+        displayName: 'Super Admin',
+        permissions: {
+          dashboard: ['create', 'read', 'edit', 'delete'],
+          leads: ['create', 'read', 'edit', 'delete'],
+          calls: ['create', 'read', 'edit', 'delete'],
+          chats: ['create', 'read', 'edit', 'delete'],
+          customers: ['create', 'read', 'edit', 'delete'],
+          reports: ['create', 'read', 'edit', 'delete'],
+          settings: ['create', 'read', 'edit', 'delete'],
+        },
+      },
+      {
+        name: 'admin',
+        displayName: 'Admin',
+        permissions: {
+          dashboard: ['create', 'read', 'edit'],
+          leads: ['create', 'read', 'edit'],
+          calls: ['create', 'read', 'edit'],
+          chats: ['create', 'read', 'edit'],
+          customers: ['create', 'read', 'edit'],
+          reports: ['create', 'read', 'edit'],
+          settings: ['create', 'read', 'edit'],
+        },
+      },
+      {
+        name: 'supervisor',
+        displayName: 'Supervisor',
+        permissions: {
+          dashboard: ['create', 'read'],
+          leads: ['create', 'read'],
+          calls: ['create', 'read'],
+          chats: ['create', 'read'],
+          customers: ['create', 'read'],
+          reports: ['create', 'read'],
+          settings: [],
+        },
+      },
+      {
+        name: 'staff',
+        displayName: 'Staff',
+        permissions: {
+          dashboard: ['read'],
+          leads: ['read'],
+          calls: ['read'],
+          chats: ['read'],
+          customers: ['read'],
+          reports: [],
+          settings: [],
+        },
+      },
+    ]
+
+    // Seed roles
+    for (const roleData of defaultRoles) {
+      const existingRole = await Role.findOne({ name: roleData.name })
+      if (!existingRole) {
+        const role = new Role(roleData)
+        await role.save()
+        console.log(`✅ Role ${roleData.name} created`)
+      }
+    }
+
+    // Create superadmin
+    const superAdmin = new User({
+      name: 'Super Admin',
+      email: 'superadmin@gmail.com',
+      password: '123456',
+      role: 'superadmin',
+      status: 'active',
+      phone: '',
+    })
+
+    await superAdmin.save()
+    console.log('✅ Super admin created successfully!')
+    console.log('📧 Email: superadmin@gmail.com')
+    console.log('🔑 Password: 123456')
+  } catch (error) {
+    console.error('❌ Error seeding super admin:', error.message)
+    // Don't exit - let server start even if seeding fails
+  }
+}
+
 mongoose
   .connect(process.env.MONGODB_URI)
-  .then(() => {
+  .then(async () => {
     console.log('✅ Connected to MongoDB')
+    
+    // Seed super admin if needed
+    await seedSuperAdminIfNeeded()
+    
     app.listen(PORT, () => {
       console.log(`✅ Server is running on port ${PORT}`)
       console.log(`✅ Health check: http://localhost:${PORT}/api/health`)

@@ -36,9 +36,9 @@ const userSchema = new mongoose.Schema(
       enum: ['active', 'inactive'],
       default: 'active',
     },
-    phoneNumbers: {
-      type: [String],
-      default: [],
+    phone: {
+      type: String,
+      default: '',
     },
   },
   {

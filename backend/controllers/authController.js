@@ -78,16 +78,25 @@ export const login = async (req, res) => {
         name: user.branch.name || '',
       } : null,
       status: user.status || 'active',
-      phoneNumbers: Array.isArray(user.phoneNumbers) ? user.phoneNumbers : [],
+      phone: user.phone || '',
       permissions: permissions,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     }
 
-    // Return user data with token
+    // Set HTTP-only cookie with token only (7 days expiration)
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // Only send over HTTPS in production
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+      path: '/',
+    }
+    res.cookie('crm_token', token, cookieOptions)
+
+    // Return user data (token is in HTTP-only cookie, user data goes to localStorage on frontend)
     res.json({
       success: true,
-      token,
       user: userData,
     })
   } catch (error) {
@@ -100,13 +109,14 @@ export const login = async (req, res) => {
   }
 }
 
-// @desc    Logout user (client-side token removal, but we can track it)
+// @desc    Logout user
 // @route   POST /api/auth/logout
 // @access  Private
 export const logout = async (req, res) => {
   try {
-    // In a more complex system, you might want to blacklist the token
-    // For now, we'll just return success as token removal is handled client-side
+    // Clear token cookie only
+    res.clearCookie('crm_token', { path: '/' })
+    
     res.json({ success: true, message: 'Logged out successfully' })
   } catch (error) {
     console.error('Logout error:', error)
@@ -155,7 +165,7 @@ export const getMe = async (req, res) => {
         name: user.branch.name || '',
       } : null,
       status: user.status || 'active',
-      phoneNumbers: Array.isArray(user.phoneNumbers) ? user.phoneNumbers : [],
+      phone: user.phone || '',
       permissions: permissions,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,

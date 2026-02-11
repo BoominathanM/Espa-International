@@ -3,7 +3,6 @@ import { Tabs } from 'antd'
 import Users from './Users'
 import Roles from './Roles'
 import Branch from './Branch'
-import Numbers from './Numbers'
 import API from './API'
 import Logs from './Logs'
 import { canRead } from '../../utils/permissions'
@@ -35,11 +34,6 @@ const Settings = () => {
       key: 'branch',
       label: 'Branch Configuration',
       children: <Branch />,
-    },
-    {
-      key: 'numbers',
-      label: 'Number Configuration',
-      children: <Numbers />,
     },
     {
       key: 'api',

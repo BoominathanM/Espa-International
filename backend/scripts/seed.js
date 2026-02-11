@@ -5,11 +5,11 @@ import Role from '../models/Role.js'
 
 dotenv.config()
 
-const seedSuperAdmin = async () => {
+const seedSuperAdmin = async (force = false) => {
   try {
     // Connect to MongoDB
     await mongoose.connect(process.env.MONGODB_URI)
-    console.log('Connected to MongoDB')
+    console.log('✅ Connected to MongoDB')
 
     // Initialize default roles
     const defaultRoles = [
@@ -67,21 +67,31 @@ const seedSuperAdmin = async () => {
       },
     ]
 
+    // Seed roles
     for (const roleData of defaultRoles) {
       const existingRole = await Role.findOne({ name: roleData.name })
       if (!existingRole) {
         const role = new Role(roleData)
         await role.save()
-        console.log(`Role ${roleData.name} created`)
+        console.log(`✅ Role ${roleData.name} created`)
+      } else {
+        console.log(`ℹ️  Role ${roleData.name} already exists`)
       }
     }
 
     // Check if superadmin already exists
     const existingSuperAdmin = await User.findOne({ email: 'superadmin@gmail.com' })
-    if (existingSuperAdmin) {
-      console.log('Super admin already exists')
+    
+    if (existingSuperAdmin && !force) {
+      console.log('ℹ️  Super admin already exists. Use --force to recreate.')
       await mongoose.connection.close()
       process.exit(0)
+    }
+
+    // If force is true, delete existing superadmin first
+    if (existingSuperAdmin && force) {
+      await User.deleteOne({ email: 'superadmin@gmail.com' })
+      console.log('🔄 Deleted existing super admin')
     }
 
     // Create superadmin
@@ -91,21 +101,23 @@ const seedSuperAdmin = async () => {
       password: '123456',
       role: 'superadmin',
       status: 'active',
-      phoneNumbers: [],
+      phone: '',
     })
 
     await superAdmin.save()
-    console.log('Super admin created successfully!')
-    console.log('Email: superadmin@gmail.com')
-    console.log('Password: 123456')
+    console.log('✅ Super admin created successfully!')
+    console.log('📧 Email: superadmin@gmail.com')
+    console.log('🔑 Password: 123456')
 
     await mongoose.connection.close()
     process.exit(0)
   } catch (error) {
-    console.error('Error seeding super admin:', error)
+    console.error('❌ Error seeding super admin:', error)
     await mongoose.connection.close()
     process.exit(1)
   }
 }
 
-seedSuperAdmin()
+// Check for --force flag
+const force = process.argv.includes('--force') || process.argv.includes('-f')
+seedSuperAdmin(force)

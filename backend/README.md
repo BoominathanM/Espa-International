@@ -71,7 +71,7 @@ Backend API server for ESPA International CRM system.
 ## Database Models
 
 ### User
-- name, email, password, role, branch, status, phoneNumbers
+- name, email, password, role, branch, status, phone
 
 ### Branch
 - name, address, phone, email, assignedUsers

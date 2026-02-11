@@ -20,17 +20,10 @@ const API_BASE_URL = getApiBaseUrl()
 
 const baseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
+  credentials: 'include', // Include cookies in requests
   prepareHeaders: (headers, { getState, endpoint }) => {
-    // Don't add auth token for login endpoint
-    const isLoginEndpoint = endpoint === 'login' || endpoint?.includes('login')
-    
-    if (!isLoginEndpoint) {
-      const token = localStorage.getItem('crm_token')
-      if (token) {
-        headers.set('authorization', `Bearer ${token}`)
-      }
-    }
-    
+    // Cookies are automatically sent with credentials: 'include'
+    // No need to manually add Authorization header for cookie-based auth
     headers.set('Content-Type', 'application/json')
     return headers
   },

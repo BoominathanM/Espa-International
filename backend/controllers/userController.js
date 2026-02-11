@@ -62,7 +62,7 @@ export const getUser = async (req, res) => {
 // @access  Private (Super Admin only)
 export const createUser = async (req, res) => {
   try {
-    const { name, email, password, role, branch, status, phoneNumbers } = req.body
+    const { name, email, password, role, branch, status, phone } = req.body
 
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() })
@@ -85,7 +85,7 @@ export const createUser = async (req, res) => {
       role: role || 'staff',
       branch: branch || null,
       status: status || 'active',
-      phoneNumbers: phoneNumbers || [],
+      phone: phone || '',
     })
 
     await user.save()
@@ -109,7 +109,7 @@ export const createUser = async (req, res) => {
 // @access  Private (Super Admin only)
 export const updateUser = async (req, res) => {
   try {
-    const { name, email, password, role, branch, status, phoneNumbers } = req.body
+    const { name, email, password, role, branch, status, phone } = req.body
 
     const user = await User.findById(req.params.id)
     if (!user) {
@@ -128,7 +128,7 @@ export const updateUser = async (req, res) => {
     if (name) user.name = name
     if (role) user.role = role
     if (status) user.status = status
-    if (phoneNumbers) user.phoneNumbers = phoneNumbers
+    if (phone !== undefined) user.phone = phone || ''
 
     // Handle password update
     if (password) {

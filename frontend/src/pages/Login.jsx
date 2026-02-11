@@ -19,7 +19,7 @@ const Login = () => {
     try {
       const result = await loginMutation(values).unwrap()
       
-      if (!result || !result.success || !result.user || !result.token) {
+      if (!result || !result.success || !result.user) {
         message.error('Invalid response from server. Please try again.')
         return
       }
@@ -32,9 +32,9 @@ const Login = () => {
         role: result.user.role || 'staff',
         branch: result.user.branch || null,
         status: result.user.status || 'active',
-        phoneNumbers: Array.isArray(result.user.phoneNumbers) ? result.user.phoneNumbers : [],
+        phone: result.user.phone || '',
         permissions: result.user.permissions || getDefaultPermissions(result.user.role || 'staff'),
-        token: result.token,
+        // Token is now stored in HTTP-only cookie, not in response
       }
       
       login(userData)

@@ -7,6 +7,7 @@ export const authApi = apiSlice.injectEndpoints({
         url: '/auth/login',
         method: 'POST',
         body: credentials,
+        credentials: 'include', // Include cookies
       }),
       invalidatesTags: ['Auth'],
     }),
@@ -14,11 +15,15 @@ export const authApi = apiSlice.injectEndpoints({
       query: () => ({
         url: '/auth/logout',
         method: 'POST',
+        credentials: 'include', // Include cookies
       }),
       invalidatesTags: ['Auth'],
     }),
     getMe: builder.query({
-      query: () => '/auth/me',
+      query: () => ({
+        url: '/auth/me',
+        credentials: 'include', // Include cookies
+      }),
       providesTags: ['Auth'],
     }),
   }),

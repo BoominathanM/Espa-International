@@ -7,7 +7,7 @@ import User from '../models/User.js'
 export const getBranches = async (req, res) => {
   try {
     const branches = await Branch.find()
-      .populate('assignedUsers', 'name email role status phoneNumbers')
+      .populate('assignedUsers', 'name email role status phone')
       .sort({ createdAt: -1 })
 
     res.json({ success: true, branches })
@@ -24,7 +24,7 @@ export const getBranch = async (req, res) => {
   try {
     const branch = await Branch.findById(req.params.id).populate(
       'assignedUsers',
-      'name email role status phoneNumbers'
+      'name email role status phone'
     )
 
     if (!branch) {
@@ -45,17 +45,19 @@ export const createBranch = async (req, res) => {
   try {
     const { name, address, phone, email, assignedUsers } = req.body
 
-    // Check if branch with same email already exists
-    const existingBranch = await Branch.findOne({ email: email.toLowerCase() })
-    if (existingBranch) {
-      return res.status(400).json({ message: 'Branch with this email already exists' })
+    // Check if branch with same email already exists (only if email is provided)
+    if (email) {
+      const existingBranch = await Branch.findOne({ email: email.toLowerCase() })
+      if (existingBranch) {
+        return res.status(400).json({ message: 'Branch with this email already exists' })
+      }
     }
 
     const branch = new Branch({
       name,
       address,
       phone,
-      email: email.toLowerCase(),
+      email: email ? email.toLowerCase() : undefined,
       assignedUsers: assignedUsers || [],
     })
 
@@ -84,7 +86,7 @@ export const createBranch = async (req, res) => {
 
     const savedBranch = await Branch.findById(branch._id).populate(
       'assignedUsers',
-      'name email role status phoneNumbers'
+      'name email role status phone'
     )
 
     res.status(201).json({ success: true, branch: savedBranch })
@@ -110,12 +112,19 @@ export const updateBranch = async (req, res) => {
     }
 
     // Check if email is being changed and if it's already taken
-    if (email && email.toLowerCase() !== branch.email) {
-      const existingBranch = await Branch.findOne({ email: email.toLowerCase() })
-      if (existingBranch) {
-        return res.status(400).json({ message: 'Branch with this email already exists' })
+    if (email !== undefined) {
+      const newEmail = email ? email.toLowerCase().trim() : undefined
+      const currentEmail = branch.email ? branch.email.toLowerCase() : undefined
+      
+      if (newEmail && newEmail !== currentEmail) {
+        const existingBranch = await Branch.findOne({ email: newEmail })
+        if (existingBranch) {
+          return res.status(400).json({ message: 'Branch with this email already exists' })
+        }
+        branch.email = newEmail
+      } else if (!newEmail) {
+        branch.email = undefined
       }
-      branch.email = email.toLowerCase()
     }
 
     if (name) branch.name = name
@@ -163,7 +172,7 @@ export const updateBranch = async (req, res) => {
 
     const updatedBranch = await Branch.findById(branch._id).populate(
       'assignedUsers',
-      'name email role status phoneNumbers'
+      'name email role status phone'
     )
 
     res.json({ success: true, branch: updatedBranch })
