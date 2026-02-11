@@ -1,79 +1,59 @@
 import React, { useState } from 'react'
-import { Form, Input, Button, Card, message, Modal } from 'antd'
+import { Form, Input, Button, Card, Modal, App } from 'antd'
 import { MailOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useLoginMutation } from '../store/api/authApi'
 import { getDefaultPermissions } from '../utils/permissions'
 
 const Login = () => {
-  const [loading, setLoading] = useState(false)
+  const { message } = App.useApp()
   const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false)
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false)
   const [forgotPasswordForm] = Form.useForm()
   const navigate = useNavigate()
   const { login } = useAuth()
+  const [loginMutation, { isLoading: loginLoading }] = useLoginMutation()
 
-  const onFinish = (values) => {
-    setLoading(true)
-    
-    // Validate password
-    if (values.password !== '123456') {
-      message.error('Invalid password!')
-      setLoading(false)
-      return
-    }
-
-    // Validate email domain
-    if (!values.email.endsWith('@gmail.com')) {
-      message.error('Please use a @gmail.com email address!')
-      setLoading(false)
-      return
-    }
-
-    // Mock authentication - replace with actual API call
-    setTimeout(() => {
-      // Extract email prefix (part before @gmail.com)
-      const emailPrefix = values.email.split('@')[0].toLowerCase()
+  const onFinish = async (values) => {
+    try {
+      const result = await loginMutation(values).unwrap()
       
-      // Dynamic role determination based on email prefix
-      let role = 'staff'
-      let name = 'Staff User'
-      
-      // Check for role keywords in email prefix
-      if (emailPrefix.includes('superadmin') || emailPrefix === 'superadmin') {
-        role = 'superadmin'
-        name = 'Super Admin'
-      } else if (emailPrefix.includes('admin') && !emailPrefix.includes('super')) {
-        role = 'admin'
-        name = 'Admin User'
-      } else if (emailPrefix.includes('supervisor') || emailPrefix.includes('super')) {
-        role = 'supervisor'
-        name = 'Supervisor'
-      } else if (emailPrefix.includes('staff') || emailPrefix.includes('agent')) {
-        role = 'staff'
-        name = 'Staff User'
-      } else {
-        // Default to staff for any other @gmail.com email
-        role = 'staff'
-        name = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1) + ' User'
+      if (!result || !result.success || !result.user || !result.token) {
+        message.error('Invalid response from server. Please try again.')
+        return
       }
-
+      
       const userData = {
-        id: 1,
-        name: name,
-        username: emailPrefix,
-        role: role,
-        email: values.email,
-        branch: role === 'superadmin' ? 'All' : 'Branch 1',
-        permissions: getDefaultPermissions(role),
-        token: 'mock_token_' + Date.now(),
+        _id: result.user._id || result.user.id,
+        id: result.user._id || result.user.id,
+        name: result.user.name || '',
+        email: result.user.email || '',
+        role: result.user.role || 'staff',
+        branch: result.user.branch || null,
+        status: result.user.status || 'active',
+        phoneNumbers: Array.isArray(result.user.phoneNumbers) ? result.user.phoneNumbers : [],
+        permissions: result.user.permissions || getDefaultPermissions(result.user.role || 'staff'),
+        token: result.token,
       }
-
+      
       login(userData)
-      message.success(`Login successful! Welcome ${name}`)
+      message.success(`Login successful! Welcome ${userData.name || 'User'}`)
       navigate('/dashboard')
-      setLoading(false)
-    }, 500)
+      
+    } catch (error) {
+      let errorMessage = 'Login failed. Please check your credentials.'
+      
+      if (error?.status === 'FETCH_ERROR' || error?.status === 'PARSING_ERROR') {
+        errorMessage = 'Cannot connect to server. Please check if backend is running on port 3001.'
+      } else if (error?.status === 404) {
+        errorMessage = 'API endpoint not found. Please check backend server configuration.'
+      } else if (error?.data?.message) {
+        errorMessage = error.data.message
+      }
+      
+      message.error(errorMessage)
+    }
   }
 
   const handleForgotPassword = (values) => {
@@ -181,7 +161,7 @@ const Login = () => {
             <Button
               type="primary"
               htmlType="submit"
-              loading={loading}
+              loading={loginLoading}
               block
               style={{
                 height: 45,
