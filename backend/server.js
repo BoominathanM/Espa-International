@@ -12,8 +12,37 @@ dotenv.config()
 const app = express()
 
 // Middleware
+// Get allowed origins from environment variables
+const getCorsOrigins = () => {
+  const origins = []
+  
+  // Add local development origins
+  if (process.env.NODE_ENV !== 'production') {
+    origins.push(
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:5173'
+    )
+  }
+  
+  // Add production frontend URL
+  if (process.env.PRODUCTION_FRONTEND_URL) {
+    origins.push(process.env.PRODUCTION_FRONTEND_URL)
+  }
+  
+  // Add custom frontend URLs from environment
+  if (process.env.FRONTEND_URLS) {
+    const customUrls = process.env.FRONTEND_URLS.split(',').map(url => url.trim())
+    origins.push(...customUrls)
+  }
+  
+  // Default to localhost if no origins specified
+  return origins.length > 0 ? origins : ['http://localhost:5173']
+}
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3001', 'http://localhost:3000', 'http://127.0.0.1:5173'],
+  origin: getCorsOrigins(),
   credentials: true
 }))
 app.use(express.json())
