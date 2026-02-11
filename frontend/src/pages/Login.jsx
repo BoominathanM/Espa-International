@@ -33,7 +33,7 @@ const Login = () => {
         branch: result.user.branch || null,
         status: result.user.status || 'active',
         phoneNumbers: Array.isArray(result.user.phoneNumbers) ? result.user.phoneNumbers : [],
-        permissions: getDefaultPermissions(result.user.role || 'staff'),
+        permissions: result.user.permissions || getDefaultPermissions(result.user.role || 'staff'),
         token: result.token,
       }
       

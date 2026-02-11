@@ -23,6 +23,7 @@ import {
   useDeleteBranchMutation,
 } from '../../store/api/branchApi'
 import { useGetUnassignedUsersQuery, useGetUsersQuery } from '../../store/api/userApi'
+import { countryCodes, parsePhoneNumber, formatPhoneNumber } from '../../utils/countryCodes'
 
 const { Option } = Select
 
@@ -32,6 +33,7 @@ const Branch = () => {
   const [form] = Form.useForm()
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedBranch, setSelectedBranch] = useState(null)
+  const [selectedCountryCode, setSelectedCountryCode] = useState('+1')
 
   // API hooks
   const { data: branchesData, isLoading: branchesLoading, refetch: refetchBranches } = useGetBranchesQuery()
@@ -155,6 +157,7 @@ const Branch = () => {
 
   const handleAdd = () => {
     setSelectedBranch(null)
+    setSelectedCountryCode('+1')
     form.resetFields()
     setIsModalVisible(true)
   }
@@ -162,9 +165,22 @@ const Branch = () => {
   const handleEdit = (record) => {
     setSelectedBranch(record)
     const assignedUserIds = record.assignedUsers?.map((u) => u._id || u.id) || []
+    
+    // Parse phone number if exists
+    let phoneNumber = ''
+    let countryCode = '+1'
+    if (record.phone) {
+      const parsed = parsePhoneNumber(record.phone)
+      countryCode = parsed.dialCode
+      phoneNumber = parsed.number
+    }
+    
+    setSelectedCountryCode(countryCode)
     form.setFieldsValue({
       ...record,
       assignedUsers: assignedUserIds,
+      phoneNumber: phoneNumber,
+      countryCode: countryCode,
     })
     setIsModalVisible(true)
   }
@@ -182,18 +198,33 @@ const Branch = () => {
 
   const handleSubmit = async (values) => {
     try {
+      // Format phone number with country code
+      const fullPhoneNumber = values.phoneNumber
+        ? formatPhoneNumber(values.countryCode || selectedCountryCode, values.phoneNumber)
+        : ''
+      
+      const formData = {
+        ...values,
+        phone: fullPhoneNumber,
+      }
+      
+      // Remove temporary fields
+      delete formData.phoneNumber
+      delete formData.countryCode
+
       if (selectedBranch) {
         await updateBranch({
           id: selectedBranch._id || selectedBranch.id,
-          ...values,
+          ...formData,
         }).unwrap()
         message.success('Branch updated successfully')
       } else {
-        await createBranch(values).unwrap()
+        await createBranch(formData).unwrap()
         message.success('Branch created successfully')
       }
       setIsModalVisible(false)
       form.resetFields()
+      setSelectedCountryCode('+1')
       refetchBranches()
       refetchUnassignedUsers()
     } catch (error) {
@@ -249,7 +280,14 @@ const Branch = () => {
         footer={null}
         width={isMobile ? '95%' : 600}
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSubmit}
+          initialValues={{
+            countryCode: '+1',
+          }}
+        >
           <Form.Item
             name="name"
             label="Branch Name"
@@ -267,11 +305,68 @@ const Branch = () => {
           </Form.Item>
 
           <Form.Item
-            name="phone"
-            label="Phone"
-            rules={[{ required: true, message: 'Please enter phone number' }]}
+            label="Phone Number"
+            required
           >
-            <Input placeholder="Enter phone number" />
+            <Space.Compact style={{ width: '100%', display: 'flex' }}>
+              <Form.Item
+                name="countryCode"
+                noStyle
+                initialValue="+1"
+                rules={[{ required: true }]}
+              >
+                <Select
+                  style={{ width: isMobile ? 120 : 180, minWidth: 120 }}
+                  value={selectedCountryCode}
+                  onChange={(value) => {
+                    setSelectedCountryCode(value)
+                    form.setFieldValue('countryCode', value)
+                  }}
+                  showSearch
+                  optionFilterProp="children"
+                  filterOption={(input, option) => {
+                    const label = option?.label || ''
+                    const value = option?.value || ''
+                    return (
+                      label.toLowerCase().includes(input.toLowerCase()) ||
+                      value.includes(input)
+                    )
+                  }}
+                >
+                  {countryCodes.map((country) => (
+                    <Option
+                      key={country.code}
+                      value={country.dialCode}
+                      label={`${country.flag} ${country.dialCode} ${country.name}`}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span>{country.flag}</span>
+                        <span>{country.dialCode}</span>
+                        <span style={{ opacity: 0.7 }}>{country.name}</span>
+                      </span>
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+              <Form.Item
+                name="phoneNumber"
+                noStyle
+                rules={[
+                  { required: true, message: 'Phone number is required' },
+                  {
+                    pattern: /^[0-9]{6,15}$/,
+                    message: 'Phone number must be 6-15 digits',
+                  },
+                ]}
+              >
+                <Input
+                  placeholder="Enter phone number"
+                  style={{ flex: 1 }}
+                  maxLength={15}
+                  type="tel"
+                />
+              </Form.Item>
+            </Space.Compact>
           </Form.Item>
 
           <Form.Item

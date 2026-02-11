@@ -5,6 +5,7 @@ import dotenv from 'dotenv'
 import authRoutes from './routes/auth.js'
 import userRoutes from './routes/users.js'
 import branchRoutes from './routes/branches.js'
+import roleRoutes from './routes/roles.js'
 
 dotenv.config()
 
@@ -12,7 +13,7 @@ const app = express()
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:3001', 'http://localhost:3000' ],
+  origin: ['http://localhost:5173', 'http://localhost:3001', 'http://localhost:3000', 'http://127.0.0.1:5173'],
   credentials: true
 }))
 app.use(express.json())
@@ -27,6 +28,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/branches', branchRoutes)
+app.use('/api/roles', roleRoutes)
 
 // 404 handler for undefined routes
 app.use('/api/*', (req, res) => {

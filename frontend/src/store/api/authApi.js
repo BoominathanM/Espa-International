@@ -17,6 +17,10 @@ export const authApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['Auth'],
     }),
+    getMe: builder.query({
+      query: () => '/auth/me',
+      providesTags: ['Auth'],
+    }),
   }),
 })
 

@@ -1,4 +1,5 @@
 import User from '../models/User.js'
+import Role from '../models/Role.js'
 import jwt from 'jsonwebtoken'
 
 // Generate JWT Token
@@ -48,6 +49,20 @@ export const login = async (req, res) => {
       })
     }
 
+    // Get role permissions
+    const role = await Role.findOne({ name: user.role })
+    let permissions = {}
+    if (role && role.permissions) {
+      // Convert Map to Object
+      if (role.permissions instanceof Map) {
+        role.permissions.forEach((value, key) => {
+          permissions[key] = value
+        })
+      } else {
+        permissions = role.permissions
+      }
+    }
+
     // Generate token
     const token = generateToken(user._id)
 
@@ -64,6 +79,7 @@ export const login = async (req, res) => {
       } : null,
       status: user.status || 'active',
       phoneNumbers: Array.isArray(user.phoneNumbers) ? user.phoneNumbers : [],
+      permissions: permissions,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     }
@@ -114,7 +130,20 @@ export const getMe = async (req, res) => {
       })
     }
 
-    // Prepare user data - handle null/empty values properly
+    // Get role permissions
+    const role = await Role.findOne({ name: user.role })
+    let permissions = {}
+    if (role && role.permissions) {
+      // Convert Map to Object
+      if (role.permissions instanceof Map) {
+        role.permissions.forEach((value, key) => {
+          permissions[key] = value
+        })
+      } else {
+        permissions = role.permissions
+      }
+    }
+
     const userData = {
       _id: user._id.toString(),
       id: user._id.toString(),
@@ -124,26 +153,17 @@ export const getMe = async (req, res) => {
       branch: user.branch ? {
         _id: user.branch._id?.toString() || user.branch.toString(),
         name: user.branch.name || '',
-        address: user.branch.address || '',
-        phone: user.branch.phone || '',
-        email: user.branch.email || '',
       } : null,
       status: user.status || 'active',
       phoneNumbers: Array.isArray(user.phoneNumbers) ? user.phoneNumbers : [],
+      permissions: permissions,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     }
 
-    res.json({ 
-      success: true, 
-      user: userData 
-    })
+    res.json({ success: true, user: userData })
   } catch (error) {
     console.error('Get me error:', error)
-    res.status(500).json({ 
-      success: false,
-      message: 'Server error',
-      error: error.message 
-    })
+    res.status(500).json({ message: 'Server error' })
   }
 }
