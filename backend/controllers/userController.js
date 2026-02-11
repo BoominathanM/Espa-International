@@ -90,6 +90,13 @@ export const createUser = async (req, res) => {
 
     await user.save()
 
+    // If branch is assigned, add user to branch's assignedUsers array
+    if (branch) {
+      await Branch.findByIdAndUpdate(branch, {
+        $addToSet: { assignedUsers: user._id },
+      })
+    }
+
     const savedUser = await User.findById(user._id)
       .select('-password')
       .populate('branch', 'name')
@@ -135,20 +142,43 @@ export const updateUser = async (req, res) => {
       user.password = password
     }
 
-    // Validate branch if provided
+    // Handle branch assignment changes
+    const oldBranchId = user.branch ? user.branch.toString() : null
+    let newBranchId = null
+
     if (branch !== undefined) {
       if (branch) {
         const branchExists = await Branch.findById(branch)
         if (!branchExists) {
           return res.status(400).json({ message: 'Branch not found' })
         }
+        newBranchId = branch.toString()
         user.branch = branch
       } else {
         user.branch = null
+        newBranchId = null
       }
+    } else {
+      // If branch is not being changed, keep the current branch
+      newBranchId = oldBranchId
     }
 
     await user.save()
+
+    // Update branch assignedUsers arrays
+    // Remove from old branch if branch changed
+    if (oldBranchId && oldBranchId !== newBranchId) {
+      await Branch.findByIdAndUpdate(oldBranchId, {
+        $pull: { assignedUsers: user._id },
+      })
+    }
+
+    // Add to new branch if branch is being assigned
+    if (newBranchId && newBranchId !== oldBranchId) {
+      await Branch.findByIdAndUpdate(newBranchId, {
+        $addToSet: { assignedUsers: user._id },
+      })
+    }
 
     const updatedUser = await User.findById(user._id)
       .select('-password')

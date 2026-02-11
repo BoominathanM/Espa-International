@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Layout as AntLayout, Menu, Avatar, Dropdown, Badge, Breadcrumb, Drawer } from 'antd'
+import { Layout as AntLayout, Menu, Avatar, Dropdown, Badge, Breadcrumb, Drawer, Form, Input, Button, message, Space, Divider } from 'antd'
 import {
   DashboardOutlined,
   UserOutlined,
@@ -13,12 +13,16 @@ import {
   BellOutlined,
   LogoutOutlined,
   FileTextOutlined,
+  LockOutlined,
+  MailOutlined,
+  BankOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { hasPermission } from '../utils/permissions'
+import { hasPermission, isSuperAdmin } from '../utils/permissions'
 import { useResponsive } from '../hooks/useResponsive'
-import { useLogoutMutation } from '../store/api/authApi'
+import { useLogoutMutation, useChangePasswordMutation, useGetMeQuery } from '../store/api/authApi'
 
 const { Header, Sider, Content } = AntLayout
 
@@ -28,8 +32,45 @@ const Layout = ({ children }) => {
   const { isMobile, isTablet, isSmallLaptop } = useResponsive()
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, logout } = useAuth()
+  const { user, logout, login } = useAuth()
   const [logoutMutation] = useLogoutMutation()
+  const [changePasswordMutation] = useChangePasswordMutation()
+  const [profileDrawerVisible, setProfileDrawerVisible] = useState(false)
+  const [showChangePasswordForm, setShowChangePasswordForm] = useState(false)
+  const [changePasswordForm] = Form.useForm()
+  
+  // Fetch fresh user data when profile drawer opens
+  const { data: currentUserData, refetch: refetchUser } = useGetMeQuery(undefined, {
+    skip: !profileDrawerVisible, // Only fetch when drawer is open
+  })
+  
+  // Update user data when fresh data is fetched
+  useEffect(() => {
+    if (profileDrawerVisible && currentUserData?.success && currentUserData?.user) {
+      const freshUserData = {
+        _id: currentUserData.user._id || currentUserData.user.id,
+        id: currentUserData.user._id || currentUserData.user.id,
+        name: currentUserData.user.name || '',
+        email: currentUserData.user.email || '',
+        role: currentUserData.user.role || 'staff',
+        branch: currentUserData.user.branch || null,
+        status: currentUserData.user.status || 'active',
+        phone: currentUserData.user.phone || '',
+        permissions: currentUserData.user.permissions || user?.permissions || {},
+      }
+      // Update localStorage and context
+      localStorage.setItem('crm_user', JSON.stringify(freshUserData))
+      login(freshUserData)
+    }
+  }, [profileDrawerVisible, currentUserData, login, user?.permissions])
+  
+  // Use fresh user data from API if available, otherwise fall back to context user
+  const displayUser = currentUserData?.success && currentUserData?.user 
+    ? {
+        ...currentUserData.user,
+        permissions: currentUserData.user.permissions || user?.permissions || {},
+      }
+    : user
 
   // Use drawer for mobile (< 576px), tablet (576px - 767px), and small laptop (768px - 992px)
   // Desktop (992px+) uses normal fixed sidebar
@@ -104,18 +145,9 @@ const Layout = ({ children }) => {
 
   const userMenuItems = [
     {
-      key: 'user-info',
-      label: (
-        <div style={{ padding: '8px 0', borderBottom: '1px solid #333' }}>
-          <div style={{ color: '#ffffff', fontWeight: 'bold', marginBottom: 4 }}>
-            {user?.name || 'User'}
-          </div>
-          <div style={{ color: '#D4AF37', fontSize: 12 }}>
-            {user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Staff'}
-          </div>
-        </div>
-      ),
-      disabled: true,
+      key: 'profile',
+      icon: <UserOutlined />,
+      label: 'Profile',
     },
     {
       type: 'divider',
@@ -129,8 +161,24 @@ const Layout = ({ children }) => {
   ]
 
   const handleUserMenuClick = ({ key }) => {
-    if (key === 'logout') {
+    if (key === 'profile') {
+      setProfileDrawerVisible(true)
+    } else if (key === 'logout') {
       handleLogout()
+    }
+  }
+
+  const handleChangePassword = async (values) => {
+    try {
+      await changePasswordMutation({
+        currentPassword: values.currentPassword,
+        newPassword: values.newPassword,
+      }).unwrap()
+      message.success('Password changed successfully')
+      changePasswordForm.resetFields()
+      setShowChangePasswordForm(false)
+    } catch (error) {
+      message.error(error?.data?.message || 'Failed to change password')
     }
   }
 
@@ -300,14 +348,9 @@ const Layout = ({ children }) => {
                   onError={() => true}
                 />
                 {!isMobile && (
-                  <>
-                    <span style={{ color: '#ffffff', fontSize: isMobile ? 12 : 14 }}>
-                      {user?.name || 'User'}
-                    </span>
-                    <span style={{ color: '#D4AF37', fontSize: 12 }}>
-                      ({user?.role || 'staff'})
-                    </span>
-                  </>
+                  <span style={{ color: '#ffffff', fontSize: isMobile ? 12 : 14 }}>
+                    {user?.name || 'User'}
+                  </span>
                 )}
               </div>
             </Dropdown>
@@ -330,6 +373,188 @@ const Layout = ({ children }) => {
           {children}
         </Content>
       </AntLayout>
+
+      {/* Profile Drawer */}
+      <Drawer
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <UserOutlined style={{ color: '#D4AF37', fontSize: 20 }} />
+            <span style={{ color: '#D4AF37', fontSize: 18, fontWeight: 'bold' }}>Profile</span>
+          </div>
+        }
+        placement="right"
+        onClose={() => {
+          setProfileDrawerVisible(false)
+          setShowChangePasswordForm(false)
+          changePasswordForm.resetFields()
+        }}
+        open={profileDrawerVisible}
+        width={isMobile ? '100%' : 400}
+        bodyStyle={{ background: '#1a1a1a', padding: 24, display: 'flex', flexDirection: 'column', height: '100%' }}
+        headerStyle={{ background: '#1a1a1a', borderBottom: '1px solid #333' }}
+      >
+        <div style={{ color: '#ffffff', display: 'flex', flexDirection: 'column', flex: 1 }}>
+          {/* User Information */}
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <MailOutlined style={{ color: '#D4AF37', fontSize: 16 }} />
+              <div>
+                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Email</div>
+                <div style={{ color: '#ffffff', fontSize: 14 }}>{displayUser?.email || 'N/A'}</div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <BankOutlined style={{ color: '#D4AF37', fontSize: 16 }} />
+              <div>
+                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Branch</div>
+                <div style={{ color: '#ffffff', fontSize: 14 }}>
+                  {displayUser?.branch?.name || 'Not Assigned'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <SafetyOutlined style={{ color: '#D4AF37', fontSize: 16 }} />
+              <div>
+                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Role</div>
+                <div style={{ color: '#D4AF37', fontSize: 14, fontWeight: 'bold' }}>
+                  {displayUser?.role ? displayUser.role.charAt(0).toUpperCase() + displayUser.role.slice(1) : 'Staff'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Divider style={{ borderColor: '#333', margin: '24px 0' }} />
+
+          {/* Change Password Section - Only for Super Admin */}
+          {isSuperAdmin() && (
+            <div style={{ marginBottom: 32 }}>
+              {!showChangePasswordForm ? (
+                <Button
+                  type="primary"
+                  icon={<LockOutlined />}
+                  onClick={() => setShowChangePasswordForm(true)}
+                  block
+                  size="large"
+                  style={{
+                    background: '#D4AF37',
+                    borderColor: '#D4AF37',
+                    color: '#000',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Change Password
+                </Button>
+              ) : (
+                <div>
+                  <div style={{ color: '#D4AF37', fontSize: 16, fontWeight: 'bold', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <LockOutlined />
+                    Change Password
+                  </div>
+                  <Form
+                    form={changePasswordForm}
+                    onFinish={handleChangePassword}
+                    layout="vertical"
+                    requiredMark={false}
+                  >
+                    <Form.Item
+                      name="currentPassword"
+                      label={<span style={{ color: '#ffffff' }}>Current Password</span>}
+                      rules={[{ required: true, message: 'Please enter current password' }]}
+                    >
+                      <Input.Password
+                        placeholder="Enter current password"
+                        style={{ background: '#0a0a0a', border: '1px solid #333', color: '#ffffff' }}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      name="newPassword"
+                      label={<span style={{ color: '#ffffff' }}>New Password</span>}
+                      rules={[
+                        { required: true, message: 'Please enter new password' },
+                        { min: 6, message: 'Password must be at least 6 characters' },
+                      ]}
+                    >
+                      <Input.Password
+                        placeholder="Enter new password"
+                        style={{ background: '#0a0a0a', border: '1px solid #333', color: '#ffffff' }}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      name="confirmPassword"
+                      label={<span style={{ color: '#ffffff' }}>Confirm New Password</span>}
+                      dependencies={['newPassword']}
+                      rules={[
+                        { required: true, message: 'Please confirm new password' },
+                        ({ getFieldValue }) => ({
+                          validator(_, value) {
+                            if (!value || getFieldValue('newPassword') === value) {
+                              return Promise.resolve()
+                            }
+                            return Promise.reject(new Error('Passwords do not match'))
+                          },
+                        }),
+                      ]}
+                    >
+                      <Input.Password
+                        placeholder="Confirm new password"
+                        style={{ background: '#0a0a0a', border: '1px solid #333', color: '#ffffff' }}
+                      />
+                    </Form.Item>
+                    <Form.Item>
+                      <Space style={{ width: '100%' }} direction="vertical" size="middle">
+                        <Button
+                          type="primary"
+                          htmlType="submit"
+                          block
+                          style={{
+                            background: '#D4AF37',
+                            borderColor: '#D4AF37',
+                            color: '#000',
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          Change Password
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setShowChangePasswordForm(false)
+                            changePasswordForm.resetFields()
+                          }}
+                          block
+                          style={{
+                            borderColor: '#333',
+                            color: '#ffffff',
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </Space>
+                    </Form.Item>
+                  </Form>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ flex: 1, minHeight: 20 }}></div>
+
+          <Divider style={{ borderColor: '#333', margin: '24px 0' }} />
+
+          {/* Logout Button */}
+          <Button
+            type="primary"
+            danger
+            icon={<LogoutOutlined />}
+            onClick={handleLogout}
+            block
+            size="large"
+          >
+            Logout
+          </Button>
+        </div>
+      </Drawer>
     </AntLayout>
   )
 }

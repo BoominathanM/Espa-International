@@ -31,11 +31,11 @@ const Users = () => {
   const [form] = Form.useForm()
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
-  const [selectedCountryCode, setSelectedCountryCode] = useState('+1')
+  const [selectedCountryCode, setSelectedCountryCode] = useState('+91')
 
   // API hooks
   const { data: usersData, isLoading: usersLoading, refetch: refetchUsers } = useGetUsersQuery()
-  const { data: branchesData } = useGetBranchesQuery()
+  const { data: branchesData, refetch: refetchBranches } = useGetBranchesQuery()
   const [createUser, { isLoading: createLoading }] = useCreateUserMutation()
   const [updateUser, { isLoading: updateLoading }] = useUpdateUserMutation()
   const [deleteUser] = useDeleteUserMutation()
@@ -123,7 +123,7 @@ const Users = () => {
 
   const handleAdd = () => {
     setSelectedUser(null)
-    setSelectedCountryCode('+1')
+    setSelectedCountryCode('+91')
     form.resetFields()
     setIsModalVisible(true)
   }
@@ -134,7 +134,7 @@ const Users = () => {
     
     // Parse phone number if exists
     let phoneNumber = ''
-    let countryCode = '+1'
+    let countryCode = '+91'
     if (record.phone) {
       const parsed = parsePhoneNumber(record.phone)
       countryCode = parsed.dialCode
@@ -156,6 +156,8 @@ const Users = () => {
       await deleteUser(id).unwrap()
       message.success('User deleted successfully')
       refetchUsers()
+      // Refetch branches to update agent count and display
+      refetchBranches()
     } catch (error) {
       message.error(error?.data?.message || 'Failed to delete user')
     }
@@ -177,7 +179,16 @@ const Users = () => {
       delete formData.phoneNumber
       delete formData.countryCode
 
+      // Handle password update for edit mode
       if (selectedUser) {
+        // Only include password if new password is provided
+        if (values.newPassword) {
+          formData.password = values.newPassword
+        }
+        // Remove confirm password from form data
+        delete formData.confirmPassword
+        delete formData.newPassword
+
         await updateUser({
           id: selectedUser._id || selectedUser.id,
           ...formData,
@@ -189,8 +200,10 @@ const Users = () => {
       }
       setIsModalVisible(false)
       form.resetFields()
-      setSelectedCountryCode('+1')
+      setSelectedCountryCode('+91')
       refetchUsers()
+      // Refetch branches to update agent count and display
+      refetchBranches()
     } catch (error) {
       message.error(error?.data?.message || 'Operation failed')
     }
@@ -251,7 +264,7 @@ const Users = () => {
           initialValues={{
             role: 'staff',
             status: 'active',
-            countryCode: '+1',
+            countryCode: '+91',
           }}
         >
           <Form.Item
@@ -277,10 +290,47 @@ const Users = () => {
             <Form.Item
               name="password"
               label="Password"
-              rules={[{ required: true, message: 'Please enter password' }]}
+              rules={[
+                { required: true, message: 'Please enter password' },
+                { min: 6, message: 'Password must be at least 6 characters' },
+              ]}
             >
               <Input.Password placeholder="Enter password (min 6 characters)" />
             </Form.Item>
+          )}
+
+          {selectedUser && (
+            <>
+              <Form.Item
+                name="newPassword"
+                label="New Password"
+                rules={[
+                  { min: 6, message: 'Password must be at least 6 characters' },
+                ]}
+              >
+                <Input.Password placeholder="Enter new password (optional, min 6 characters)" />
+              </Form.Item>
+              <Form.Item
+                name="confirmPassword"
+                label="Confirm New Password"
+                dependencies={['newPassword']}
+                rules={[
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      if (!value || !getFieldValue('newPassword')) {
+                        return Promise.resolve()
+                      }
+                      if (value && getFieldValue('newPassword') === value) {
+                        return Promise.resolve()
+                      }
+                      return Promise.reject(new Error('Passwords do not match'))
+                    },
+                  }),
+                ]}
+              >
+                <Input.Password placeholder="Confirm new password" />
+              </Form.Item>
+            </>
           )}
 
           <Form.Item
@@ -321,7 +371,7 @@ const Users = () => {
               <Form.Item
                 name="countryCode"
                 noStyle
-                initialValue="+1"
+                initialValue="+91"
                 rules={[{ required: true }]}
               >
                 <Select

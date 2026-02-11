@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Form, Input, Button, Card, Modal, App } from 'antd'
+import React from 'react'
+import { Form, Input, Button, Card, App, Tooltip } from 'antd'
 import { MailOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -8,9 +8,6 @@ import { getDefaultPermissions } from '../utils/permissions'
 
 const Login = () => {
   const { message } = App.useApp()
-  const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false)
-  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false)
-  const [forgotPasswordForm] = Form.useForm()
   const navigate = useNavigate()
   const { login } = useAuth()
   const [loginMutation, { isLoading: loginLoading }] = useLoginMutation()
@@ -56,24 +53,6 @@ const Login = () => {
     }
   }
 
-  const handleForgotPassword = (values) => {
-    setForgotPasswordLoading(true)
-    
-    // Mock forgot password - replace with actual API call
-    setTimeout(() => {
-      if (!values.email.endsWith('@gmail.com')) {
-        message.error('Please use a @gmail.com email address!')
-        setForgotPasswordLoading(false)
-        return
-      }
-      
-      // In production, this would send a password reset email
-      message.success('Password reset link has been sent to your email!')
-      setForgotPasswordVisible(false)
-      forgotPasswordForm.resetFields()
-      setForgotPasswordLoading(false)
-    }, 1000)
-  }
 
   return (
     <div
@@ -147,13 +126,14 @@ const Login = () => {
 
           <Form.Item style={{ marginBottom: 16 }}>
             <div style={{ textAlign: 'right' }}>
-              <Button
-                type="link"
-                onClick={() => setForgotPasswordVisible(true)}
-                style={{ color: '#D4AF37', padding: 0 }}
-              >
-                Forgot Password?
-              </Button>
+              <Tooltip title="Contact admin">
+                <Button
+                  type="link"
+                  style={{ color: '#D4AF37', padding: 0 }}
+                >
+                  Forgot Password?
+                </Button>
+              </Tooltip>
             </div>
           </Form.Item>
 
@@ -174,54 +154,6 @@ const Login = () => {
           </Form.Item>
         </Form>
       </Card>
-
-      <Modal
-        title="Forgot Password"
-        open={forgotPasswordVisible}
-        onCancel={() => {
-          setForgotPasswordVisible(false)
-          forgotPasswordForm.resetFields()
-        }}
-        footer={null}
-        width={400}
-      >
-        <Form
-          form={forgotPasswordForm}
-          layout="vertical"
-          onFinish={handleForgotPassword}
-        >
-          <Form.Item
-            name="email"
-            label="Email"
-            rules={[
-              { required: true, message: 'Please input your email!' },
-              { type: 'email', message: 'Please enter a valid email!' },
-            ]}
-          >
-            <Input
-              prefix={<MailOutlined />}
-              placeholder="Enter your email"
-              style={{ background: '#2a2a2a', borderColor: '#333', color: '#ffffff' }}
-            />
-          </Form.Item>
-
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={forgotPasswordLoading}
-              block
-              style={{
-                height: 40,
-                fontSize: 14,
-                fontWeight: 'bold',
-              }}
-            >
-              Send Reset Link
-            </Button>
-          </Form.Item>
-        </Form>
-      </Modal>
     </div>
   )
 }

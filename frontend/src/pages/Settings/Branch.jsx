@@ -33,7 +33,7 @@ const Branch = () => {
   const [form] = Form.useForm()
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedBranch, setSelectedBranch] = useState(null)
-  const [selectedCountryCode, setSelectedCountryCode] = useState('+1')
+  const [selectedCountryCode, setSelectedCountryCode] = useState('+91')
 
   // API hooks
   const { data: branchesData, isLoading: branchesLoading, refetch: refetchBranches } = useGetBranchesQuery()
@@ -152,7 +152,7 @@ const Branch = () => {
 
   const handleAdd = () => {
     setSelectedBranch(null)
-    setSelectedCountryCode('+1')
+    setSelectedCountryCode('+91')
     form.resetFields()
     setIsModalVisible(true)
   }
@@ -163,7 +163,7 @@ const Branch = () => {
     
     // Parse phone number if exists
     let phoneNumber = ''
-    let countryCode = '+1'
+    let countryCode = '+91'
     if (record.phone) {
       const parsed = parsePhoneNumber(record.phone)
       countryCode = parsed.dialCode
@@ -220,7 +220,7 @@ const Branch = () => {
       }
       setIsModalVisible(false)
       form.resetFields()
-      setSelectedCountryCode('+1')
+      setSelectedCountryCode('+91')
       refetchBranches()
       refetchUnassignedUsers()
     } catch (error) {
@@ -281,7 +281,7 @@ const Branch = () => {
           layout="vertical"
           onFinish={handleSubmit}
           initialValues={{
-            countryCode: '+1',
+            countryCode: '+91',
           }}
         >
           <Form.Item
@@ -308,7 +308,7 @@ const Branch = () => {
               <Form.Item
                 name="countryCode"
                 noStyle
-                initialValue="+1"
+                initialValue="+91"
                 rules={[{ required: true }]}
               >
                 <Select
