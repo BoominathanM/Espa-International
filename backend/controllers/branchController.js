@@ -1,5 +1,6 @@
 import Branch from '../models/Branch.js'
 import User from '../models/User.js'
+import Notification from '../models/Notification.js'
 
 // @desc    Get all branches
 // @route   GET /api/branches
@@ -190,21 +191,156 @@ export const updateBranch = async (req, res) => {
 // @access  Private (Super Admin only)
 export const deleteBranch = async (req, res) => {
   try {
-    const branch = await Branch.findById(req.params.id)
+    const { targetBranchId } = req.query // Optional: branch to move users to
+    const branch = await Branch.findById(req.params.id).populate('assignedUsers', 'name email')
+    
     if (!branch) {
       return res.status(404).json({ message: 'Branch not found' })
     }
 
-    // Remove branch reference from all assigned users
-    for (const userId of branch.assignedUsers) {
-      await User.findByIdAndUpdate(userId, { branch: null })
+    // Check if branch has assigned users
+    const userCount = branch.assignedUsers?.length || 0
+    
+    if (userCount > 0) {
+      // If no target branch provided, return error with user information
+      if (!targetBranchId) {
+        return res.status(400).json({ 
+          success: false,
+          message: `Cannot delete branch. ${userCount} user(s) are assigned to this branch. Please move users to another branch first.`,
+          userCount,
+          users: branch.assignedUsers.map(u => ({
+            _id: u._id,
+            name: u.name,
+            email: u.email
+          }))
+        })
+      }
+
+      // Validate target branch exists
+      const targetBranch = await Branch.findById(targetBranchId)
+      if (!targetBranch) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Target branch not found' 
+        })
+      }
+
+      // Check if target branch is the same as the branch being deleted
+      if (targetBranch._id.toString() === branch._id.toString()) {
+        return res.status(400).json({ 
+          success: false,
+          message: 'Cannot move users to the same branch' 
+        })
+      }
+
+      // Store user details for notifications
+      const movedUsers = []
+      
+      // Move all users to target branch
+      for (const userId of branch.assignedUsers) {
+        const user = await User.findById(userId)
+        if (user) {
+          // Remove from old branch's assignedUsers array
+          await Branch.findByIdAndUpdate(branch._id, {
+            $pull: { assignedUsers: userId }
+          })
+          
+          // Add to target branch's assignedUsers array
+          await Branch.findByIdAndUpdate(targetBranchId, {
+            $addToSet: { assignedUsers: userId }
+          })
+          
+          // Update user's branch reference
+          user.branch = targetBranchId
+          await user.save()
+          
+          movedUsers.push({
+            _id: user._id,
+            name: user.name,
+            email: user.email
+          })
+        }
+      }
+
+      // Create notifications for moved users
+      try {
+        const creatorName = req.user?.name || 'System Admin'
+        const creatorBranchName = req.user?.branch?.name || 'No Branch'
+        const targetBranchName = targetBranch.name
+        
+        // Notify each moved user individually
+        for (const movedUser of movedUsers) {
+          const userNotification = new Notification({
+            title: 'Branch Assignment Changed',
+            message: `Your branch assignment has been changed from "${branch.name}" to "${targetBranchName}" due to branch deletion.`,
+            type: 'warning',
+            user: movedUser._id,
+            role: null,
+            branch: targetBranchId,
+            createdBy: req.user?._id || null,
+          })
+          await userNotification.save()
+        }
+
+        // Notify superadmins about user movement
+        if (movedUsers.length > 0) {
+          const userNames = movedUsers.map(u => u.name).join(', ')
+          const adminNotification = new Notification({
+            title: 'Users Moved During Branch Deletion',
+            message: `${creatorName} (${creatorBranchName}) deleted branch "${branch.name}" and moved ${movedUsers.length} user(s) (${userNames}) to branch "${targetBranchName}".`,
+            type: 'info',
+            user: null,
+            role: 'superadmin',
+            branch: null,
+            createdBy: req.user?._id || null,
+          })
+          await adminNotification.save()
+        }
+      } catch (notificationError) {
+        // Don't fail deletion if notification fails
+        console.error('Failed to create user movement notifications:', notificationError)
+      }
     }
 
+    // Store branch name before deletion for notifications
+    const deletedBranchName = branch.name
+
+    // Now safe to delete the branch
     await Branch.findByIdAndDelete(req.params.id)
 
-    res.json({ success: true, message: 'Branch deleted successfully' })
+    // Create notification for branch deletion
+    try {
+      const creatorName = req.user?.name || 'System Admin'
+      const creatorBranchName = req.user?.branch?.name || 'No Branch'
+      const userCount = branch.assignedUsers?.length || 0
+      
+      const deletionNotification = new Notification({
+        title: 'Branch Deleted',
+        message: `${creatorName} (${creatorBranchName}) deleted branch "${deletedBranchName}".${userCount > 0 ? ` ${userCount} user(s) were moved to another branch.` : ''}`,
+        type: 'warning',
+        user: null,
+        role: 'superadmin', // Notify superadmins
+        branch: null,
+        createdBy: req.user?._id || null,
+      })
+      await deletionNotification.save()
+    } catch (notificationError) {
+      // Don't fail deletion if notification fails
+      console.error('Failed to create branch deletion notification:', notificationError)
+    }
+
+    res.json({ 
+      success: true, 
+      message: userCount > 0 
+        ? `Branch deleted successfully. ${userCount} user(s) moved to target branch.`
+        : 'Branch deleted successfully'
+    })
   } catch (error) {
     console.error('Delete branch error:', error)
-    res.status(500).json({ message: 'Server error' })
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error',
+      error: error.message 
+    })
   }
 }

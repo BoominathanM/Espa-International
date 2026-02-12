@@ -27,10 +27,17 @@ export const branchApi = apiSlice.injectEndpoints({
       invalidatesTags: ['Branch', 'User'],
     }),
     deleteBranch: builder.mutation({
-      query: (id) => ({
-        url: `/branches/${id}`,
-        method: 'DELETE',
-      }),
+      query: ({ id, targetBranchId }) => {
+        const params = new URLSearchParams()
+        if (targetBranchId) {
+          params.append('targetBranchId', targetBranchId)
+        }
+        const queryString = params.toString()
+        return {
+          url: `/branches/${id}${queryString ? `?${queryString}` : ''}`,
+          method: 'DELETE',
+        }
+      },
       invalidatesTags: ['Branch', 'User'],
     }),
   }),

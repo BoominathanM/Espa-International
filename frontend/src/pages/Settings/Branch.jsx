@@ -31,8 +31,11 @@ const Branch = () => {
   const { message } = App.useApp()
   const { isMobile } = useResponsive()
   const [form] = Form.useForm()
+  const [deleteForm] = Form.useForm()
   const [isModalVisible, setIsModalVisible] = useState(false)
+  const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false)
   const [selectedBranch, setSelectedBranch] = useState(null)
+  const [branchToDelete, setBranchToDelete] = useState(null)
   const [selectedCountryCode, setSelectedCountryCode] = useState('+91')
 
   // API hooks
@@ -133,16 +136,27 @@ const Branch = () => {
               >
                 Edit
               </Button>
-              <Popconfirm
-                title="Delete this branch?"
-                onConfirm={() => handleDelete(record._id || record.id)}
-                okText="Yes"
-                cancelText="No"
-              >
-                <Button type="link" danger icon={<DeleteOutlined />}>
+              {record.assignedUsers?.length > 0 ? (
+                <Button
+                  type="link"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => handleDeleteClick(record)}
+                >
                   Delete
                 </Button>
-              </Popconfirm>
+              ) : (
+                <Popconfirm
+                  title="Are you sure you want to delete this branch?"
+                  onConfirm={() => handleDelete(record._id || record.id)}
+                  okText="Yes"
+                  cancelText="No"
+                >
+                  <Button type="link" danger icon={<DeleteOutlined />}>
+                    Delete
+                  </Button>
+                </Popconfirm>
+              )}
             </>
           )}
         </Space>
@@ -180,14 +194,41 @@ const Branch = () => {
     setIsModalVisible(true)
   }
 
-  const handleDelete = async (id) => {
+  const handleDeleteClick = (record) => {
+    setBranchToDelete(record)
+    const userCount = record.assignedUsers?.length || 0
+    
+    if (userCount > 0) {
+      // Show modal to select target branch
+      setIsDeleteModalVisible(true)
+      deleteForm.resetFields()
+    }
+    // If no users, Popconfirm will handle the confirmation and call handleDelete
+  }
+
+  const handleDelete = async (id, targetBranchId = null) => {
     try {
-      await deleteBranch(id).unwrap()
+      await deleteBranch({ id, targetBranchId }).unwrap()
       message.success('Branch deleted successfully')
+      setIsDeleteModalVisible(false)
+      setBranchToDelete(null)
+      deleteForm.resetFields()
       refetchBranches()
       refetchUnassignedUsers()
     } catch (error) {
-      message.error(error?.data?.message || 'Failed to delete branch')
+      const errorMessage = error?.data?.message || 'Failed to delete branch'
+      message.error(errorMessage)
+      
+      // If error indicates users need to be moved, show the modal
+      if (error?.data?.userCount > 0 && !isDeleteModalVisible) {
+        setIsDeleteModalVisible(true)
+      }
+    }
+  }
+
+  const handleDeleteConfirm = async (values) => {
+    if (branchToDelete) {
+      await handleDelete(branchToDelete._id || branchToDelete.id, values.targetBranch)
     }
   }
 
@@ -426,6 +467,138 @@ const Branch = () => {
             </div>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Delete Branch Modal - Shows when branch has users */}
+      <Modal
+        title="Delete Branch"
+        open={isDeleteModalVisible}
+        onCancel={() => {
+          setIsDeleteModalVisible(false)
+          setBranchToDelete(null)
+          deleteForm.resetFields()
+        }}
+        footer={null}
+        width={isMobile ? '95%' : 500}
+      >
+        {branchToDelete && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ color: '#fff', marginBottom: 8 }}>
+                <strong>{branchToDelete.name}</strong> has{' '}
+                <strong style={{ color: '#ff4d4f' }}>
+                  {branchToDelete.assignedUsers?.length || 0} user(s)
+                </strong>{' '}
+                assigned to it.
+              </p>
+              <p style={{ color: '#ffa940', marginBottom: 0 }}>
+                You must move these users to another branch before deleting this branch.
+              </p>
+            </div>
+
+            {branchToDelete.assignedUsers && branchToDelete.assignedUsers.length > 0 && (
+              <div style={{ marginBottom: 16, padding: 12, background: '#2a2a2a', borderRadius: 4 }}>
+                <p style={{ color: '#fff', marginBottom: 8, fontWeight: 'bold' }}>
+                  Users to be moved:
+                </p>
+                <Space wrap>
+                  {branchToDelete.assignedUsers.map((user) => (
+                    <Tag key={user._id || user.id} color="blue">
+                      {user.name} ({user.email})
+                    </Tag>
+                  ))}
+                </Space>
+              </div>
+            )}
+
+            <Form
+              form={deleteForm}
+              layout="vertical"
+              onFinish={handleDeleteConfirm}
+            >
+              <Form.Item
+                name="targetBranch"
+                label="Move users to branch"
+                rules={[
+                  { 
+                    required: true, 
+                    message: 'Please select a branch to move users to' 
+                  }
+                ]}
+              >
+                <Select
+                  placeholder="Select target branch"
+                  showSearch
+                  filterOption={(input, option) =>
+                    (option?.children?.toLowerCase() || '').includes(input.toLowerCase())
+                  }
+                >
+                  {branches
+                    .filter((branch) => {
+                      const currentBranchId = branchToDelete?._id || branchToDelete?.id
+                      const branchId = branch._id || branch.id
+                      return branchId !== currentBranchId
+                    })
+                    .map((branch) => (
+                      <Option key={branch._id || branch.id} value={branch._id || branch.id}>
+                        {branch.name} ({branch.assignedUsers?.length || 0} users)
+                      </Option>
+                    ))}
+                </Select>
+              </Form.Item>
+
+              {branches.filter((branch) => {
+                const currentBranchId = branchToDelete?._id || branchToDelete?.id
+                const branchId = branch._id || branch.id
+                return branchId !== currentBranchId
+              }).length === 0 && (
+                <div style={{ marginBottom: 16, padding: 12, background: '#2a2a2a', borderRadius: 4 }}>
+                  <p style={{ color: '#ff4d4f', margin: 0 }}>
+                    <strong>Error:</strong> No other branches available. Please create another branch first before deleting this one.
+                  </p>
+                </div>
+              )}
+
+              <Form.Item>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: 8,
+                    width: '100%',
+                    justifyContent: 'flex-end',
+                  }}
+                >
+                  <Button
+                    onClick={() => {
+                      setIsDeleteModalVisible(false)
+                      setBranchToDelete(null)
+                      deleteForm.resetFields()
+                    }}
+                    style={{ width: isMobile ? '100%' : 'auto' }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="primary"
+                    danger
+                    htmlType="submit"
+                    disabled={
+                      branches.filter((branch) => {
+                        const currentBranchId = branchToDelete?._id || branchToDelete?.id
+                        const branchId = branch._id || branch.id
+                        return branchId !== currentBranchId
+                      }).length === 0
+                    }
+                    style={{ width: isMobile ? '100%' : 'auto' }}
+                  >
+                    Delete & Move Users
+                  </Button>
+                </div>
+              </Form.Item>
+            </Form>
+          </div>
+        )}
       </Modal>
     </div>
   )
