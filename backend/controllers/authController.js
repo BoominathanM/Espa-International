@@ -1,10 +1,38 @@
 import User from '../models/User.js'
 import Role from '../models/Role.js'
+import LoginHistory from '../models/LoginHistory.js'
 import jwt from 'jsonwebtoken'
+import { getGeolocationFromIP } from '../utils/geolocation.js'
 
 // Generate JWT Token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d' })
+}
+
+// Helper function to get client IP address
+const getClientIp = (req) => {
+  // Check for IP in various headers (for proxies/load balancers)
+  const forwarded = req.headers['x-forwarded-for']
+  const realIp = req.headers['x-real-ip']
+  const cfConnectingIp = req.headers['cf-connecting-ip'] // Cloudflare
+  
+  if (forwarded) {
+    // x-forwarded-for can contain multiple IPs, take the first one
+    return forwarded.split(',')[0].trim()
+  }
+  if (realIp) {
+    return realIp
+  }
+  if (cfConnectingIp) {
+    return cfConnectingIp
+  }
+  // Fallback to connection remote address
+  return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'Unknown'
+}
+
+// Helper function to get user agent
+const getUserAgent = (req) => {
+  return req.headers['user-agent'] || ''
 }
 
 // @desc    Login user
@@ -14,8 +42,27 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body
 
+    // Get IP address and user agent
+    const ipAddress = getClientIp(req)
+    const userAgent = getUserAgent(req)
+
     // Validate input
     if (!email || !password) {
+      // Log failed attempt (no email provided)
+      try {
+        // Fetch geolocation data
+        const geolocation = await getGeolocationFromIP(ipAddress)
+        await LoginHistory.create({
+          email: email || 'unknown',
+          ipAddress,
+          status: 'Failed',
+          userAgent,
+          ...(geolocation || {}),
+        })
+      } catch (logError) {
+        console.error('Failed to log login attempt:', logError)
+      }
+      
       return res.status(400).json({ 
         success: false,
         message: 'Please provide email and password' 
@@ -26,6 +73,21 @@ export const login = async (req, res) => {
     const user = await User.findOne({ email: email.toLowerCase() }).populate('branch', 'name')
 
     if (!user) {
+      // Log failed attempt (user not found)
+      try {
+        // Fetch geolocation data
+        const geolocation = await getGeolocationFromIP(ipAddress)
+        await LoginHistory.create({
+          email: email.toLowerCase(),
+          ipAddress,
+          status: 'Failed',
+          userAgent,
+          ...(geolocation || {}),
+        })
+      } catch (logError) {
+        console.error('Failed to log login attempt:', logError)
+      }
+      
       return res.status(401).json({ 
         success: false,
         message: 'Invalid credentials' 
@@ -34,6 +96,22 @@ export const login = async (req, res) => {
 
     // Check if user is active
     if (user.status !== 'active') {
+      // Log failed attempt (inactive account)
+      try {
+        // Fetch geolocation data
+        const geolocation = await getGeolocationFromIP(ipAddress)
+        await LoginHistory.create({
+          user: user._id,
+          email: email.toLowerCase(),
+          ipAddress,
+          status: 'Failed',
+          userAgent,
+          ...(geolocation || {}),
+        })
+      } catch (logError) {
+        console.error('Failed to log login attempt:', logError)
+      }
+      
       return res.status(401).json({ 
         success: false,
         message: 'Your account has been deactivated' 
@@ -43,6 +121,22 @@ export const login = async (req, res) => {
     // Check password
     const isPasswordValid = await user.comparePassword(password)
     if (!isPasswordValid) {
+      // Log failed attempt (wrong password)
+      try {
+        // Fetch geolocation data
+        const geolocation = await getGeolocationFromIP(ipAddress)
+        await LoginHistory.create({
+          user: user._id,
+          email: email.toLowerCase(),
+          ipAddress,
+          status: 'Failed',
+          userAgent,
+          ...(geolocation || {}),
+        })
+      } catch (logError) {
+        console.error('Failed to log login attempt:', logError)
+      }
+      
       return res.status(401).json({ 
         success: false,
         message: 'Invalid credentials' 
@@ -93,6 +187,23 @@ export const login = async (req, res) => {
       path: '/',
     }
     res.cookie('crm_token', token, cookieOptions)
+
+    // Log successful login attempt
+    try {
+      // Fetch geolocation data
+      const geolocation = await getGeolocationFromIP(ipAddress)
+      await LoginHistory.create({
+        user: user._id,
+        email: email.toLowerCase(),
+        ipAddress,
+        status: 'Success',
+        userAgent,
+        ...(geolocation || {}),
+      })
+    } catch (logError) {
+      // Don't fail login if logging fails
+      console.error('Failed to log successful login attempt:', logError)
+    }
 
     // Return user data (token is in HTTP-only cookie, user data goes to localStorage on frontend)
     res.json({

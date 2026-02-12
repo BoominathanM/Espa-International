@@ -8,12 +8,16 @@ import userRoutes from './routes/users.js'
 import branchRoutes from './routes/branches.js'
 import roleRoutes from './routes/roles.js'
 import notificationRoutes from './routes/notifications.js'
+import loginHistoryRoutes from './routes/loginHistory.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
 
 dotenv.config()
 
 const app = express()
+
+// Trust proxy for accurate IP address detection (important for production with load balancers/proxies)
+app.set('trust proxy', true)
 
 // Middleware
 // Get allowed origins from environment variables
@@ -64,6 +68,7 @@ app.use('/api/users', userRoutes)
 app.use('/api/branches', branchRoutes)
 app.use('/api/roles', roleRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.use('/api/login-history', loginHistoryRoutes)
 
 // 404 handler for undefined routes
 app.use('/api/*', (req, res) => {

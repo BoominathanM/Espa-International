@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { Table, Tag, Card, Tabs, Button, Space, message, Typography } from 'antd'
-import { CheckOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Table, Tag, Card, Tabs, Button, Space, message, Typography, Tooltip } from 'antd'
+import { CheckOutlined, DeleteOutlined, GlobalOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { 
   useGetAllNotificationsQuery, 
@@ -8,10 +8,13 @@ import {
   useMarkAllAsReadMutation, 
   useClearAllNotificationsMutation 
 } from '../../store/api/notificationApi'
+import { useGetLoginHistoryQuery } from '../../store/api/loginHistoryApi'
 
 const Logs = ({ defaultActiveTab }) => {
   const [notificationPage, setNotificationPage] = useState(1)
   const [notificationLimit] = useState(50)
+  const [loginHistoryPage, setLoginHistoryPage] = useState(1)
+  const [loginHistoryLimit] = useState(50)
   const [activeTab, setActiveTab] = useState(defaultActiveTab || 'chat')
   
   // Notification API hooks
@@ -23,8 +26,17 @@ const Logs = ({ defaultActiveTab }) => {
   const [markAllAsRead] = useMarkAllAsReadMutation()
   const [clearAllNotifications] = useClearAllNotificationsMutation()
   
+  // Login History API hooks
+  const { data: loginHistoryData, isLoading: loginHistoryLoading } = useGetLoginHistoryQuery({
+    page: loginHistoryPage,
+    limit: loginHistoryLimit,
+  })
+  
   const notifications = notificationsData?.notifications || []
   const notificationPagination = notificationsData?.pagination || { total: 0, page: 1, limit: 50, pages: 1 }
+  
+  const loginHistory = loginHistoryData?.loginHistory || []
+  const loginHistoryPagination = loginHistoryData?.pagination || { total: 0, page: 1, limit: 50, pages: 1 }
   
   const chatLogs = [
     {
@@ -69,32 +81,6 @@ const Logs = ({ defaultActiveTab }) => {
     },
   ]
 
-  const loginLogs = [
-    {
-      key: '1',
-      user: 'Admin User',
-      email: 'admin@gmail.com',
-      ip: '192.168.1.100',
-      status: 'Success',
-      timestamp: '2024-01-15 08:30:00',
-    },
-    {
-      key: '2',
-      user: 'Agent A',
-      email: 'agent@gmail.com',
-      ip: '192.168.1.101',
-      status: 'Success',
-      timestamp: '2024-01-15 08:45:00',
-    },
-    {
-      key: '3',
-      user: 'Unknown',
-      email: 'hacker@example.com',
-      ip: '192.168.1.200',
-      status: 'Failed',
-      timestamp: '2024-01-15 09:00:00',
-    },
-  ]
 
   const chatColumns = [
     {
@@ -122,6 +108,7 @@ const Logs = ({ defaultActiveTab }) => {
       title: 'Timestamp',
       dataIndex: 'timestamp',
       key: 'timestamp',
+      render: (timestamp) => dayjs(timestamp).format('MMM DD, YYYY HH:mm:ss'),
       sorter: (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
     },
   ]
@@ -155,6 +142,7 @@ const Logs = ({ defaultActiveTab }) => {
       title: 'Timestamp',
       dataIndex: 'timestamp',
       key: 'timestamp',
+      render: (timestamp) => dayjs(timestamp).format('MMM DD, YYYY HH:mm:ss'),
       sorter: (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
     },
   ]
@@ -164,29 +152,87 @@ const Logs = ({ defaultActiveTab }) => {
       title: 'User',
       dataIndex: 'user',
       key: 'user',
+      width: 120,
     },
     {
       title: 'Email',
       dataIndex: 'email',
       key: 'email',
+      width: 180,
     },
     {
       title: 'IP Address',
       dataIndex: 'ip',
       key: 'ip',
+      width: 130,
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      width: 100,
       render: (status) => (
         <Tag color={status === 'Success' ? 'green' : 'red'}>{status}</Tag>
       ),
     },
     {
+      title: 'Country',
+      dataIndex: 'country',
+      key: 'country',
+      width: 120,
+      render: (country) => country || '-',
+    },
+    {
+      title: 'Region/State',
+      dataIndex: 'region',
+      key: 'region',
+      width: 150,
+      render: (region) => region || '-',
+    },
+    {
+      title: 'City',
+      dataIndex: 'city',
+      key: 'city',
+      width: 120,
+      render: (city) => city || '-',
+    },
+    {
+      title: 'Postal Code',
+      dataIndex: 'postalCode',
+      key: 'postalCode',
+      width: 110,
+      render: (postalCode) => postalCode || '-',
+    },
+    {
+      title: 'Coordinates',
+      key: 'coordinates',
+      width: 150,
+      render: (_, record) => {
+        if (record.latitude && record.longitude) {
+          const coords = `${record.latitude.toFixed(4)}, ${record.longitude.toFixed(4)}`
+          const mapUrl = `https://www.google.com/maps?q=${record.latitude},${record.longitude}`
+          return (
+            <Tooltip title="Click to open in Google Maps">
+              <a
+                href={mapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: '#D4AF37' }}
+              >
+                <GlobalOutlined /> {coords}
+              </a>
+            </Tooltip>
+          )
+        }
+        return '-'
+      },
+    },
+    {
       title: 'Timestamp',
       dataIndex: 'timestamp',
       key: 'timestamp',
+      width: 180,
+      render: (timestamp) => dayjs(timestamp).format('MMM DD, YYYY HH:mm:ss'),
       sorter: (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
     },
   ]
@@ -403,8 +449,18 @@ const Logs = ({ defaultActiveTab }) => {
         <div className="table-responsive-wrapper">
           <Table
             columns={loginColumns}
-            dataSource={loginLogs}
-            pagination={{ pageSize: 10 }}
+            dataSource={loginHistory}
+            loading={loginHistoryLoading}
+            pagination={{
+              current: loginHistoryPagination.page,
+              pageSize: loginHistoryPagination.limit,
+              total: loginHistoryPagination.total,
+              showSizeChanger: false,
+              showTotal: (total) => `Total ${total} login attempts`,
+            }}
+            onChange={(pagination) => {
+              setLoginHistoryPage(pagination.current)
+            }}
             style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
           />
