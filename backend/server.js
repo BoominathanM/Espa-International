@@ -45,13 +45,52 @@ const getCorsOrigins = () => {
     origins.push(...customUrls)
   }
   
+  // Add common Vercel patterns (for production)
+  if (process.env.NODE_ENV === 'production') {
+    // Allow any Vercel deployment
+    origins.push(/^https:\/\/.*\.vercel\.app$/)
+    // Allow custom Vercel domains
+    if (process.env.VERCEL_URL) {
+      origins.push(`https://${process.env.VERCEL_URL}`)
+    }
+  }
+  
   // Default to localhost if no origins specified
   return origins.length > 0 ? origins : ['http://localhost:5173']
 }
 
+// CORS configuration with origin function for dynamic matching
 app.use(cors({
-  origin: getCorsOrigins(),
-  credentials: true
+  origin: (origin, callback) => {
+    const allowedOrigins = getCorsOrigins()
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true)
+    }
+    
+    // Check if origin matches any allowed origin (including regex patterns)
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (typeof allowedOrigin === 'string') {
+        return origin === allowedOrigin
+      } else if (allowedOrigin instanceof RegExp) {
+        return allowedOrigin.test(origin)
+      }
+      return false
+    })
+    
+    if (isAllowed) {
+      callback(null, true)
+    } else {
+      // Log for debugging
+      console.log(`CORS blocked origin: ${origin}`)
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Type']
 }))
 app.use(cookieParser())
 app.use(express.json())

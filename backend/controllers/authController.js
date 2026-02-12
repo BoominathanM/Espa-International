@@ -179,12 +179,14 @@ export const login = async (req, res) => {
     }
 
     // Set HTTP-only cookie with token only (7 days expiration)
+    // For cross-origin requests (Vercel frontend to Render backend), we need sameSite: 'none' and secure: true
     const cookieOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Only send over HTTPS in production
-      sameSite: 'lax',
+      secure: true, // Always use secure in production (HTTPS required)
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' for cross-origin in production
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
       path: '/',
+      // Don't set domain - let browser handle it for cross-origin
     }
     res.cookie('crm_token', token, cookieOptions)
 
@@ -225,8 +227,14 @@ export const login = async (req, res) => {
 // @access  Private
 export const logout = async (req, res) => {
   try {
-    // Clear token cookie only
-    res.clearCookie('crm_token', { path: '/' })
+    // Clear token cookie with same options as when it was set
+    const cookieOptions = {
+      httpOnly: true,
+      secure: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      path: '/',
+    }
+    res.clearCookie('crm_token', cookieOptions)
     
     res.json({ success: true, message: 'Logged out successfully' })
   } catch (error) {
