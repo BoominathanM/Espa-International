@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Layout as AntLayout, Menu, Avatar, Dropdown, Badge, Breadcrumb, Drawer, Form, Input, Button, message, Space, Divider } from 'antd'
+import { Layout as AntLayout, Menu, Avatar, Dropdown, Badge, Breadcrumb, Drawer, Form, Input, Button, message, Space, Divider, Empty, Typography, Popover } from 'antd'
 import {
   DashboardOutlined,
   UserOutlined,
@@ -17,12 +17,22 @@ import {
   MailOutlined,
   BankOutlined,
   SafetyOutlined,
+  CheckOutlined,
+  DeleteOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { hasPermission, isSuperAdmin } from '../utils/permissions'
 import { useResponsive } from '../hooks/useResponsive'
 import { useLogoutMutation, useChangePasswordMutation, useGetMeQuery } from '../store/api/authApi'
+import { 
+  useGetRecentNotificationsQuery, 
+  useMarkAsReadMutation, 
+  useMarkAllAsReadMutation, 
+  useClearAllNotificationsMutation 
+} from '../store/api/notificationApi'
+import dayjs from 'dayjs'
 
 const { Header, Sider, Content } = AntLayout
 
@@ -38,6 +48,18 @@ const Layout = ({ children }) => {
   const [profileDrawerVisible, setProfileDrawerVisible] = useState(false)
   const [showChangePasswordForm, setShowChangePasswordForm] = useState(false)
   const [changePasswordForm] = Form.useForm()
+  const [notificationVisible, setNotificationVisible] = useState(false)
+  
+  // Notification hooks
+  const { data: notificationsData, refetch: refetchNotifications } = useGetRecentNotificationsQuery(undefined, {
+    pollingInterval: 30000, // Poll every 30 seconds
+  })
+  const [markAsRead] = useMarkAsReadMutation()
+  const [markAllAsRead] = useMarkAllAsReadMutation()
+  const [clearAllNotifications] = useClearAllNotificationsMutation()
+  
+  const notifications = notificationsData?.notifications || []
+  const unreadCount = notificationsData?.unreadCount || 0
   
   // Fetch fresh user data when profile drawer opens
   const { data: currentUserData, refetch: refetchUser } = useGetMeQuery(undefined, {
@@ -180,6 +202,56 @@ const Layout = ({ children }) => {
     } catch (error) {
       message.error(error?.data?.message || 'Failed to change password')
     }
+  }
+
+  // Notification handlers
+  const handleMarkAsRead = async (notificationId, e) => {
+    e.stopPropagation()
+    try {
+      await markAsRead(notificationId).unwrap()
+      message.success('Notification marked as read')
+      refetchNotifications()
+    } catch (error) {
+      message.error('Failed to mark notification as read')
+    }
+  }
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await markAllAsRead().unwrap()
+      message.success('All notifications marked as read')
+      refetchNotifications()
+    } catch (error) {
+      message.error('Failed to mark all as read')
+    }
+  }
+
+  const handleClearAll = async () => {
+    try {
+      await clearAllNotifications().unwrap()
+      message.success('All notifications cleared')
+      refetchNotifications()
+      setNotificationVisible(false)
+    } catch (error) {
+      message.error('Failed to clear notifications')
+    }
+  }
+
+  const handleViewAll = () => {
+    setNotificationVisible(false)
+    // Navigate to settings and open notification logs tab
+    navigate('/settings?tab=notifications')
+  }
+
+  // Get notification type color
+  const getNotificationTypeColor = (type) => {
+    const colors = {
+      info: '#1890ff',
+      success: '#52c41a',
+      warning: '#faad14',
+      error: '#ff4d4f',
+    }
+    return colors[type] || colors.info
   }
 
   // Generate breadcrumbs
@@ -330,9 +402,154 @@ const Layout = ({ children }) => {
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 12 : 24 }}>
-            <Badge count={5}>
-              <BellOutlined style={{ fontSize: isMobile ? 18 : 20, color: '#ffffff', cursor: 'pointer' }} />
-            </Badge>
+            <Popover
+              content={
+                <div style={{ width: isMobile ? 280 : 360, maxHeight: 500, overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid #333' }}>
+                    <Typography.Text strong style={{ color: '#D4AF37', fontSize: 16 }}>
+                      Notifications
+                    </Typography.Text>
+                    <Space>
+                      {unreadCount > 0 && (
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<CheckOutlined />}
+                          onClick={handleMarkAllAsRead}
+                          style={{ color: '#D4AF37' }}
+                        >
+                          Mark all read
+                        </Button>
+                      )}
+                      {notifications.length > 0 && (
+                        <Button
+                          type="text"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={handleClearAll}
+                        >
+                          Clear all
+                        </Button>
+                      )}
+                    </Space>
+                  </div>
+                  
+                  {notifications.length === 0 ? (
+                    <Empty
+                      description={<span style={{ color: '#888' }}>No notifications</span>}
+                      style={{ padding: '20px 0' }}
+                    />
+                  ) : (
+                    <div>
+                      {notifications.map((notification) => (
+                        <div
+                          key={notification._id}
+                          style={{
+                            padding: '12px',
+                            marginBottom: 8,
+                            background: notification.isRead ? '#1a1a1a' : '#252525',
+                            borderRadius: 4,
+                            border: `1px solid ${notification.isRead ? '#333' : getNotificationTypeColor(notification.type)}`,
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'all 0.2s',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = notification.isRead ? '#252525' : '#2a2a2a'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = notification.isRead ? '#1a1a1a' : '#252525'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                <div
+                                  style={{
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: '50%',
+                                    background: getNotificationTypeColor(notification.type),
+                                    flexShrink: 0,
+                                  }}
+                                />
+                                <Typography.Text
+                                  strong
+                                  style={{
+                                    color: notification.isRead ? '#888' : '#ffffff',
+                                    fontSize: 13,
+                                  }}
+                                >
+                                  {notification.title}
+                                </Typography.Text>
+                              </div>
+                              <Typography.Text
+                                style={{
+                                  color: notification.isRead ? '#666' : '#aaa',
+                                  fontSize: 12,
+                                  display: 'block',
+                                  marginBottom: 4,
+                                }}
+                              >
+                                {notification.message}
+                              </Typography.Text>
+                              <Typography.Text
+                                style={{
+                                  color: '#666',
+                                  fontSize: 11,
+                                }}
+                              >
+                                {dayjs(notification.createdAt).format('MMM DD, YYYY HH:mm')}
+                              </Typography.Text>
+                            </div>
+                            {!notification.isRead && (
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<CheckOutlined />}
+                                onClick={(e) => handleMarkAsRead(notification._id, e)}
+                                style={{
+                                  color: '#D4AF37',
+                                  padding: '0 4px',
+                                  minWidth: 'auto',
+                                  height: 'auto',
+                                }}
+                                title="Mark as read"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #333', textAlign: 'center' }}>
+                        {isSuperAdmin() && (
+                          <Button
+                            type="link"
+                            icon={<EyeOutlined />}
+                            onClick={handleViewAll}
+                            style={{ color: '#D4AF37' }}
+                          >
+                            View All
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              }
+              title={null}
+              trigger="click"
+              placement="bottomRight"
+              open={notificationVisible}
+              onOpenChange={setNotificationVisible}
+              overlayStyle={{ padding: 0 }}
+            >
+              <Badge count={unreadCount} offset={[-5, 5]}>
+                <BellOutlined 
+                  style={{ fontSize: isMobile ? 18 : 20, color: '#ffffff', cursor: 'pointer' }} 
+                />
+              </Badge>
+            </Popover>
             <Dropdown
               menu={{
                 items: userMenuItems,
