@@ -47,6 +47,43 @@ export const leadApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['Lead'],
     }),
+    exportLeads: builder.query({
+      query: (params = {}) => {
+        const { status, source, branch, assignedTo, search } = params
+        const queryParams = new URLSearchParams()
+        
+        if (status) queryParams.append('status', status)
+        if (source) queryParams.append('source', source)
+        if (branch) queryParams.append('branch', branch)
+        if (assignedTo) queryParams.append('assignedTo', assignedTo)
+        if (search) queryParams.append('search', search)
+        
+        const queryString = queryParams.toString()
+        return {
+          url: `/leads/export${queryString ? `?${queryString}` : ''}`,
+          responseHandler: async (response) => {
+            const blob = await response.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `leads_${new Date().toISOString().split('T')[0]}.csv`
+            document.body.appendChild(a)
+            a.click()
+            window.URL.revokeObjectURL(url)
+            document.body.removeChild(a)
+            return { success: true }
+          },
+        }
+      },
+    }),
+    importLeads: builder.mutation({
+      query: (leadsData) => ({
+        url: '/leads/import',
+        method: 'POST',
+        body: { leads: leadsData },
+      }),
+      invalidatesTags: ['Lead'],
+    }),
   }),
 })
 
@@ -56,4 +93,6 @@ export const {
   useCreateLeadMutation,
   useUpdateLeadMutation,
   useDeleteLeadMutation,
+  useLazyExportLeadsQuery,
+  useImportLeadsMutation,
 } = leadApi

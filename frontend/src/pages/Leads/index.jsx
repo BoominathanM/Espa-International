@@ -15,6 +15,8 @@ import {
   Popconfirm,
   Spin,
   App,
+  Upload,
+  Alert,
 } from 'antd'
 import {
   PlusOutlined,
@@ -27,6 +29,8 @@ import {
   ExportOutlined,
   UpOutlined,
   DownOutlined,
+  UploadOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { canCreate, canEdit, canDelete } from '../../utils/permissions'
@@ -36,6 +40,8 @@ import {
   useCreateLeadMutation,
   useUpdateLeadMutation,
   useDeleteLeadMutation,
+  useLazyExportLeadsQuery,
+  useImportLeadsMutation,
 } from '../../store/api/leadApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
@@ -50,6 +56,7 @@ const Leads = () => {
   const [form] = Form.useForm()
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [isTimelineVisible, setIsTimelineVisible] = useState(false)
+  const [isImportModalVisible, setIsImportModalVisible] = useState(false)
   const [selectedLead, setSelectedLead] = useState(null)
   const [showFilters, setShowFilters] = useState(false)
   
@@ -78,6 +85,8 @@ const Leads = () => {
   const [createLead, { isLoading: createLoading }] = useCreateLeadMutation()
   const [updateLead, { isLoading: updateLoading }] = useUpdateLeadMutation()
   const [deleteLeadMutation] = useDeleteLeadMutation()
+  const [exportLeads] = useLazyExportLeadsQuery()
+  const [importLeads, { isLoading: importLoading }] = useImportLeadsMutation()
 
   const leads = leadsData?.leads || []
   const branches = branchesData?.branches || []
@@ -133,19 +142,24 @@ const Leads = () => {
       key: 'source',
       render: (source) => {
         const colors = {
+          Add: 'orange',
           Call: 'gold',
           WhatsApp: 'green',
           Facebook: 'blue',
+          Insta: 'pink',
           Website: 'purple',
+          Import: 'cyan',
         }
         return <Tag color={colors[source] || 'default'}>{source}</Tag>
       },
       filters: [
+        { text: 'Add', value: 'Add' },
         { text: 'Call', value: 'Call' },
         { text: 'WhatsApp', value: 'WhatsApp' },
         { text: 'Facebook', value: 'Facebook' },
         { text: 'Insta', value: 'Insta' },
         { text: 'Website', value: 'Website' },
+        { text: 'Import', value: 'Import' },
       ],
       onFilter: (value, record) => record.source === value,
     },
@@ -240,7 +254,7 @@ const Leads = () => {
     setSelectedLead(null)
     form.resetFields()
     form.setFieldsValue({
-      source: 'Call',
+      source: 'Add',
       status: 'New',
     })
     setIsModalVisible(true)
@@ -260,7 +274,6 @@ const Leads = () => {
       branch: record.branchId,
       assignedTo: record.assignedToId,
       notes: record.notes,
-      createdAt: record.createdAt ? dayjs(record.createdAt) : null,
     })
     setIsModalVisible(true)
   }
@@ -289,7 +302,6 @@ const Leads = () => {
         branch: values.branch || null,
         assignedTo: values.assignedTo || null,
         notes: values.notes?.trim() || '',
-        createdAt: values.createdAt ? values.createdAt.toISOString() : undefined,
       }
 
       if (selectedLead) {
@@ -346,12 +358,238 @@ const Leads = () => {
       ].filter(Boolean)
     : []
 
-  const handleImport = () => {
-    messageApi.info('Import functionality will be implemented')
+  // CSV Parser function - handles quoted fields with commas
+  const parseCSV = (csvText) => {
+    const lines = csvText.split('\n').filter(line => line.trim())
+    if (lines.length < 2) {
+      throw new Error('CSV file must have at least a header row and one data row')
+    }
+
+    // Parse CSV line handling quoted fields
+    const parseCSVLine = (line) => {
+      const result = []
+      let current = ''
+      let inQuotes = false
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i]
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"'
+            i++ // Skip next quote
+          } else {
+            inQuotes = !inQuotes
+          }
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim())
+          current = ''
+        } else {
+          current += char
+        }
+      }
+      result.push(current.trim())
+      return result
+    }
+
+    // Parse header
+    const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''))
+    
+    // Allowed headers only (case-insensitive mapping)
+    const headerMap = {
+      'name': 'name',
+      'email': 'email',
+      'phone': 'phone',
+      'whatsapp': 'whatsapp',
+      'subject': 'subject',
+      'message': 'message',
+    }
+
+    // Check for disallowed headers
+    const disallowedHeaders = headers.filter(header => {
+      const normalized = header.toLowerCase().trim()
+      return !headerMap[normalized]
+    })
+
+    if (disallowedHeaders.length > 0) {
+      throw new Error(`Disallowed columns found: ${disallowedHeaders.join(', ')}. Only these columns are allowed: ${Object.keys(headerMap).join(', ')}`)
+    }
+
+    // Find column indices
+    const columnIndices = {}
+    headers.forEach((header, index) => {
+      const normalizedHeader = header.toLowerCase().trim()
+      if (headerMap[normalizedHeader]) {
+        columnIndices[headerMap[normalizedHeader]] = index
+      }
+    })
+
+    // Parse data rows
+    const leads = []
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, ''))
+      const lead = {}
+      
+      Object.keys(columnIndices).forEach(key => {
+        const index = columnIndices[key]
+        if (index !== undefined && values[index] && values[index].trim()) {
+          lead[key] = values[index].trim()
+        }
+      })
+
+      // Add all fields (validation will happen on backend)
+      leads.push(lead)
+    }
+
+    return leads
   }
 
-  const handleExport = () => {
-    messageApi.success('Exporting leads to Excel...')
+  const handleDownloadSample = async () => {
+    try {
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === ''
+      const baseUrl = isLocalhost
+        ? 'http://localhost:3001/api'
+        : 'https://espa-international.onrender.com/api'
+
+      const response = await fetch(`${baseUrl}/leads/import/sample`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to download sample')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'leads_import_sample.csv'
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
+      messageApi.success('Sample CSV file downloaded')
+    } catch (error) {
+      console.error('Download sample error:', error)
+      messageApi.error('Failed to download sample file')
+    }
+  }
+
+  const handleImport = () => {
+    setIsImportModalVisible(true)
+  }
+
+  const handleFileImport = async (file) => {
+    try {
+      const text = await file.text()
+      const leads = parseCSV(text)
+
+      if (leads.length === 0) {
+        messageApi.error('No valid leads found in the file. Please check the format.')
+        return
+      }
+
+      // Import leads
+      const result = await importLeads(leads).unwrap()
+      
+      // Show summary
+      const summary = `Import completed: ${result.results.success} successful, ${result.results.failed} failed, ${result.results.duplicates} duplicates`
+      
+      if (result.results.errors.length > 0) {
+        // Show errors in a detailed message
+        const errorDetails = result.results.errors
+          .slice(0, 10) // Show first 10 errors
+          .map(err => `Row ${err.row}: ${err.error}`)
+          .join('\n')
+        
+        messageApi.warning({
+          content: (
+            <div>
+              <p>{summary}</p>
+              {result.results.errors.length > 10 && (
+                <p style={{ fontSize: '12px', color: '#888' }}>
+                  Showing first 10 errors. Total errors: {result.results.errors.length}
+                </p>
+              )}
+              <pre style={{ 
+                background: '#2a2a2a', 
+                padding: 8, 
+                borderRadius: 4, 
+                fontSize: '11px',
+                maxHeight: '200px',
+                overflow: 'auto',
+                marginTop: 8
+              }}>
+                {errorDetails}
+              </pre>
+            </div>
+          ),
+          duration: 10,
+        })
+      } else {
+        messageApi.success(summary)
+      }
+
+      setIsImportModalVisible(false)
+      refetchLeads()
+    } catch (error) {
+      console.error('Import error:', error)
+      if (error?.data?.message) {
+        messageApi.error(error.data.message)
+      } else if (error.message) {
+        messageApi.error(error.message)
+      } else {
+        messageApi.error('Failed to import leads. Please check the file format.')
+      }
+    }
+  }
+
+  const handleExport = async () => {
+    try {
+      // Build query params
+      const params = new URLSearchParams()
+      if (filterStatus) params.append('status', filterStatus)
+      if (filterSource) params.append('source', filterSource)
+      if (filterBranch) params.append('branch', filterBranch)
+      if (searchText) params.append('search', searchText)
+
+      const queryString = params.toString()
+      
+      // Use the same base URL logic as apiSlice
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === ''
+      const baseUrl = isLocalhost
+        ? 'http://localhost:3001/api'
+        : 'https://espa-international.onrender.com/api'
+
+      const response = await fetch(`${baseUrl}/leads/export${queryString ? `?${queryString}` : ''}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || 'Export failed')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `leads_${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
+      messageApi.success('Leads exported successfully')
+    } catch (error) {
+      console.error('Export error:', error)
+      messageApi.error(error.message || 'Failed to export leads')
+    }
   }
 
   return (
@@ -411,11 +649,13 @@ const Leads = () => {
               value={filterSource}
               onChange={setFilterSource}
             >
+              <Option value="Add">Add</Option>
               <Option value="Call">Call</Option>
               <Option value="WhatsApp">WhatsApp</Option>
               <Option value="Facebook">Facebook</Option>
               <Option value="Insta">Insta</Option>
               <Option value="Website">Website</Option>
+              <Option value="Import">Import</Option>
             </Select>
             <Select 
               placeholder="Filter by Status" 
@@ -497,7 +737,7 @@ const Leads = () => {
           layout="vertical"
           onFinish={handleSubmit}
           initialValues={{
-            source: 'Call',
+            source: 'Add',
             status: 'New',
           }}
         >
@@ -556,6 +796,7 @@ const Leads = () => {
             rules={[{ required: true, message: 'Please select source' }]}
           >
             <Select placeholder="Select source">
+              <Option value="Add">Add</Option>
               <Option value="Call">Call</Option>
               <Option value="WhatsApp">WhatsApp</Option>
               <Option value="Facebook">Facebook</Option>
@@ -586,10 +827,6 @@ const Leads = () => {
 
           <Form.Item name="notes" label="Notes">
             <Input.TextArea rows={4} placeholder="Enter notes (optional)" />
-          </Form.Item>
-
-          <Form.Item name="createdAt" label="Created Date">
-            <DatePicker style={{ width: '100%' }} />
           </Form.Item>
 
           <Form.Item>
@@ -650,6 +887,62 @@ const Leads = () => {
             <Timeline items={timelineData} />
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title="Import Leads from CSV"
+        open={isImportModalVisible}
+        onCancel={() => setIsImportModalVisible(false)}
+        footer={null}
+        width={isMobile ? '95%' : 700}
+      >
+        <Alert
+          message="CSV Format Requirements"
+          description={
+            <div>
+              <p><strong>Mandatory Fields:</strong> Name, Phone</p>
+              <p><strong>Optional Fields:</strong> Email, WhatsApp, Subject, Message</p>
+              <p><strong style={{ color: '#ff4d4f' }}>Important:</strong> Only the above fields are allowed. Any other columns will be rejected.</p>
+              <p style={{ marginTop: 8, fontSize: '12px', color: '#888' }}>
+                • Duplicate email/phone entries (in file or database) will be rejected<br/>
+                • Source will be set to "Import" automatically<br/>
+                • Status will be set to "New" automatically<br/>
+                • Branch, Assigned To, Notes, and Status cannot be imported via CSV
+              </p>
+            </div>
+          }
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Button 
+            icon={<DownloadOutlined />} 
+            onClick={handleDownloadSample}
+            block
+            type="default"
+          >
+            Download Sample CSV File
+          </Button>
+          <Upload
+            accept=".csv"
+            beforeUpload={(file) => {
+              handleFileImport(file)
+              return false // Prevent auto upload
+            }}
+            showUploadList={false}
+          >
+            <Button icon={<UploadOutlined />} loading={importLoading} block type="primary">
+              Select CSV File to Import
+            </Button>
+          </Upload>
+        </Space>
+        <div style={{ marginTop: 16, fontSize: '12px', color: '#888' }}>
+          <p><strong>Allowed CSV Headers (case-insensitive):</strong></p>
+          <p style={{ fontSize: '11px', fontFamily: 'monospace', background: '#2a2a2a', padding: 8, borderRadius: 4 }}>
+            Name, Phone, Email, WhatsApp, Subject, Message
+          </p>
+        </div>
       </Modal>
     </div>
   )

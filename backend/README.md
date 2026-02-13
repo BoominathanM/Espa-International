@@ -64,6 +64,8 @@ Backend API server for ESPA International CRM system.
 - `POST /api/leads/website` - Create lead from website contact form (requires API key)
 - `POST /api/leads` - Create lead from frontend (requires auth)
 - `GET /api/leads` - Get all leads with filters and pagination (requires auth)
+- `GET /api/leads/export` - Export leads to CSV (requires auth)
+- `POST /api/leads/import` - Import leads from CSV (requires auth)
 - `GET /api/leads/:id` - Get single lead (requires auth)
 - `PUT /api/leads/:id` - Update lead (requires auth)
 - `DELETE /api/leads/:id` - Delete lead (requires superadmin)

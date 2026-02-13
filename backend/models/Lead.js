@@ -9,10 +9,11 @@ const leadSchema = new mongoose.Schema(
     },
     email: {
       type: String,
-      required: true,
+      required: false,
       lowercase: true,
       trim: true,
       match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
+      default: '',
     },
     phone: {
       type: String,
@@ -36,7 +37,7 @@ const leadSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ['Website', 'Call', 'WhatsApp', 'Facebook', 'Insta', 'Walk-in', 'Referral', 'Other'],
+      enum: ['Website', 'Call', 'WhatsApp', 'Facebook', 'Insta', 'Walk-in', 'Referral', 'Add', 'Import', 'Other'],
       default: 'Website',
       required: true,
     },
