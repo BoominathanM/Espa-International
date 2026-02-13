@@ -23,65 +23,83 @@ app.set('trust proxy', true)
 
 // Middleware
 // Get allowed origins from environment variables
-const allowedOrigins = [
-  'http://127.0.0.1:5500',
-  'http://localhost:5500',
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://espainternational.co.in',
-  'https://www.espainternational.co.in'
-]
-
-app.use(cors({
-  origin: function (origin, callback) {
-
-    // Allow tools like Postman
-    if (!origin) return callback(null, true)
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true)
+const getCorsOrigins = () => {
+  const origins = []
+  
+  // Add local development origins
+  if (process.env.NODE_ENV !== 'production') {
+    origins.push(
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5500',
+    )
+  }
+  
+  // Add production frontend URL
+  if (process.env.PRODUCTION_FRONTEND_URL) {
+    origins.push(process.env.PRODUCTION_FRONTEND_URL)
+  }
+  
+  // Add website URL for contact form integration
+  origins.push('https://www.espainternational.co.in')
+  origins.push('http://www.espainternational.co.in')
+  
+  // Add custom frontend URLs from environment
+  if (process.env.FRONTEND_URLS) {
+    const customUrls = process.env.FRONTEND_URLS.split(',').map(url => url.trim())
+    origins.push(...customUrls)
+  }
+  
+  // Add common Vercel patterns (for production)
+  if (process.env.NODE_ENV === 'production') {
+    // Allow any Vercel deployment
+    origins.push(/^https:\/\/.*\.vercel\.app$/)
+    // Allow custom Vercel domains
+    if (process.env.VERCEL_URL) {
+      origins.push(`https://${process.env.VERCEL_URL}`)
     }
-
-    console.log("❌ CORS blocked:", origin)
-    return callback(new Error("Not allowed by CORS"))
-  },
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization'],
-}))
+  }
+  
+  // Default to localhost if no origins specified
+  return origins.length > 0 ? origins : ['http://localhost:5173']
+}
 
 // CORS configuration with origin function for dynamic matching
-// app.use(cors({
-//   origin: (origin, callback) => {
-//     const allowedOrigins = getCorsOrigins()
+app.use(cors({
+  origin: (origin, callback) => {
+    const allowedOrigins = getCorsOrigins()
     
-//     // Allow requests with no origin (like mobile apps or curl requests)
-//     if (!origin) {
-//       return callback(null, true)
-//     }
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true)
+    }
     
-//     // Check if origin matches any allowed origin (including regex patterns)
-//     const isAllowed = allowedOrigins.some(allowedOrigin => {
-//       if (typeof allowedOrigin === 'string') {
-//         return origin === allowedOrigin
-//       } else if (allowedOrigin instanceof RegExp) {
-//         return allowedOrigin.test(origin)
-//       }
-//       return false
-//     })
+    // Check if origin matches any allowed origin (including regex patterns)
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (typeof allowedOrigin === 'string') {
+        return origin === allowedOrigin
+      } else if (allowedOrigin instanceof RegExp) {
+        return allowedOrigin.test(origin)
+      }
+      return false
+    })
     
-//     if (isAllowed) {
-//       callback(null, true)
-//     } else {
-//       // Log for debugging
-//       console.log(`CORS blocked origin: ${origin}`)
-//       callback(new Error('Not allowed by CORS'))
-//     }
-//   },
-//   credentials: true,
-//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
-//   exposedHeaders: ['Content-Type']
-// }))
+    if (isAllowed) {
+      callback(null, true)
+    } else {
+      // Log for debugging
+      console.log(`CORS blocked origin: ${origin}`)
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  exposedHeaders: ['Content-Type']
+}))
+app.options('*', cors())
 app.use(cookieParser())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
