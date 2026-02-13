@@ -36,7 +36,7 @@ const leadSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ['Website', 'Call', 'WhatsApp', 'Facebook', 'AI Bot', 'Walk-in', 'Referral', 'Other'],
+      enum: ['Website', 'Call', 'WhatsApp', 'Facebook', 'Insta', 'Walk-in', 'Referral', 'Other'],
       default: 'Website',
       required: true,
     },

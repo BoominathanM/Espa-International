@@ -54,7 +54,7 @@ export const createWebsiteLead = async (req, res) => {
 
       return res.status(200).json({
         success: true,
-        message: 'Lead updated successfully (duplicate prevented)',
+        message: 'Contact sent successfully (duplicate prevented)',
         lead: existingLead,
       })
     }
@@ -92,6 +92,74 @@ export const createWebsiteLead = async (req, res) => {
     })
   } catch (error) {
     console.error('Create website lead error:', error)
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      })
+    }
+    res.status(500).json({
+      success: false,
+      message: 'Server error. Please try again later.',
+    })
+  }
+}
+
+// @desc    Create lead (from frontend)
+// @route   POST /api/leads
+// @access  Private
+export const createLead = async (req, res) => {
+  try {
+    const { name, email, phone, whatsapp, subject, message, source, status, branch, assignedTo, notes } = req.body
+
+    // Validate required fields
+    if (!name || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name and phone are required fields',
+      })
+    }
+
+    // Validate email format if provided
+    if (email) {
+      const emailRegex = /^\S+@\S+\.\S+$/
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid email address',
+        })
+      }
+    }
+
+    // Create new lead
+    const lead = new Lead({
+      name: name.trim(),
+      email: email ? email.toLowerCase().trim() : '',
+      phone: phone.trim(),
+      whatsapp: whatsapp ? whatsapp.trim() : phone.trim(),
+      subject: subject ? subject.trim() : '',
+      message: message ? message.trim() : '',
+      source: source || 'Call',
+      status: status || 'New',
+      branch: branch || null,
+      assignedTo: assignedTo || null,
+      notes: notes ? notes.trim() : '',
+      lastInteraction: new Date(),
+    })
+
+    await lead.save()
+
+    const savedLead = await Lead.findById(lead._id)
+      .populate('branch', 'name')
+      .populate('assignedTo', 'name email')
+
+    res.status(201).json({
+      success: true,
+      message: 'Lead created successfully',
+      lead: savedLead,
+    })
+  } catch (error) {
+    console.error('Create lead error:', error)
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,

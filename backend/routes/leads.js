@@ -1,6 +1,7 @@
 import express from 'express'
 import {
   createWebsiteLead,
+  createLead,
   getLeads,
   getLead,
   updateLead,
@@ -14,6 +15,7 @@ const router = express.Router()
 router.post('/website', authenticateApiKey, createWebsiteLead)
 
 // Regular CRUD endpoints (protected with JWT)
+router.post('/', authenticate, createLead)
 router.get('/', authenticate, getLeads)
 router.get('/:id', authenticate, getLead)
 router.put('/:id', authenticate, updateLead)

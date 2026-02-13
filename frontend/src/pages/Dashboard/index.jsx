@@ -75,7 +75,6 @@ const Dashboard = () => {
     { name: 'WhatsApp', value: 25, color: '#25D366' },
     { name: 'Facebook', value: 20, color: '#1877F2' },
     { name: 'Insta', value: 18, color: '#E4405F' },
-    { name: 'AI Bot', value: 15, color: '#4A90E2' },
     { name: 'Website', value: 10, color: '#9B59B6' },
   ]
 
@@ -202,16 +201,6 @@ const Dashboard = () => {
     },
     {
       key: '3',
-      name: 'Mike Johnson',
-      mobile: '+91 9876543212',
-      source: 'AI Bot',
-      status: 'Follow-Up',
-      branch: 'Branch 1',
-      agent: 'Agent C',
-      date: dayjs(),
-    },
-    {
-      key: '4',
       name: 'Sarah Williams',
       mobile: '+91 9876543213',
       source: 'Insta',
@@ -221,7 +210,7 @@ const Dashboard = () => {
       date: dayjs().subtract(2, 'day'),
     },
     {
-      key: '5',
+      key: '4',
       name: 'David Brown',
       mobile: '+91 9876543214',
       source: 'Facebook',
@@ -244,7 +233,7 @@ const Dashboard = () => {
   const alerts = [
     { type: 'error', message: '8 missed calls need attention' },
     { type: 'warning', message: '5 unassigned leads' },
-    { type: 'info', message: '12 AI bot captured leads need follow-up' },
+    { type: 'info', message: 'Chatbot captured leads need follow-up' },
   ]
 
   const columns = [
@@ -268,7 +257,6 @@ const Dashboard = () => {
           WhatsApp: 'green',
           Facebook: 'blue',
           Insta: 'magenta',
-          'AI Bot': 'cyan',
           Website: 'purple',
         }
         return <Tag color={colors[source]}>{source}</Tag>

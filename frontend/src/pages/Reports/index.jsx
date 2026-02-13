@@ -99,7 +99,7 @@ const Reports = () => {
     { name: 'Call', value: 30, color: '#D4AF37' },
     { name: 'WhatsApp', value: 25, color: '#25D366' },
     { name: 'Facebook', value: 20, color: '#1877F2' },
-    { name: 'AI Bot', value: 15, color: '#4A90E2' },
+    { name: 'Insta', value: 15, color: '#4A90E2' },
     { name: 'Website', value: 10, color: '#9B59B6' },
   ]
 
