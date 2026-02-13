@@ -1,8 +1,12 @@
-import React from 'react'
-import { Card, Form, Input, Button, message, Tabs } from 'antd'
+import React, { useEffect } from 'react'
+import { Card, Form, Input, Button, message, Tabs, Switch, Spin, Alert } from 'antd'
 import { SaveOutlined } from '@ant-design/icons'
 import { isSuperAdmin } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
+import {
+  useGetWebsiteSettingsQuery,
+  useUpdateWebsiteSettingsMutation,
+} from '../../store/api/websiteSettingsApi'
 
 const API = () => {
   const { isMobile } = useResponsive()
@@ -10,6 +14,23 @@ const API = () => {
   const [whatsappForm] = Form.useForm()
   const [facebookForm] = Form.useForm()
   const [websiteForm] = Form.useForm()
+
+  // Website integration API hooks
+  const { data: settingsData, isLoading: isLoadingSettings, error: settingsError, refetch: refetchSettings } = useGetWebsiteSettingsQuery()
+  const [updateWebsiteSettings, { isLoading: isUpdatingWebsite }] = useUpdateWebsiteSettingsMutation()
+
+  const websiteSettings = settingsData?.settings
+
+  // Load website settings into form when data is available
+  useEffect(() => {
+    if (websiteSettings) {
+      websiteForm.setFieldsValue({
+        websiteUrl: websiteSettings.websiteUrl || '',
+        apiKey: websiteSettings.apiKey || '',
+        isActive: websiteSettings.isActive !== undefined ? websiteSettings.isActive : true,
+      })
+    }
+  }, [websiteSettings, websiteForm])
 
   const handleOzonetelSave = (values) => {
     message.success('Ozonetel API configuration saved')
@@ -26,9 +47,22 @@ const API = () => {
     // In production, this would save to backend
   }
 
-  const handleWebsiteSave = (values) => {
-    message.success('Website integration configuration saved')
-    // In production, this would save to backend
+  const handleWebsiteSave = async (values) => {
+    try {
+      const result = await updateWebsiteSettings({
+        websiteUrl: values.websiteUrl.trim(),
+        apiKey: values.apiKey.trim(),
+        isActive: values.isActive,
+      }).unwrap()
+
+      if (result.success) {
+        message.success('Website integration settings saved successfully')
+        refetchSettings() // Refresh the data
+      }
+    } catch (error) {
+      console.error('Save error:', error)
+      message.error(error?.data?.message || 'Failed to save settings. Please try again.')
+    }
   }
 
   const tabItems = [
@@ -256,89 +290,111 @@ const API = () => {
       label: 'Website Integration',
       children: (
         <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
-          <Form
-            form={websiteForm}
-            layout="vertical"
-            onFinish={handleWebsiteSave}
-            initialValues={{
-              websiteUrl: 'https://your-website.com',
-              apiKey: 'your_website_api_key',
-              apiSecret: 'your_website_api_secret',
-              webhookUrl: 'https://your-crm.com/api/webhooks/website',
-              leadCaptureEndpoint: '/api/leads/capture',
-            }}
-          >
-            <Form.Item
-              name="websiteUrl"
-              label="Website URL"
-              rules={[
-                { required: true, message: 'Please enter Website URL' },
-                { type: 'url', message: 'Please enter a valid URL' },
-              ]}
-            >
-              <Input placeholder="Enter Website URL (e.g., https://your-website.com)" />
-            </Form.Item>
+          {isLoadingSettings ? (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <Spin size="large" />
+              <p style={{ color: '#fff', marginTop: 16 }}>Loading settings...</p>
+            </div>
+          ) : settingsError ? (
+            <Alert
+              message="Error Loading Settings"
+              description={settingsError?.data?.message || 'Failed to load website integration settings. Please try again.'}
+              type="error"
+              showIcon
+              style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}
+            />
+          ) : (
+            <>
+              <Form
+                form={websiteForm}
+                layout="vertical"
+                onFinish={handleWebsiteSave}
+                initialValues={{
+                  websiteUrl: 'https://www.espainternational.co.in',
+                  apiKey: '',
+                  isActive: true,
+                }}
+              >
+                <Form.Item
+                  name="websiteUrl"
+                  label="Website URL"
+                  rules={[
+                    { required: true, message: 'Please enter Website URL' },
+                    { type: 'url', message: 'Please enter a valid URL (e.g., https://www.espainternational.co.in)' },
+                  ]}
+                >
+                  <Input 
+                    placeholder="Enter Website URL (e.g., https://www.espainternational.co.in)" 
+                  />
+                </Form.Item>
 
-            <Form.Item
-              name="apiKey"
-              label="API Key"
-              rules={[{ required: true, message: 'Please enter API Key' }]}
-            >
-              <Input.Password placeholder="Enter Website API Key" />
-            </Form.Item>
+                <Form.Item
+                  name="apiKey"
+                  label="API Key"
+                  rules={[{ required: true, message: 'Please enter API Key' }]}
+                  help="This API key will be used to authenticate requests from your website contact form."
+                >
+                  <Input.Password placeholder="Enter Website API Key" />
+                </Form.Item>
 
-            <Form.Item
-              name="apiSecret"
-              label="API Secret"
-              rules={[{ required: true, message: 'Please enter API Secret' }]}
-            >
-              <Input.Password placeholder="Enter Website API Secret" />
-            </Form.Item>
+                <Form.Item
+                  name="isActive"
+                  label="Integration Status"
+                  valuePropName="checked"
+                >
+                  <Switch 
+                    checkedChildren="Active" 
+                    unCheckedChildren="Inactive"
+                  />
+                </Form.Item>
 
-            <Form.Item
-              name="webhookUrl"
-              label="Webhook URL"
-              rules={[
-                { required: true, message: 'Please enter Webhook URL' },
-                { type: 'url', message: 'Please enter a valid URL' },
-              ]}
-            >
-              <Input placeholder="Enter Webhook URL for receiving leads" />
-            </Form.Item>
+                <Form.Item>
+                  <div style={{ 
+                    display: 'flex', 
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: 8,
+                    width: '100%'
+                  }}>
+                    {isSuperAdmin() && (
+                      <Button 
+                        type="primary" 
+                        htmlType="submit" 
+                        icon={<SaveOutlined />}
+                        loading={isUpdatingWebsite}
+                        style={{ width: isMobile ? '100%' : 'auto' }}
+                      >
+                        Save Configuration
+                      </Button>
+                    )}
+                    {!isSuperAdmin() && (
+                      <p style={{ color: '#ffffff', margin: 0 }}>
+                        Only Super Admin can configure API settings.
+                      </p>
+                    )}
+                  </div>
+                </Form.Item>
+              </Form>
 
-            <Form.Item
-              name="leadCaptureEndpoint"
-              label="Lead Capture Endpoint"
-              rules={[{ required: true, message: 'Please enter Lead Capture Endpoint' }]}
-            >
-              <Input placeholder="Enter Lead Capture Endpoint (e.g., /api/leads/capture)" />
-            </Form.Item>
-
-            <Form.Item>
               <div style={{ 
-                display: 'flex', 
-                flexDirection: isMobile ? 'column' : 'row',
-                gap: 8,
-                width: '100%'
+                marginTop: 24, 
+                padding: 16, 
+                background: '#2a2a2a', 
+                borderRadius: 4,
+                border: '1px solid #444'
               }}>
-                {isSuperAdmin() && (
-                  <Button 
-                    type="primary" 
-                    htmlType="submit" 
-                    icon={<SaveOutlined />}
-                    style={{ width: isMobile ? '100%' : 'auto' }}
-                  >
-                    Save Configuration
-                  </Button>
-                )}
-                {!isSuperAdmin() && (
-                  <p style={{ color: '#ffffff', margin: 0 }}>
-                    Only Super Admin can configure API settings.
-                  </p>
-                )}
+                <h4 style={{ color: '#D4AF37', marginBottom: 8 }}>Integration Information</h4>
+                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
+                  <strong>Endpoint:</strong> <code style={{ color: '#4CAF50' }}>POST /api/leads/website</code>
+                </p>
+                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
+                  <strong>Header Required:</strong> <code style={{ color: '#4CAF50' }}>X-API-Key: [Your API Key]</code>
+                </p>
+                <p style={{ color: '#ccc', margin: '8px 0 0 0', fontSize: '13px' }}>
+                  After saving, your website contact form can send leads to this endpoint using the configured API key.
+                </p>
               </div>
-            </Form.Item>
-          </Form>
+            </>
+          )}
         </Card>
       ),
     },

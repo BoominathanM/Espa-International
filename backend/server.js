@@ -9,6 +9,8 @@ import branchRoutes from './routes/branches.js'
 import roleRoutes from './routes/roles.js'
 import notificationRoutes from './routes/notifications.js'
 import loginHistoryRoutes from './routes/loginHistory.js'
+import leadRoutes from './routes/leads.js'
+import websiteSettingsRoutes from './routes/websiteSettings.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
 
@@ -30,7 +32,8 @@ const getCorsOrigins = () => {
       'http://localhost:5173',
       'http://localhost:3000',
       'http://localhost:3001',
-      'http://127.0.0.1:5173'
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5500',
     )
   }
   
@@ -38,6 +41,10 @@ const getCorsOrigins = () => {
   if (process.env.PRODUCTION_FRONTEND_URL) {
     origins.push(process.env.PRODUCTION_FRONTEND_URL)
   }
+  
+  // Add website URL for contact form integration
+  origins.push('https://www.espainternational.co.in')
+  origins.push('http://www.espainternational.co.in')
   
   // Add custom frontend URLs from environment
   if (process.env.FRONTEND_URLS) {
@@ -89,7 +96,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
   exposedHeaders: ['Content-Type']
 }))
 app.use(cookieParser())
@@ -108,6 +115,8 @@ app.use('/api/branches', branchRoutes)
 app.use('/api/roles', roleRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/login-history', loginHistoryRoutes)
+app.use('/api/leads', leadRoutes)
+app.use('/api/website-settings', websiteSettingsRoutes)
 
 // 404 handler for undefined routes
 app.use('/api/*', (req, res) => {
@@ -226,10 +235,24 @@ mongoose
     // Seed super admin if needed
     await seedSuperAdminIfNeeded()
     
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`✅ Server is running on port ${PORT}`)
       console.log(`✅ Health check: http://localhost:${PORT}/api/health`)
       console.log(`✅ Login endpoint: http://localhost:${PORT}/api/auth/login`)
+    })
+    
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${PORT} is already in use.`)
+        console.error(`❌ Please stop the process using port ${PORT} or use a different port.`)
+        console.error(`❌ On Windows, you can find and kill the process with:`)
+        console.error(`   netstat -ano | findstr :${PORT}`)
+        console.error(`   taskkill /PID <PID> /F`)
+        process.exit(1)
+      } else {
+        console.error('❌ Server error:', error.message)
+        process.exit(1)
+      }
     })
   })
   .catch((error) => {

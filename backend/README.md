@@ -14,10 +14,11 @@ Backend API server for ESPA International CRM system.
    - Copy `.env.example` to `.env` (or create `.env` file)
    - Update the MongoDB URI and JWT secret in `.env`:
      ```
-     PORT=3000
+     PORT=3001
      MONGODB_URI=mongodb+srv://boominathanaskeva_db:Boomi%40183724@boominathan.b5yavux.mongodb.net/e-spa
      JWT_SECRET=your_jwt_secret_key_change_in_production
      NODE_ENV=development
+     WEBSITE_API_KEY=esp_b3ed2ffba4d8d15a52b3eeca54f9b6dfeba5b8364dfafcc67c807784d32b5de4
      ```
 
 3. **Seed Super Admin**
@@ -59,6 +60,13 @@ Backend API server for ESPA International CRM system.
 - `PUT /api/branches/:id` - Update branch (requires superadmin)
 - `DELETE /api/branches/:id` - Delete branch (requires superadmin)
 
+### Leads
+- `POST /api/leads/website` - Create lead from website contact form (requires API key)
+- `GET /api/leads` - Get all leads (requires auth)
+- `GET /api/leads/:id` - Get single lead (requires auth)
+- `PUT /api/leads/:id` - Update lead (requires auth)
+- `DELETE /api/leads/:id` - Delete lead (requires superadmin)
+
 ## Features
 
 - User authentication with JWT
@@ -75,3 +83,6 @@ Backend API server for ESPA International CRM system.
 
 ### Branch
 - name, address, phone, email, assignedUsers
+
+### Lead
+- name, email, phone, whatsapp, subject, message, source, status, branch, assignedTo, notes, websiteUrl, ipAddress, lastInteraction
