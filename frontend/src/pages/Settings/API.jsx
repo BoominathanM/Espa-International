@@ -7,6 +7,10 @@ import {
   useGetWebsiteSettingsQuery,
   useUpdateWebsiteSettingsMutation,
 } from '../../store/api/websiteSettingsApi'
+import {
+  useGetOzonetelSettingsQuery,
+  useUpdateOzonetelSettingsMutation,
+} from '../../store/api/ozonetelSettingsApi'
 
 const API = () => {
   const { isMobile } = useResponsive()
@@ -18,8 +22,13 @@ const API = () => {
   // Website integration API hooks
   const { data: settingsData, isLoading: isLoadingSettings, error: settingsError, refetch: refetchSettings } = useGetWebsiteSettingsQuery()
   const [updateWebsiteSettings, { isLoading: isUpdatingWebsite }] = useUpdateWebsiteSettingsMutation()
-
   const websiteSettings = settingsData?.settings
+
+  // Ozonetel integration API hooks (only Super Admin can load/save)
+  const isSuperAdminUser = isSuperAdmin()
+  const { data: ozonetelData, isLoading: isLoadingOzonetel, error: ozonetelError, refetch: refetchOzonetel } = useGetOzonetelSettingsQuery(undefined, { skip: !isSuperAdminUser })
+  const [updateOzonetelSettings, { isLoading: isUpdatingOzonetel }] = useUpdateOzonetelSettingsMutation()
+  const ozonetelSettings = ozonetelData?.settings
 
   // Load website settings into form when data is available
   useEffect(() => {
@@ -32,9 +41,37 @@ const API = () => {
     }
   }, [websiteSettings, websiteForm])
 
-  const handleOzonetelSave = (values) => {
-    message.success('Ozonetel API configuration saved')
-    // In production, this would save to backend
+  // Load Ozonetel settings into form when data is available
+  useEffect(() => {
+    if (ozonetelSettings) {
+      ozonetelForm.setFieldsValue({
+        baseUrl: ozonetelSettings.baseUrl || 'https://cloudagent.ozonetel.com',
+        apiKey: ozonetelSettings.apiKey || '',
+        isActive: ozonetelSettings.isActive !== undefined ? ozonetelSettings.isActive : true,
+        defaultCampaign: ozonetelSettings.defaultCampaign || '',
+        campaignIdsText: (ozonetelSettings.campaignIds || []).join('\n'),
+      })
+    }
+  }, [ozonetelSettings, ozonetelForm])
+
+  const handleOzonetelSave = async (values) => {
+    try {
+      const campaignIdsText = values.campaignIdsText || ''
+      const campaignIds = campaignIdsText.split('\n').map((s) => s.trim()).filter(Boolean)
+      const result = await updateOzonetelSettings({
+        baseUrl: values.baseUrl.trim(),
+        apiKey: values.apiKey.trim(),
+        isActive: values.isActive,
+        defaultCampaign: (values.defaultCampaign || '').trim(),
+        campaignIds,
+      }).unwrap()
+      if (result.success) {
+        message.success('Ozonetel integration settings saved successfully')
+        refetchOzonetel()
+      }
+    } catch (error) {
+      message.error(error?.data?.message || 'Failed to save settings. Please try again.')
+    }
   }
 
   const handleWhatsAppSave = (values) => {
@@ -68,68 +105,133 @@ const API = () => {
   const tabItems = [
     {
       key: 'ozonetel',
-      label: 'Ozonetel API',
+      label: 'Ozonetel Integration',
       children: (
         <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
-          <Form
-            form={ozonetelForm}
-            layout="vertical"
-            onFinish={handleOzonetelSave}
-            initialValues={{
-              apiKey: 'your_ozonetel_api_key',
-              apiSecret: 'your_ozonetel_api_secret',
-              baseUrl: 'https://api.ozonetel.com',
-            }}
-          >
-            <Form.Item
-              name="apiKey"
-              label="API Key"
-              rules={[{ required: true, message: 'Please enter API key' }]}
-            >
-              <Input.Password placeholder="Enter Ozonetel API Key" />
-            </Form.Item>
+          {isLoadingOzonetel ? (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <Spin size="large" />
+              <p style={{ color: '#fff', marginTop: 16 }}>Loading settings...</p>
+            </div>
+          ) : ozonetelError ? (
+            <Alert
+              message={ozonetelError?.status === 403 ? 'Access restricted' : 'Error Loading Settings'}
+              description={ozonetelError?.status === 403 ? 'Only Super Admin can view and edit Ozonetel integration settings.' : (ozonetelError?.data?.message || 'Failed to load Ozonetel integration settings. Please try again.')}
+              type="warning"
+              showIcon
+              style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}
+            />
+          ) : !isSuperAdminUser ? (
+            <p style={{ color: '#888' }}>Only Super Admin can configure Ozonetel integration.</p>
+          ) : (
+            <>
+              <Form
+                form={ozonetelForm}
+                layout="vertical"
+                onFinish={handleOzonetelSave}
+                initialValues={{
+                  baseUrl: 'https://cloudagent.ozonetel.com',
+                  apiKey: '',
+                  isActive: true,
+                  defaultCampaign: '',
+                  campaignIdsText: '',
+                }}
+              >
+                <Form.Item
+                  name="baseUrl"
+                  label="CloudAgent Base URL"
+                  rules={[
+                    { required: true, message: 'Please enter Base URL' },
+                    { type: 'url', message: 'Please enter a valid URL' },
+                  ]}
+                  help="e.g. https://cloudagent.ozonetel.com"
+                >
+                  <Input placeholder="https://cloudagent.ozonetel.com" />
+                </Form.Item>
 
-            <Form.Item
-              name="apiSecret"
-              label="API Secret"
-              rules={[{ required: true, message: 'Please enter API secret' }]}
-            >
-              <Input.Password placeholder="Enter Ozonetel API Secret" />
-            </Form.Item>
+                <Form.Item
+                  name="apiKey"
+                  label="API Key"
+                  rules={[{ required: true, message: 'Please enter API Key' }]}
+                  help="From CloudAgent Admin → Settings → Admin Settings"
+                >
+                  <Input.Password placeholder="Enter CloudAgent API Key" />
+                </Form.Item>
 
-            <Form.Item
-              name="baseUrl"
-              label="Base URL"
-              rules={[{ required: true, message: 'Please enter base URL' }]}
-            >
-              <Input placeholder="Enter Ozonetel Base URL" />
-            </Form.Item>
+                <Form.Item
+                  name="isActive"
+                  label="Integration Status"
+                  valuePropName="checked"
+                >
+                  <Switch checkedChildren="Active" unCheckedChildren="Inactive" />
+                </Form.Item>
 
-            <Form.Item>
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: isMobile ? 'column' : 'row',
-                gap: 8,
-                width: '100%'
+                <Form.Item
+                  name="defaultCampaign"
+                  label="Default Campaign"
+                  help="Campaign name or ID used for Click-to-Call when not specified. Must match a campaign in CloudAgent."
+                >
+                  <Input placeholder="e.g. E-Spa International or Inb_918065480464" />
+                </Form.Item>
+
+                <Form.Item
+                  name="campaignIdsText"
+                  label="Campaign / Agent IDs (one per line)"
+                  help="List all your campaign or agent identifiers. Used for reference; Default Campaign above is used for outbound calls."
+                >
+                  <Input.TextArea
+                    rows={6}
+                    placeholder={'Inb_918065480464\nInb_918065480465\nInb_918065480463\nInbound_918049251475\nInb_918065867654\nInb_918065867653'}
+                  />
+                </Form.Item>
+
+                <Form.Item>
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: 8,
+                    width: '100%',
+                  }}>
+                    {isSuperAdmin() && (
+                      <Button
+                        type="primary"
+                        htmlType="submit"
+                        icon={<SaveOutlined />}
+                        loading={isUpdatingOzonetel}
+                        style={{ width: isMobile ? '100%' : 'auto' }}
+                      >
+                        Save Configuration
+                      </Button>
+                    )}
+                    {!isSuperAdmin() && (
+                      <p style={{ color: '#ffffff', margin: 0 }}>
+                        Only Super Admin can configure API settings.
+                      </p>
+                    )}
+                  </div>
+                </Form.Item>
+              </Form>
+
+              <div style={{
+                marginTop: 24,
+                padding: 16,
+                background: '#2a2a2a',
+                borderRadius: 4,
+                border: '1px solid #444',
               }}>
-                {isSuperAdmin() && (
-                  <Button 
-                    type="primary" 
-                    htmlType="submit" 
-                    icon={<SaveOutlined />}
-                    style={{ width: isMobile ? '100%' : 'auto' }}
-                  >
-                    Save Configuration
-                  </Button>
-                )}
-                {!isSuperAdmin() && (
-                  <p style={{ color: '#ffffff', margin: 0 }}>
-                    Only Super Admin can configure API settings.
-                  </p>
-                )}
+                <h4 style={{ color: '#D4AF37', marginBottom: 8 }}>Integration Information</h4>
+                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
+                  <strong>Click-to-Call:</strong> <code style={{ color: '#4CAF50' }}>POST /api/cloudagent/make-call</code> (body: phoneNumber, agentId, optional campaignName)
+                </p>
+                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
+                  <strong>Webhook (URL to Push in CloudAgent):</strong> Set your backend URL + <code style={{ color: '#4CAF50' }}>/webhook/cloudagent-events</code>
+                </p>
+                <p style={{ color: '#ccc', margin: '8px 0 0 0', fontSize: '13px' }}>
+                  In CloudAgent Campaign Settings, set &quot;URL to Push&quot; to receive call events. Users need CloudAgent Agent ID set in User Management to use Call from Leads.
+                </p>
               </div>
-            </Form.Item>
-          </Form>
+            </>
+          )}
         </Card>
       ),
     },

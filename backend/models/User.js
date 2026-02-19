@@ -40,6 +40,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    cloudAgentAgentId: {
+      type: String,
+      default: '',
+      trim: true,
+    },
   },
   {
     timestamps: true,

@@ -11,6 +11,9 @@ import notificationRoutes from './routes/notifications.js'
 import loginHistoryRoutes from './routes/loginHistory.js'
 import leadRoutes from './routes/leads.js'
 import websiteSettingsRoutes from './routes/websiteSettings.js'
+import ozonetelSettingsRoutes from './routes/ozonetelSettings.js'
+import cloudAgentRoutes from './routes/cloudagent.js'
+import webhookRoutes from './routes/webhook.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
 
@@ -118,6 +121,9 @@ app.use('/api/notifications', notificationRoutes)
 app.use('/api/login-history', loginHistoryRoutes)
 app.use('/api/leads', leadRoutes)
 app.use('/api/website-settings', websiteSettingsRoutes)
+app.use('/api/ozonetel-settings', ozonetelSettingsRoutes)
+app.use('/api/cloudagent', cloudAgentRoutes)
+app.use('/webhook', webhookRoutes)
 
 // 404 handler for undefined routes
 app.use('/api/*', (req, res) => {

@@ -32,7 +32,7 @@ import {
   UploadOutlined,
   DownloadOutlined,
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { canCreate, canEdit, canDelete } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
@@ -45,6 +45,8 @@ import {
 } from '../../store/api/leadApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
+import { useGetCampaignsQuery, useMakeCallMutation } from '../../store/api/cloudAgentApi'
+import { useGetMeQuery } from '../../store/api/authApi'
 import dayjs from 'dayjs'
 
 const { RangePicker } = DatePicker
@@ -59,6 +61,9 @@ const Leads = () => {
   const [isImportModalVisible, setIsImportModalVisible] = useState(false)
   const [selectedLead, setSelectedLead] = useState(null)
   const [showFilters, setShowFilters] = useState(false)
+  const [isCallModalVisible, setIsCallModalVisible] = useState(false)
+  const [callLeadRecord, setCallLeadRecord] = useState(null)
+  const [callCampaign, setCallCampaign] = useState('')
   
   // Filter states
   const [searchText, setSearchText] = useState('')
@@ -69,6 +74,22 @@ const Leads = () => {
   const [pageSize, setPageSize] = useState(10)
 
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // Open Add Lead modal with phone prefilled when coming from Calls "Create Lead"
+  useEffect(() => {
+    const state = location.state
+    if (state?.createLeadFromCall && state?.phone) {
+      form.setFieldsValue({
+        phone: state.phone,
+        source: 'Call',
+        status: 'New',
+      })
+      setSelectedLead(null)
+      setIsModalVisible(true)
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [location.state, location.pathname, navigate])
 
   // API hooks
   const { data: leadsData, isLoading: leadsLoading, refetch: refetchLeads } = useGetLeadsQuery({
@@ -82,6 +103,12 @@ const Leads = () => {
 
   const { data: branchesData } = useGetBranchesQuery()
   const { data: usersData } = useGetUsersQuery()
+  const { data: meData } = useGetMeQuery()
+  const { data: campaignsData } = useGetCampaignsQuery()
+  const [makeCall, { isLoading: callLoading }] = useMakeCallMutation()
+
+  const campaignIds = campaignsData?.campaignIds || []
+  const defaultCampaign = campaignsData?.defaultCampaign || ''
   const [createLead, { isLoading: createLoading }] = useCreateLeadMutation()
   const [updateLead, { isLoading: updateLoading }] = useUpdateLeadMutation()
   const [deleteLeadMutation] = useDeleteLeadMutation()
@@ -212,6 +239,16 @@ const Leads = () => {
       width: 200,
       render: (_, record) => (
         <Space size="small">
+          {canCreate('calls') && record.mobile && (
+            <Button
+              type="link"
+              size="small"
+              icon={<PhoneOutlined />}
+              onClick={() => openCallModal(record)}
+            >
+              Call
+            </Button>
+          )}
           <Button
             type="link"
             size="small"
@@ -285,6 +322,47 @@ const Leads = () => {
       refetchLeads()
     } catch (error) {
       messageApi.error(error?.data?.message || 'Failed to delete lead')
+    }
+  }
+
+  const openCallModal = (record) => {
+    const phoneNumber = (record.mobile || record.phone || '').trim().replace(/\s/g, '')
+    if (!phoneNumber) {
+      messageApi.warning('No phone number for this lead')
+      return
+    }
+    const currentUser = meData?.user
+    const agentId = currentUser?.cloudAgentAgentId || ''
+    if (!agentId) {
+      messageApi.warning('Set your CloudAgent Agent ID in Settings → User Management (edit your user) to use Click-to-Call.')
+      return
+    }
+    setCallLeadRecord(record)
+    setCallCampaign(campaignsData?.defaultCampaign || campaignIds?.[0] || '')
+    setIsCallModalVisible(true)
+  }
+
+  const handleCloseCallModal = () => {
+    setIsCallModalVisible(false)
+    setCallLeadRecord(null)
+    setCallCampaign('')
+  }
+
+  const handleConfirmCall = async () => {
+    if (!callLeadRecord) return
+    const phoneNumber = (callLeadRecord.mobile || callLeadRecord.phone || '').trim().replace(/\s/g, '')
+    const agentId = meData?.user?.cloudAgentAgentId || ''
+    const campaignName = (callCampaign || defaultCampaign || campaignIds?.[0] || '').trim()
+    if (!campaignName) {
+      messageApi.warning('Select a campaign or set Default Campaign in Settings → Ozonetel Integration.')
+      return
+    }
+    try {
+      await makeCall({ phoneNumber, agentId, campaignName }).unwrap()
+      messageApi.success('Call initiated. You will be connected shortly.')
+      handleCloseCallModal()
+    } catch (error) {
+      messageApi.error(error?.data?.message || 'Call failed')
     }
   }
 
@@ -885,6 +963,57 @@ const Leads = () => {
               {selectedLead.notes && <p><strong>Notes:</strong> {selectedLead.notes}</p>}
             </div>
             <Timeline items={timelineData} />
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        title="Make Call"
+        open={isCallModalVisible}
+        onCancel={handleCloseCallModal}
+        footer={[
+          <Button key="cancel" onClick={handleCloseCallModal}>
+            Cancel
+          </Button>,
+          <Button
+            key="call"
+            type="primary"
+            icon={<PhoneOutlined />}
+            loading={callLoading}
+            onClick={handleConfirmCall}
+          >
+            Call
+          </Button>,
+        ]}
+        width={isMobile ? '95%' : 440}
+      >
+        {callLeadRecord && (
+          <div>
+            <p style={{ marginBottom: 8 }}>
+              <strong>Lead:</strong> {callLeadRecord.name}
+            </p>
+            <p style={{ marginBottom: 16 }}>
+              <strong>Phone:</strong> {callLeadRecord.mobile || callLeadRecord.phone}
+            </p>
+            <Form.Item label="Campaign" style={{ marginBottom: 0 }}>
+              <Select
+                placeholder="Select campaign"
+                value={callCampaign || undefined}
+                onChange={setCallCampaign}
+                style={{ width: '100%' }}
+                options={[
+                  ...(defaultCampaign && !campaignIds.includes(defaultCampaign)
+                    ? [{ value: defaultCampaign, label: `${defaultCampaign} (default)` }]
+                    : []),
+                  ...campaignIds.map((id) => ({ value: id, label: id })),
+                ].filter((opt, i, arr) => arr.findIndex((o) => o.value === opt.value) === i)}
+              />
+            </Form.Item>
+            {campaignIds.length === 0 && !defaultCampaign && (
+              <p style={{ color: '#faad14', fontSize: 12, marginTop: 8 }}>
+                Add Campaign / Agent IDs in Settings → API & Integrations → Ozonetel Integration.
+              </p>
+            )}
           </div>
         )}
       </Modal>

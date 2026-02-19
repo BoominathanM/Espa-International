@@ -147,6 +147,7 @@ const Users = () => {
       branch: branchId,
       phoneNumber: phoneNumber,
       countryCode: countryCode,
+      cloudAgentAgentId: record.cloudAgentAgentId || '',
     })
     setIsModalVisible(true)
   }
@@ -426,6 +427,14 @@ const Users = () => {
                 />
               </Form.Item>
             </Space.Compact>
+          </Form.Item>
+
+          <Form.Item
+            name="cloudAgentAgentId"
+            label="CloudAgent Agent ID"
+            extra="Optional. Required for Click-to-Call from Leads. Get this from CloudAgent Admin → Campaign → Agent IDs."
+          >
+            <Input placeholder="e.g. agent_123" />
           </Form.Item>
 
           <Form.Item>

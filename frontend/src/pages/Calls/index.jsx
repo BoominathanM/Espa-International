@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   Table,
   Button,
@@ -8,68 +8,73 @@ import {
   Tag,
   Card,
   Modal,
-  message,
-  Popconfirm,
+  Spin,
+  App,
 } from 'antd'
 import {
   PhoneOutlined,
   PlayCircleOutlined,
   UserAddOutlined,
   SearchOutlined,
-  DeleteOutlined,
   UpOutlined,
   DownOutlined,
 } from '@ant-design/icons'
-import { canCreate, canDelete } from '../../utils/permissions'
+import { useNavigate } from 'react-router-dom'
 import { useResponsive } from '../../hooks/useResponsive'
+import { useGetCallLogsQuery } from '../../store/api/cloudAgentApi'
 import dayjs from 'dayjs'
 
 const { Option } = Select
 
+const formatDuration = (seconds) => {
+  if (seconds == null || seconds === 0) return '00:00'
+  const m = Math.floor(Number(seconds) / 60)
+  const s = Math.floor(Number(seconds) % 60)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 const Calls = () => {
+  const { message: messageApi } = App.useApp()
+  const navigate = useNavigate()
   const { isMobile } = useResponsive()
   const [isCreateLeadVisible, setIsCreateLeadVisible] = useState(false)
   const [selectedCall, setSelectedCall] = useState(null)
   const [isRecordingVisible, setIsRecordingVisible] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
-  const [calls, setCalls] = useState([
-    {
-      key: '1',
-      type: 'Inbound',
-      phoneNumber: '+91 9876543210',
-      duration: '05:32',
-      agent: 'Agent A',
-      status: 'Answered',
-      recording: 'recording1.mp3',
-      date: '2024-01-15 10:30',
-      leadLinked: true,
-      leadId: '1',
-    },
-    {
-      key: '2',
-      type: 'Outbound',
-      phoneNumber: '+91 9876543211',
-      duration: '03:15',
-      agent: 'Agent B',
-      status: 'Answered',
-      recording: 'recording2.mp3',
-      date: '2024-01-15 11:20',
-      leadLinked: true,
-      leadId: '2',
-    },
-    {
-      key: '3',
-      type: 'Inbound',
-      phoneNumber: '+91 9876543212',
-      duration: '00:00',
-      agent: '-',
-      status: 'Missed',
-      recording: null,
-      date: '2024-01-15 12:45',
-      leadLinked: false,
-      leadId: null,
-    },
-  ])
+  const [filterType, setFilterType] = useState(undefined)
+  const [filterStatus, setFilterStatus] = useState(undefined)
+  const [searchText, setSearchText] = useState('')
+  const [callPage, setCallPage] = useState(1)
+  const [callPageSize, setCallPageSize] = useState(10)
+
+  const { data: callLogsData, isLoading: callsLoading } = useGetCallLogsQuery({
+    page: callPage,
+    limit: callPageSize,
+    type: filterType || undefined,
+    status: filterStatus || undefined,
+    search: searchText?.trim() || undefined,
+  })
+
+  const callLogs = callLogsData?.callLogs || []
+  const pagination = callLogsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
+
+  const calls = useMemo(() => {
+    return callLogs.map((log) => ({
+      key: log._id,
+      _id: log._id,
+      type: log.call_type || 'Outbound',
+      phoneNumber: log.customer_number || '-',
+      duration: formatDuration(log.duration_seconds),
+      durationSeconds: log.duration_seconds,
+      agent: log.agent_id || '-',
+      status: log.call_status || '-',
+      recordingUrl: log.recording_url,
+      date: log.start_time ? dayjs(log.start_time).format('YYYY-MM-DD HH:mm') : dayjs(log.createdAt).format('YYYY-MM-DD HH:mm'),
+      leadLinked: !!log.lead,
+      leadId: log.lead?._id,
+      lead: log.lead,
+    }))
+  }, [callLogs])
 
   const columns = [
     {
@@ -138,7 +143,7 @@ const Calls = () => {
       key: 'actions',
       render: (_, record) => (
         <Space>
-          {record.recording && (
+          {record.recordingUrl ? (
             <Button
               type="link"
               icon={<PlayCircleOutlined />}
@@ -149,7 +154,7 @@ const Calls = () => {
             >
               Play
             </Button>
-          )}
+          ) : null}
           {!record.leadLinked && (
             <Button
               type="link"
@@ -162,39 +167,15 @@ const Calls = () => {
               Create Lead
             </Button>
           )}
-          {canDelete('calls') && (
-            <Popconfirm
-              title="Delete this call log?"
-              onConfirm={() => handleDelete(record.key)}
-              okText="Yes"
-              cancelText="No"
-            >
-              <Button type="link" danger icon={<DeleteOutlined />}>
-                Delete
-              </Button>
-            </Popconfirm>
-          )}
         </Space>
       ),
     },
   ]
 
-  const handleDelete = (key) => {
-    setCalls(calls.filter((call) => call.key !== key))
-    message.success('Call log deleted successfully')
-  }
-
   const handleCreateLead = () => {
-    // Update call to mark as linked
-    if (selectedCall) {
-      setCalls(
-        calls.map((call) =>
-          call.key === selectedCall.key
-            ? { ...call, leadLinked: true, leadId: Date.now().toString() }
-            : call
-        )
-      )
-      message.success('Lead created and linked to call')
+    if (selectedCall?.phoneNumber) {
+      navigate('/leads', { state: { createLeadFromCall: true, phone: selectedCall.phoneNumber.replace(/\D/g, '') } })
+      messageApi.success('Redirecting to create lead with this number')
     }
     setIsCreateLeadVisible(false)
   }
@@ -218,8 +199,8 @@ const Calls = () => {
           >
             {showFilters ? 'Hide Filters' : 'Show Filters'}
           </Button>
-          <Button type="primary" icon={<PhoneOutlined />} size={isMobile ? 'small' : 'middle'}>
-            {isMobile ? 'Call' : 'Make Call'}
+          <Button type="primary" icon={<PhoneOutlined />} size={isMobile ? 'small' : 'middle'} onClick={() => navigate('/leads')}>
+            {isMobile ? 'Call' : 'Make Call (from Leads)'}
           </Button>
         </Space>
       </div>
@@ -236,35 +217,49 @@ const Calls = () => {
             <Input
               placeholder="Search by phone number"
               prefix={<SearchOutlined />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
               style={{ width: isMobile ? '100%' : 250, flex: isMobile ? 'none' : '1 1 auto' }}
             />
-            <Select placeholder="Filter by Type" style={{ width: isMobile ? '100%' : 150 }} allowClear>
+            <Select placeholder="Filter by Type" style={{ width: isMobile ? '100%' : 150 }} allowClear value={filterType} onChange={setFilterType}>
               <Option value="Inbound">Inbound</Option>
               <Option value="Outbound">Outbound</Option>
             </Select>
-            <Select placeholder="Filter by Status" style={{ width: isMobile ? '100%' : 150 }} allowClear>
+            <Select placeholder="Filter by Status" style={{ width: isMobile ? '100%' : 150 }} allowClear value={filterStatus} onChange={setFilterStatus}>
               <Option value="Answered">Answered</Option>
               <Option value="Missed">Missed</Option>
             </Select>
-            <Select placeholder="Filter by Agent" style={{ width: isMobile ? '100%' : 150 }} allowClear>
-              <Option value="Agent A">Agent A</Option>
-              <Option value="Agent B">Agent B</Option>
-              <Option value="Agent C">Agent C</Option>
-            </Select>
-            <Button type="primary" style={{ width: isMobile ? '100%' : 'auto' }}>Apply Filter</Button>
           </div>
         </Card>
       )}
 
       <div className="table-responsive-wrapper">
-        <Table
-          columns={columns}
-          dataSource={calls}
-          pagination={{ pageSize: 10 }}
-          style={{ background: '#1a1a1a' }}
-          scroll={{ x: 'max-content' }}
-          size={isMobile ? 'small' : 'middle'}
-        />
+        {callsLoading ? (
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <Spin size="large" />
+            <p style={{ color: '#fff', marginTop: 16 }}>Loading call logs...</p>
+          </div>
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={calls}
+            rowKey="key"
+            pagination={{
+              current: pagination.page,
+              pageSize: pagination.limit,
+              total: pagination.total,
+              showSizeChanger: true,
+              showTotal: (total) => `Total ${total} calls`,
+              onChange: (page, size) => {
+                setCallPage(page)
+                setCallPageSize(size)
+              },
+            }}
+            style={{ background: '#1a1a1a' }}
+            scroll={{ x: 'max-content' }}
+            size={isMobile ? 'small' : 'middle'}
+          />
+        )}
       </div>
 
       <Modal
@@ -302,16 +297,19 @@ const Calls = () => {
             <p>
               <strong>Date:</strong> {selectedCall.date}
             </p>
-            <div style={{ marginTop: 16 }}>
-              <audio controls style={{ width: '100%' }}>
-                <source src={`/recordings/${selectedCall.recording}`} type="audio/mpeg" />
-                Your browser does not support the audio element.
-              </audio>
-            </div>
-            <p style={{ marginTop: 16, color: '#888', fontSize: 12 }}>
-              Note: This is a placeholder. In production, this would connect to Ozonetel API
-              to fetch actual recordings.
-            </p>
+            {selectedCall.recordingUrl ? (
+              <div style={{ marginTop: 16 }}>
+                <audio controls style={{ width: '100%' }}>
+                  <source src={selectedCall.recordingUrl} type="audio/mpeg" />
+                  Your browser does not support the audio element.
+                </audio>
+                <p style={{ marginTop: 8, fontSize: 12 }}>
+                  <a href={selectedCall.recordingUrl} target="_blank" rel="noopener noreferrer">Open in new tab</a>
+                </p>
+              </div>
+            ) : (
+              <p style={{ marginTop: 16, color: '#888', fontSize: 12 }}>No recording URL available for this call.</p>
+            )}
           </div>
         )}
       </Modal>

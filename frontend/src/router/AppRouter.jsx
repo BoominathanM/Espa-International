@@ -90,11 +90,11 @@ const AppRouter = () => {
         element={
           <ProtectedRoute requiredPermission="settings:read">
             <Layout>
-              <Settings />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
+                <Settings />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   )
