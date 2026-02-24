@@ -98,7 +98,9 @@ const Leads = () => {
     return leads.map((lead) => ({
       key: lead._id || lead.id,
       _id: lead._id || lead.id,
-      name: lead.name,
+      name: lead.name || `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || '',
+      first_name: lead.first_name || '',
+      last_name: lead.last_name || '',
       mobile: lead.phone,
       whatsapp: lead.whatsapp || lead.phone,
       email: lead.email,
@@ -108,6 +110,9 @@ const Leads = () => {
       status: lead.status,
       branch: lead.branch?.name || lead.branch || 'Unassigned',
       branchId: lead.branch?._id || lead.branch?.id || null,
+      appointment_date: lead.appointment_date || null,
+      slot_time: lead.slot_time || '',
+      spa_package: lead.spa_package || '',
       assignedTo: lead.assignedTo?.name || lead.assignedTo || 'Unassigned',
       assignedToId: lead.assignedTo?._id || lead.assignedTo?.id || null,
       lastInteraction: lead.lastInteraction ? dayjs(lead.lastInteraction).format('YYYY-MM-DD HH:mm') : dayjs(lead.createdAt).format('YYYY-MM-DD HH:mm'),
@@ -263,7 +268,8 @@ const Leads = () => {
   const handleEdit = (record) => {
     setSelectedLead(record)
     form.setFieldsValue({
-      name: record.name,
+      first_name: record.first_name || '',
+      last_name: record.last_name || '',
       email: record.email,
       phone: record.mobile,
       whatsapp: record.whatsapp,
@@ -272,6 +278,9 @@ const Leads = () => {
       source: record.source,
       status: record.status,
       branch: record.branchId,
+      appointment_date: record.appointment_date ? dayjs(record.appointment_date) : null,
+      slot_time: record.slot_time || '',
+      spa_package: record.spa_package || '',
       assignedTo: record.assignedToId,
       notes: record.notes,
     })
@@ -291,7 +300,8 @@ const Leads = () => {
   const handleSubmit = async (values) => {
     try {
       const leadData = {
-        name: values.name.trim(),
+        first_name: values.first_name?.trim() || '',
+        last_name: values.last_name?.trim() || '',
         email: values.email?.trim() || '',
         phone: values.phone.trim(),
         whatsapp: values.whatsapp?.trim() || values.phone.trim(),
@@ -300,6 +310,9 @@ const Leads = () => {
         source: values.source,
         status: values.status || 'New',
         branch: values.branch || null,
+        appointment_date: values.appointment_date ? values.appointment_date.format('YYYY-MM-DD') : null,
+        slot_time: values.slot_time?.trim() || '',
+        spa_package: values.spa_package?.trim() || '',
         assignedTo: values.assignedTo || null,
         notes: values.notes?.trim() || '',
       }
@@ -742,11 +755,18 @@ const Leads = () => {
           }}
         >
           <Form.Item
-            name="name"
-            label="Name"
-            rules={[{ required: true, message: 'Please enter name' }]}
+            name="first_name"
+            label="First Name"
+            rules={[{ required: true, message: 'Please enter first name' }]}
           >
-            <Input placeholder="Enter name" />
+            <Input placeholder="Enter first name" />
+          </Form.Item>
+
+          <Form.Item
+            name="last_name"
+            label="Last Name"
+          >
+            <Input placeholder="Enter last name (optional)" />
           </Form.Item>
 
           <Form.Item
@@ -788,6 +808,31 @@ const Leads = () => {
                 </Option>
               ))}
             </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="appointment_date"
+            label="Appointment Date"
+          >
+            <DatePicker 
+              style={{ width: '100%' }}
+              format="YYYY-MM-DD"
+              placeholder="Select appointment date (optional)"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="slot_time"
+            label="Slot Time"
+          >
+            <Input placeholder="Enter slot time (e.g., 10:00 AM)" />
+          </Form.Item>
+
+          <Form.Item
+            name="spa_package"
+            label="Spa Package"
+          >
+            <Input placeholder="Enter spa package (optional)" />
           </Form.Item>
 
           <Form.Item

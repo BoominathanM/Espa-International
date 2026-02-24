@@ -8,13 +8,36 @@ import User from '../models/User.js'
 // @access  Public (API Key protected)
 export const createWebsiteLead = async (req, res) => {
   try {
-    const { name, email, phone, subject, message } = req.body
+    const { 
+      name, 
+      first_name, 
+      last_name, 
+      email, 
+      phone, 
+      subject, 
+      message,
+      appointment_date,
+      slot_time,
+      spa_package,
+      branch
+    } = req.body
+
+    // Handle name field - support both old 'name' and new 'first_name'/'last_name'
+    let firstName = first_name || ''
+    let lastName = last_name || ''
+    
+    if (name && !first_name) {
+      // Split name if first_name not provided
+      const nameParts = name.trim().split(' ')
+      firstName = nameParts[0] || ''
+      lastName = nameParts.slice(1).join(' ') || ''
+    }
 
     // Validate required fields
-    if (!name || !email || !phone) {
+    if (!firstName || !email || !phone) {
       return res.status(400).json({
         success: false,
-        message: 'Name, email, and phone are required fields',
+        message: 'First name, email, and phone are required fields',
       })
     }
 
@@ -46,9 +69,14 @@ export const createWebsiteLead = async (req, res) => {
 
     if (existingLead) {
       // Update existing lead instead of creating duplicate
-      existingLead.name = name.trim()
+      existingLead.first_name = firstName.trim()
+      existingLead.last_name = lastName.trim()
       existingLead.subject = subject ? subject.trim() : existingLead.subject
       existingLead.message = message ? message.trim() : existingLead.message
+      if (appointment_date) existingLead.appointment_date = new Date(appointment_date)
+      if (slot_time) existingLead.slot_time = slot_time.trim()
+      if (spa_package) existingLead.spa_package = spa_package.trim()
+      if (branch) existingLead.branch = branch
       existingLead.lastInteraction = new Date()
       existingLead.websiteUrl = websiteUrl
       existingLead.ipAddress = ipAddress
@@ -64,7 +92,8 @@ export const createWebsiteLead = async (req, res) => {
 
     // Create new lead
     const lead = new Lead({
-      name: name.trim(),
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
       email: email.toLowerCase().trim(),
       phone: phone.trim(),
       whatsapp: phone.trim(), // Default to phone if WhatsApp not provided
@@ -72,6 +101,10 @@ export const createWebsiteLead = async (req, res) => {
       message: message ? message.trim() : '',
       source: 'Website',
       status: 'New',
+      branch: branch || null,
+      appointment_date: appointment_date ? new Date(appointment_date) : null,
+      slot_time: slot_time ? slot_time.trim() : '',
+      spa_package: spa_package ? spa_package.trim() : '',
       websiteUrl: websiteUrl,
       ipAddress: ipAddress,
       lastInteraction: new Date(),
@@ -82,16 +115,21 @@ export const createWebsiteLead = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Lead created successfully',
-      lead: {
-        _id: lead._id,
-        name: lead.name,
-        email: lead.email,
-        phone: lead.phone,
-        subject: lead.subject,
-        source: lead.source,
-        status: lead.status,
-        createdAt: lead.createdAt,
-      },
+        lead: {
+          _id: lead._id,
+          first_name: lead.first_name,
+          last_name: lead.last_name,
+          name: lead.name, // Virtual field for backward compatibility
+          email: lead.email,
+          phone: lead.phone,
+          subject: lead.subject,
+          source: lead.source,
+          status: lead.status,
+          appointment_date: lead.appointment_date,
+          slot_time: lead.slot_time,
+          spa_package: lead.spa_package,
+          createdAt: lead.createdAt,
+        },
     })
   } catch (error) {
     console.error('Create website lead error:', error)
@@ -113,13 +151,41 @@ export const createWebsiteLead = async (req, res) => {
 // @access  Private
 export const createLead = async (req, res) => {
   try {
-    const { name, email, phone, whatsapp, subject, message, source, status, branch, assignedTo, notes } = req.body
+    const { 
+      name, 
+      first_name, 
+      last_name, 
+      email, 
+      phone, 
+      whatsapp, 
+      subject, 
+      message, 
+      source, 
+      status, 
+      branch, 
+      assignedTo, 
+      notes,
+      appointment_date,
+      slot_time,
+      spa_package
+    } = req.body
+
+    // Handle name field - support both old 'name' and new 'first_name'/'last_name'
+    let firstName = first_name || ''
+    let lastName = last_name || ''
+    
+    if (name && !first_name) {
+      // Split name if first_name not provided
+      const nameParts = name.trim().split(' ')
+      firstName = nameParts[0] || ''
+      lastName = nameParts.slice(1).join(' ') || ''
+    }
 
     // Validate required fields
-    if (!name || !phone) {
+    if (!firstName || !phone) {
       return res.status(400).json({
         success: false,
-        message: 'Name and phone are required fields',
+        message: 'First name and phone are required fields',
       })
     }
 
@@ -157,7 +223,8 @@ export const createLead = async (req, res) => {
 
     // Create new lead
     const lead = new Lead({
-      name: name.trim(),
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
       email: email ? email.toLowerCase().trim() : '',
       phone: phone.trim(),
       whatsapp: whatsapp ? whatsapp.trim() : phone.trim(),
@@ -166,6 +233,9 @@ export const createLead = async (req, res) => {
       source: source || 'Add',
       status: status || 'New',
       branch: branch || null,
+      appointment_date: appointment_date ? new Date(appointment_date) : null,
+      slot_time: slot_time ? slot_time.trim() : '',
+      spa_package: spa_package ? spa_package.trim() : '',
       assignedTo: assignedTo || null,
       notes: notes ? notes.trim() : '',
       lastInteraction: new Date(),
@@ -223,10 +293,11 @@ export const getLeads = async (req, res) => {
       query.assignedTo = assignedTo
     }
 
-    // Search in name, email, phone
+    // Search in first_name, last_name, email, phone
     if (search) {
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
+        { first_name: { $regex: search, $options: 'i' } },
+        { last_name: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } },
         { phone: { $regex: search, $options: 'i' } },
       ]
@@ -287,15 +358,41 @@ export const getLead = async (req, res) => {
 // @access  Private
 export const updateLead = async (req, res) => {
   try {
-    const { name, email, phone, whatsapp, subject, message, source, status, branch, assignedTo, notes } = req.body
+    const { 
+      name, 
+      first_name, 
+      last_name, 
+      email, 
+      phone, 
+      whatsapp, 
+      subject, 
+      message, 
+      source, 
+      status, 
+      branch, 
+      assignedTo, 
+      notes,
+      appointment_date,
+      slot_time,
+      spa_package
+    } = req.body
 
     const lead = await Lead.findById(req.params.id)
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Lead not found' })
     }
 
+    // Handle name field - support both old 'name' and new 'first_name'/'last_name'
+    if (name && !first_name) {
+      const nameParts = name.trim().split(' ')
+      lead.first_name = nameParts[0] || lead.first_name
+      lead.last_name = nameParts.slice(1).join(' ') || lead.last_name
+    } else {
+      if (first_name !== undefined) lead.first_name = first_name.trim()
+      if (last_name !== undefined) lead.last_name = last_name.trim()
+    }
+
     // Update fields
-    if (name) lead.name = name.trim()
     if (email) lead.email = email.toLowerCase().trim()
     if (phone) lead.phone = phone.trim()
     if (whatsapp !== undefined) lead.whatsapp = whatsapp.trim()
@@ -304,6 +401,9 @@ export const updateLead = async (req, res) => {
     if (source) lead.source = source
     if (status) lead.status = status
     if (branch !== undefined) lead.branch = branch || null
+    if (appointment_date !== undefined) lead.appointment_date = appointment_date ? new Date(appointment_date) : null
+    if (slot_time !== undefined) lead.slot_time = slot_time.trim()
+    if (spa_package !== undefined) lead.spa_package = spa_package.trim()
     if (assignedTo !== undefined) lead.assignedTo = assignedTo || null
     if (notes !== undefined) lead.notes = notes.trim()
     
@@ -372,9 +472,10 @@ export const exportLeads = async (req, res) => {
       .sort({ createdAt: -1 })
 
     // Convert to CSV format
-    const csvHeaders = ['Name', 'Email', 'Phone', 'WhatsApp', 'Subject', 'Message', 'Source', 'Status', 'Branch', 'Assigned To', 'Notes', 'Last Interaction', 'Created At']
+    const csvHeaders = ['First Name', 'Last Name', 'Email', 'Phone', 'WhatsApp', 'Subject', 'Message', 'Source', 'Status', 'Branch', 'Appointment Date', 'Slot Time', 'Spa Package', 'Assigned To', 'Notes', 'Last Interaction', 'Created At']
     const csvRows = leads.map(lead => [
-      `"${(lead.name || '').replace(/"/g, '""')}"`,
+      `"${(lead.first_name || '').replace(/"/g, '""')}"`,
+      `"${(lead.last_name || '').replace(/"/g, '""')}"`,
       `"${(lead.email || '').replace(/"/g, '""')}"`,
       `"${(lead.phone || '').replace(/"/g, '""')}"`,
       `"${(lead.whatsapp || '').replace(/"/g, '""')}"`,
@@ -383,6 +484,9 @@ export const exportLeads = async (req, res) => {
       `"${(lead.source || '').replace(/"/g, '""')}"`,
       `"${(lead.status || '').replace(/"/g, '""')}"`,
       `"${(lead.branch?.name || '').replace(/"/g, '""')}"`,
+      `"${lead.appointment_date ? new Date(lead.appointment_date).toISOString().split('T')[0] : ''}"`,
+      `"${(lead.slot_time || '').replace(/"/g, '""')}"`,
+      `"${(lead.spa_package || '').replace(/"/g, '""')}"`,
       `"${(lead.assignedTo?.name || '').replace(/"/g, '""')}"`,
       `"${(lead.notes || '').replace(/"/g, '""')}"`,
       `"${lead.lastInteraction ? new Date(lead.lastInteraction).toISOString() : ''}"`,
@@ -410,10 +514,10 @@ export const exportLeads = async (req, res) => {
 export const getSampleCSV = async (req, res) => {
   try {
     // Create sample CSV with only allowed fields
-    const csvHeaders = ['Name', 'Phone', 'Email', 'WhatsApp', 'Subject', 'Message']
+    const csvHeaders = ['First Name', 'Last Name', 'Phone', 'Email', 'WhatsApp', 'Subject', 'Message', 'Appointment Date', 'Slot Time', 'Spa Package']
     const sampleRows = [
-      ['John Doe', '9876543210', 'john@example.com', '9876543210', 'Test Subject', 'Test message'],
-      ['Jane Smith', '9876543211', 'jane@example.com', '9876543211', '', ''],
+      ['John', 'Doe', '9876543210', 'john@example.com', '9876543210', 'Test Subject', 'Test message', '2024-12-25', '10:00 AM', 'Full Body Massage'],
+      ['Jane', 'Smith', '9876543211', 'jane@example.com', '9876543211', '', '', '', '', ''],
     ]
 
     const csvContent = [
@@ -445,7 +549,7 @@ export const importLeads = async (req, res) => {
     }
 
     // Allowed fields (mandatory + optional)
-    const allowedFields = ['name', 'phone', 'email', 'whatsapp', 'subject', 'message']
+    const allowedFields = ['first_name', 'last_name', 'name', 'phone', 'email', 'whatsapp', 'subject', 'message', 'appointment_date', 'slot_time', 'spa_package', 'branch']
     
     const results = {
       total: leadsData.length,
@@ -473,9 +577,19 @@ export const importLeads = async (req, res) => {
           rowErrors.push(`Disallowed fields found: ${disallowedFields.join(', ')}. Only these fields are allowed: ${allowedFields.join(', ')}`)
         }
 
+        // Handle name field - support both old 'name' and new 'first_name'/'last_name'
+        let firstName = row.first_name || ''
+        let lastName = row.last_name || ''
+        
+        if (row.name && !row.first_name) {
+          const nameParts = row.name.trim().split(' ')
+          firstName = nameParts[0] || ''
+          lastName = nameParts.slice(1).join(' ') || ''
+        }
+
         // Validate mandatory fields
-        if (!row.name || !row.name.trim()) {
-          rowErrors.push('Name is mandatory and cannot be empty')
+        if (!firstName || !firstName.trim()) {
+          rowErrors.push('First name (or name) is mandatory and cannot be empty')
         }
         if (!row.phone || !row.phone.trim()) {
           rowErrors.push('Phone is mandatory and cannot be empty')
@@ -558,7 +672,8 @@ export const importLeads = async (req, res) => {
 
         // Create lead with source as "Import"
         const lead = new Lead({
-          name: row.name.trim(),
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
           email: row.email ? row.email.toLowerCase().trim() : '',
           phone: row.phone.trim(),
           whatsapp: row.whatsapp ? row.whatsapp.trim() : row.phone.trim(),
@@ -566,7 +681,10 @@ export const importLeads = async (req, res) => {
           message: row.message ? row.message.trim() : '',
           source: 'Import',
           status: 'New', // Always set to "New" for imported leads
-          branch: null,
+          branch: row.branch || null,
+          appointment_date: row.appointment_date ? new Date(row.appointment_date) : null,
+          slot_time: row.slot_time ? row.slot_time.trim() : '',
+          spa_package: row.spa_package ? row.spa_package.trim() : '',
           assignedTo: null,
           notes: '',
           lastInteraction: new Date(),
