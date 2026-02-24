@@ -13,6 +13,7 @@ import leadRoutes from './routes/leads.js'
 import websiteSettingsRoutes from './routes/websiteSettings.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
+import Branch from './models/Branch.js'
 
 dotenv.config()
 
@@ -239,6 +240,59 @@ const seedSuperAdminIfNeeded = async () => {
   }
 }
 
+// Function to seed default branches if they don't exist
+const seedDefaultBranchesIfNeeded = async () => {
+  try {
+    const defaultBranches = [
+      {
+        name: 'Anna Nagar',
+        address: 'Anna Nagar, Chennai',
+        phone: '+91-0000000000',
+      },
+      {
+        name: 'Medavakkam',
+        address: 'Medavakkam, Chennai',
+        phone: '+91-0000000000',
+      },
+      {
+        name: 'Vallakkottai',
+        address: 'Vallakkottai, Chennai',
+        phone: '+91-0000000000',
+      },
+      {
+        name: 'Coimbatore',
+        address: 'Coimbatore, Tamil Nadu',
+        phone: '+91-0000000000',
+      },
+      {
+        name: 'Bangalore',
+        address: 'Bangalore, Karnataka',
+        phone: '+91-0000000000',
+      },
+    ]
+
+    let createdCount = 0
+    for (const branchData of defaultBranches) {
+      const existingBranch = await Branch.findOne({ name: branchData.name })
+      if (!existingBranch) {
+        const branch = new Branch(branchData)
+        await branch.save()
+        createdCount++
+        console.log(`✅ Branch "${branchData.name}" created`)
+      }
+    }
+
+    if (createdCount > 0) {
+      console.log(`✅ ${createdCount} default branch(es) created`)
+    } else {
+      console.log('ℹ️  Default branches already exist')
+    }
+  } catch (error) {
+    console.error('❌ Error seeding default branches:', error.message)
+    // Don't exit - let server start even if seeding fails
+  }
+}
+
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(async () => {
@@ -246,6 +300,9 @@ mongoose
     
     // Seed super admin if needed
     await seedSuperAdminIfNeeded()
+    
+    // Seed default branches if needed
+    await seedDefaultBranchesIfNeeded()
     
     const server = app.listen(PORT, () => {
       console.log(`✅ Server is running on port ${PORT}`)

@@ -200,6 +200,32 @@ export const createLead = async (req, res) => {
       }
     }
 
+    // Validate and convert branch if provided
+    let branchId = null
+    if (branch) {
+      // Check if branch is a valid ObjectId
+      if (mongoose.Types.ObjectId.isValid(branch)) {
+        // Verify branch exists
+        const branchExists = await Branch.findById(branch)
+        if (!branchExists) {
+          return res.status(400).json({
+            success: false,
+            message: 'Branch not found',
+          })
+        }
+        branchId = branch
+      } else {
+        // If branch is a string (like branch name), try to find it by name
+        const branchByName = await Branch.findOne({ name: { $regex: new RegExp(`^${branch}$`, 'i') } })
+        if (branchByName) {
+          branchId = branchByName._id
+        } else {
+          // If branch name not found, set to null instead of error (optional field)
+          branchId = null
+        }
+      }
+    }
+
     // Check for duplicate email or phone
     const duplicateQuery = {
       $or: []
@@ -232,7 +258,7 @@ export const createLead = async (req, res) => {
       message: message ? message.trim() : '',
       source: source || 'Add',
       status: status || 'New',
-      branch: branch || null,
+      branch: branchId,
       appointment_date: appointment_date ? new Date(appointment_date) : null,
       slot_time: slot_time ? slot_time.trim() : '',
       spa_package: spa_package ? spa_package.trim() : '',
@@ -392,6 +418,35 @@ export const updateLead = async (req, res) => {
       if (last_name !== undefined) lead.last_name = last_name.trim()
     }
 
+    // Validate and convert branch if provided
+    if (branch !== undefined) {
+      if (branch === null || branch === '') {
+        lead.branch = null
+      } else {
+        // Check if branch is a valid ObjectId
+        if (mongoose.Types.ObjectId.isValid(branch)) {
+          // Verify branch exists
+          const branchExists = await Branch.findById(branch)
+          if (!branchExists) {
+            return res.status(400).json({
+              success: false,
+              message: 'Branch not found',
+            })
+          }
+          lead.branch = branch
+        } else {
+          // If branch is a string (like branch name), try to find it by name
+          const branchByName = await Branch.findOne({ name: { $regex: new RegExp(`^${branch}$`, 'i') } })
+          if (branchByName) {
+            lead.branch = branchByName._id
+          } else {
+            // If branch name not found, set to null instead of error (optional field)
+            lead.branch = null
+          }
+        }
+      }
+    }
+
     // Update fields
     if (email) lead.email = email.toLowerCase().trim()
     if (phone) lead.phone = phone.trim()
@@ -400,7 +455,6 @@ export const updateLead = async (req, res) => {
     if (message !== undefined) lead.message = message.trim()
     if (source) lead.source = source
     if (status) lead.status = status
-    if (branch !== undefined) lead.branch = branch || null
     if (appointment_date !== undefined) lead.appointment_date = appointment_date ? new Date(appointment_date) : null
     if (slot_time !== undefined) lead.slot_time = slot_time.trim()
     if (spa_package !== undefined) lead.spa_package = spa_package.trim()
