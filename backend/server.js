@@ -33,14 +33,20 @@ const getCorsOrigins = () => {
       'http://localhost:3000',
       'http://localhost:3001',
       'http://127.0.0.1:5173',
-      'http://127.0.0.1:5500',
-      'http://e-spa.askeva.net/'
+      'http://127.0.0.1:5500'
     )
   }
   
-  // Add production frontend URL
+  // Add production frontend URLs (always allow these)
+  origins.push('https://e-spa.askeva.net')
+  origins.push('http://e-spa.askeva.net')
+  
+  // Add production frontend URL from environment variable
   if (process.env.PRODUCTION_FRONTEND_URL) {
-    origins.push(process.env.PRODUCTION_FRONTEND_URL)
+    const prodUrl = process.env.PRODUCTION_FRONTEND_URL.trim()
+    if (prodUrl && !origins.includes(prodUrl)) {
+      origins.push(prodUrl)
+    }
   }
   
   // Add website URL for contact form integration
@@ -80,7 +86,10 @@ app.use(cors({
     // Check if origin matches any allowed origin (including regex patterns)
     const isAllowed = allowedOrigins.some(allowedOrigin => {
       if (typeof allowedOrigin === 'string') {
-        return origin === allowedOrigin
+        // Normalize URLs for comparison (remove trailing slashes)
+        const normalizedOrigin = origin.replace(/\/$/, '')
+        const normalizedAllowed = allowedOrigin.replace(/\/$/, '')
+        return normalizedOrigin === normalizedAllowed || origin === allowedOrigin
       } else if (allowedOrigin instanceof RegExp) {
         return allowedOrigin.test(origin)
       }
@@ -92,6 +101,7 @@ app.use(cors({
     } else {
       // Log for debugging
       console.log(`CORS blocked origin: ${origin}`)
+      console.log(`Allowed origins: ${JSON.stringify(allowedOrigins.filter(o => typeof o === 'string'))}`)
       callback(new Error('Not allowed by CORS'))
     }
   },
