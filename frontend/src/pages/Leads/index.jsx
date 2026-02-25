@@ -352,13 +352,17 @@ const Leads = () => {
           color: 'blue',
           children: `Lead created - ${selectedLead.createdAt || 'N/A'}`,
         },
-        {
-          color: 'green',
-          children: `Last interaction - ${selectedLead.lastInteraction || 'N/A'}`,
+        selectedLead.appointment_date && {
+          color: 'gold',
+          children: `Appointment scheduled - ${dayjs(selectedLead.appointment_date).format('MMMM DD, YYYY')}${selectedLead.slot_time ? ` at ${selectedLead.slot_time}` : ''}${selectedLead.spa_package ? ` (${selectedLead.spa_package})` : ''}`,
         },
         selectedLead.assignedTo && selectedLead.assignedTo !== 'Unassigned' && {
           color: 'orange',
           children: `Assigned to ${selectedLead.assignedTo}`,
+        },
+        {
+          color: 'green',
+          children: `Last interaction - ${selectedLead.lastInteraction || 'N/A'}`,
         },
         selectedLead.notes && {
           color: 'purple',
@@ -912,24 +916,136 @@ const Leads = () => {
           setSelectedLead(null)
         }}
         footer={null}
-        width={isMobile ? '95%' : 600}
+        width={isMobile ? '95%' : 700}
+        style={{ top: 20 }}
+        bodyStyle={{
+          maxHeight: 'calc(100vh - 120px)',
+          overflowY: 'auto',
+          padding: '16px',
+        }}
       >
         {selectedLead && (
           <div>
-            <div style={{ marginBottom: 16 }}>
-              <p><strong>Name:</strong> {selectedLead.name}</p>
-              <p><strong>Email:</strong> {selectedLead.email || 'N/A'}</p>
-              <p><strong>Mobile:</strong> {selectedLead.mobile}</p>
-              <p><strong>WhatsApp:</strong> {selectedLead.whatsapp || 'N/A'}</p>
-              <p><strong>Source:</strong> <Tag color="purple">{selectedLead.source}</Tag></p>
-              <p><strong>Status:</strong> <Tag>{selectedLead.status}</Tag></p>
-              <p><strong>Branch:</strong> {selectedLead.branch}</p>
-              <p><strong>Assigned To:</strong> {selectedLead.assignedTo}</p>
-              {selectedLead.subject && <p><strong>Subject:</strong> {selectedLead.subject}</p>}
-              {selectedLead.message && <p><strong>Message:</strong> {selectedLead.message}</p>}
-              {selectedLead.notes && <p><strong>Notes:</strong> {selectedLead.notes}</p>}
-            </div>
-            <Timeline items={timelineData} />
+            <Card 
+              title="Personal Information" 
+              style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
+              headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+                <div>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>First Name:</strong> {selectedLead.first_name || selectedLead.name?.split(' ')[0] || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Last Name:</strong> {selectedLead.last_name || selectedLead.name?.split(' ').slice(1).join(' ') || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Full Name:</strong> {selectedLead.name || `${selectedLead.first_name || ''} ${selectedLead.last_name || ''}`.trim() || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Email:</strong> {selectedLead.email || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Mobile:</strong> {selectedLead.mobile || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>WhatsApp:</strong> {selectedLead.whatsapp || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Source:</strong> <Tag color="purple">{selectedLead.source || 'N/A'}</Tag>
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Status:</strong> <Tag color={
+                      selectedLead.status === 'New' ? 'blue' :
+                      selectedLead.status === 'In Progress' ? 'orange' :
+                      selectedLead.status === 'Follow-Up' ? 'purple' :
+                      selectedLead.status === 'Converted' ? 'green' :
+                      selectedLead.status === 'Lost' ? 'red' : 'default'
+                    }>{selectedLead.status || 'N/A'}</Tag>
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Branch:</strong> {selectedLead.branch || 'Unassigned'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Assigned To:</strong> {selectedLead.assignedTo || 'Unassigned'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Created At:</strong> {selectedLead.createdAt || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Last Interaction:</strong> {selectedLead.lastInteraction || 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <Card 
+              title="Appointment Details" 
+              style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
+              headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+                <div>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Appointment Date:</strong> {
+                      selectedLead.appointment_date 
+                        ? dayjs(selectedLead.appointment_date).format('MMMM DD, YYYY')
+                        : 'Not scheduled'
+                    }
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Slot Time:</strong> {selectedLead.slot_time || 'Not specified'}
+                  </p>
+                </div>
+                <div>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Spa Package:</strong> {selectedLead.spa_package || 'Not specified'}
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            {(selectedLead.subject || selectedLead.message || selectedLead.notes) && (
+              <Card 
+                title="Additional Information" 
+                style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
+                headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+              >
+                {selectedLead.subject && (
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Subject:</strong> {selectedLead.subject}
+                  </p>
+                )}
+                {selectedLead.message && (
+                  <div style={{ margin: '8px 0' }}>
+                    <strong style={{ color: '#D4AF37' }}>Message:</strong>
+                    <p style={{ color: '#fff', marginTop: 4, padding: 8, background: '#2a2a2a', borderRadius: 4 }}>
+                      {selectedLead.message}
+                    </p>
+                  </div>
+                )}
+                {selectedLead.notes && (
+                  <div style={{ margin: '8px 0' }}>
+                    <strong style={{ color: '#D4AF37' }}>Notes:</strong>
+                    <p style={{ color: '#fff', marginTop: 4, padding: 8, background: '#2a2a2a', borderRadius: 4 }}>
+                      {selectedLead.notes}
+                    </p>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {timelineData && timelineData.length > 0 && (
+              <Card 
+                title="Timeline" 
+                style={{ background: '#1a1a1a', borderColor: '#303030' }}
+                headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+              >
+                <Timeline items={timelineData} />
+              </Card>
+            )}
           </div>
         )}
       </Modal>
