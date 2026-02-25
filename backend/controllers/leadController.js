@@ -56,6 +56,26 @@ export const createWebsiteLead = async (req, res) => {
     // Get website URL from referer or request
     const websiteUrl = req.headers.referer || req.body.websiteUrl || 'https://www.espainternational.co.in/contact/'
 
+    // Validate and convert branch if provided
+    let branchId = null
+    if (branch) {
+      // Check if branch is a valid ObjectId
+      if (mongoose.Types.ObjectId.isValid(branch)) {
+        // Verify branch exists
+        const branchExists = await Branch.findById(branch)
+        if (branchExists) {
+          branchId = branch
+        }
+      } else {
+        // If branch is a string (like branch name), try to find it by name
+        const branchByName = await Branch.findOne({ name: { $regex: new RegExp(`^${branch}$`, 'i') } })
+        if (branchByName) {
+          branchId = branchByName._id
+        }
+        // If branch name not found, set to null (optional field)
+      }
+    }
+
     // Check if lead with same email or phone already exists (within last 24 hours)
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
     const existingLead = await Lead.findOne({
@@ -76,7 +96,7 @@ export const createWebsiteLead = async (req, res) => {
       if (appointment_date) existingLead.appointment_date = new Date(appointment_date)
       if (slot_time) existingLead.slot_time = slot_time.trim()
       if (spa_package) existingLead.spa_package = spa_package.trim()
-      if (branch) existingLead.branch = branch
+      existingLead.branch = branchId
       existingLead.lastInteraction = new Date()
       existingLead.websiteUrl = websiteUrl
       existingLead.ipAddress = ipAddress
@@ -101,7 +121,7 @@ export const createWebsiteLead = async (req, res) => {
       message: message ? message.trim() : '',
       source: 'Website',
       status: 'New',
-      branch: branch || null,
+      branch: branchId,
       appointment_date: appointment_date ? new Date(appointment_date) : null,
       slot_time: slot_time ? slot_time.trim() : '',
       spa_package: spa_package ? spa_package.trim() : '',
