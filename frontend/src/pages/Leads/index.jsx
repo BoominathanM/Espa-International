@@ -113,8 +113,26 @@ const Leads = () => {
       appointment_date: lead.appointment_date || null,
       slot_time: lead.slot_time || '',
       spa_package: lead.spa_package || '',
-      assignedTo: lead.assignedTo?.name || lead.assignedTo || 'Unassigned',
-      assignedToId: lead.assignedTo?._id || lead.assignedTo?.id || null,
+      assignedTo: (() => {
+        if (!lead.assignedTo) return 'Unassigned'
+        if (typeof lead.assignedTo === 'object' && lead.assignedTo.name) {
+          return lead.assignedTo.name
+        }
+        if (typeof lead.assignedTo === 'string' && lead.assignedTo.trim() !== '' && lead.assignedTo !== 'undefined') {
+          return lead.assignedTo
+        }
+        return 'Unassigned'
+      })(),
+      assignedToId: (() => {
+        if (!lead.assignedTo) return null
+        if (typeof lead.assignedTo === 'object') {
+          return lead.assignedTo._id || lead.assignedTo.id || null
+        }
+        if (typeof lead.assignedTo === 'string' && lead.assignedTo.trim() !== '' && lead.assignedTo !== 'undefined') {
+          return lead.assignedTo
+        }
+        return null
+      })(),
       lastInteraction: lead.lastInteraction ? dayjs(lead.lastInteraction).format('YYYY-MM-DD HH:mm') : dayjs(lead.createdAt).format('YYYY-MM-DD HH:mm'),
       notes: lead.notes || '',
       createdAt: lead.createdAt ? dayjs(lead.createdAt).format('YYYY-MM-DD') : '',
@@ -201,7 +219,12 @@ const Leads = () => {
       title: 'Assigned Agent',
       dataIndex: 'assignedTo',
       key: 'assignedTo',
-      render: (assignedTo) => assignedTo || 'Unassigned',
+      render: (assignedTo) => {
+        if (!assignedTo || assignedTo === 'undefined' || assignedTo === 'null' || assignedTo === 'Unassigned') {
+          return 'Unassigned'
+        }
+        return String(assignedTo).trim() || 'Unassigned'
+      },
     },
     {
       title: 'Last Interaction',

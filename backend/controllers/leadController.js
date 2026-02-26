@@ -2,188 +2,150 @@ import mongoose from 'mongoose'
 import Lead from '../models/Lead.js'
 import Branch from '../models/Branch.js'
 import User from '../models/User.js'
+import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 
-// @desc    Create lead from website contact form
-// @route   POST /api/leads/website
-// @access  Public (API Key protected)
+
 export const createWebsiteLead = async (req, res) => {
   try {
-    const { 
-      name, 
-      first_name, 
-      last_name, 
-      email, 
-      phone, 
-      subject, 
+    const {
+      name,
+      first_name,
+      last_name,
+      email,
+      phone,
+      subject,
       message,
       appointment_date,
       slot_time,
       spa_package,
       branch
-    } = req.body
+    } = req.body;
 
-    // Handle name field - support both old 'name' and new 'first_name'/'last_name'
-    let firstName = first_name || ''
-    let lastName = last_name || ''
-    
+    // Handle name field
+    let firstName = first_name || "";
+    let lastName = last_name || "";
+
     if (name && !first_name) {
-      // Split name if first_name not provided
-      const nameParts = name.trim().split(' ')
-      firstName = nameParts[0] || ''
-      lastName = nameParts.slice(1).join(' ') || ''
+      const parts = name.trim().split(" ");
+      firstName = parts[0];
+      lastName = parts.slice(1).join(" ");
     }
 
-    // Validate required fields
     if (!firstName || !email || !phone) {
       return res.status(400).json({
         success: false,
-        message: 'First name, email, and phone are required fields',
-      })
+        message: "First name, email, and phone are required",
+      });
     }
 
-    // Validate email format
-    const emailRegex = /^\S+@\S+\.\S+$/
+    const emailRegex = /^\S+@\S+\.\S+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide a valid email address',
-      })
+        message: "Invalid email format",
+      });
     }
 
-    // Get IP address from request
-    const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for']?.split(',')[0] || 'Unknown'
-    
-    // Get website URL from referer or request
-    const websiteUrl = req.headers.referer || req.body.websiteUrl || 'https://www.espainternational.co.in/contact/'
+    const ipAddress =
+      req.ip ||
+      req.connection.remoteAddress ||
+      req.headers["x-forwarded-for"]?.split(",")[0] ||
+      "Unknown";
 
-    // Validate and convert branch if provided
-    let branchId = null
+    const websiteUrl =
+      req.headers.referer ||
+      req.body.websiteUrl ||
+      "https://www.espainternational.co.in/contact/";
+
+    // STEP 1 — Identify branchId
+    let branchId = null;
+
     if (branch) {
-      // Check if branch is a valid ObjectId
       if (mongoose.Types.ObjectId.isValid(branch)) {
-        // Verify branch exists
-        const branchExists = await Branch.findById(branch)
-        if (branchExists) {
-          branchId = branch
-        }
+        const exists = await Branch.findById(branch);
+        if (exists) branchId = branch;
       } else {
-        // If branch is a string (like branch name), try to find it by name
-        const branchByName = await Branch.findOne({ name: { $regex: new RegExp(`^${branch}$`, 'i') } })
-        if (branchByName) {
-          branchId = branchByName._id
-        }
-        // If branch name not found, set to null (optional field)
+        const byName = await Branch.findOne({
+          name: { $regex: new RegExp(`^${branch}$`, "i") },
+        });
+        if (byName) branchId = byName._id;
       }
     }
 
-    // Check if lead with same email or phone already exists (within last 24 hours)
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    const existingLead = await Lead.findOne({
-      $or: [
-        { email: email.toLowerCase().trim() },
-        { phone: phone.trim() }
-      ],
-      createdAt: { $gte: oneDayAgo },
-      source: 'Website'
-    })
-
-    if (existingLead) {
-      // Update existing lead instead of creating duplicate
-      existingLead.first_name = firstName.trim()
-      existingLead.last_name = lastName.trim()
-      existingLead.subject = subject ? subject.trim() : existingLead.subject
-      existingLead.message = message ? message.trim() : existingLead.message
-      if (appointment_date) existingLead.appointment_date = new Date(appointment_date)
-      if (slot_time) existingLead.slot_time = slot_time.trim()
-      if (spa_package) existingLead.spa_package = spa_package.trim()
-      existingLead.branch = branchId
-      existingLead.lastInteraction = new Date()
-      existingLead.websiteUrl = websiteUrl
-      existingLead.ipAddress = ipAddress
-      
-      await existingLead.save()
-
-      return res.status(200).json({
-        success: true,
-        message: 'Contact sent successfully (duplicate prevented)',
-        lead: existingLead,
-      })
+    // STEP 2 — If branch not provided, auto-default to "Anna Nagar"
+    if (!branchId) {
+      const defaultBranch = await Branch.findOne({ name: "Anna Nagar" });
+      if (defaultBranch) {
+        branchId = defaultBranch._id;
+        console.log("🌐 Default branch selected → Anna Nagar");
+      }
     }
 
-    // Create new lead
+    // STEP 3 — Auto-assign (now branchId always exists)
+    let assignedUserId = null;
+    if (branchId) {
+      assignedUserId = await autoAssignLeadToBranchUser(branchId);
+      console.log("Assigned user:", assignedUserId);
+    }
+
+    // STEP 4 — Save lead
     const lead = new Lead({
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
+      first_name: firstName,
+      last_name: lastName,
       email: email.toLowerCase().trim(),
       phone: phone.trim(),
-      whatsapp: phone.trim(), // Default to phone if WhatsApp not provided
-      subject: subject ? subject.trim() : '',
-      message: message ? message.trim() : '',
-      source: 'Website',
-      status: 'New',
+      whatsapp: phone.trim(),
+      subject: subject || "",
+      message: message || "",
+      source: "Website",
+      status: "New",
       branch: branchId,
+      assignedTo: assignedUserId,
       appointment_date: appointment_date ? new Date(appointment_date) : null,
-      slot_time: slot_time ? slot_time.trim() : '',
-      spa_package: spa_package ? spa_package.trim() : '',
-      websiteUrl: websiteUrl,
-      ipAddress: ipAddress,
+      slot_time: slot_time || "",
+      spa_package: spa_package || "",
+      websiteUrl,
+      ipAddress,
       lastInteraction: new Date(),
-    })
+    });
 
-    await lead.save()
+    await lead.save();
 
-    res.status(201).json({
+    const savedLead = await Lead.findById(lead._id)
+      .populate("assignedTo", "name email")
+      .populate("branch", "name assignedUsers");
+
+    return res.status(201).json({
       success: true,
-      message: 'Lead created successfully',
-        lead: {
-          _id: lead._id,
-          first_name: lead.first_name,
-          last_name: lead.last_name,
-          name: lead.name, // Virtual field for backward compatibility
-          email: lead.email,
-          phone: lead.phone,
-          subject: lead.subject,
-          source: lead.source,
-          status: lead.status,
-          appointment_date: lead.appointment_date,
-          slot_time: lead.slot_time,
-          spa_package: lead.spa_package,
-          createdAt: lead.createdAt,
-        },
-    })
+      message: "Lead created successfully",
+      lead: savedLead,
+    });
   } catch (error) {
-    console.error('Create website lead error:', error)
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      })
-    }
-    res.status(500).json({
+    console.error("Website lead creation error:", error);
+    return res.status(500).json({
       success: false,
-      message: 'Server error. Please try again later.',
-    })
+      message: "Server error",
+    });
   }
-}
-
+};
 // @desc    Create lead (from frontend)
 // @route   POST /api/leads
 // @access  Private
 export const createLead = async (req, res) => {
   try {
-    const { 
-      name, 
-      first_name, 
-      last_name, 
-      email, 
-      phone, 
-      whatsapp, 
-      subject, 
-      message, 
-      source, 
-      status, 
-      branch, 
-      assignedTo, 
+    const {
+      name,
+      first_name,
+      last_name,
+      email,
+      phone,
+      whatsapp,
+      subject,
+      message,
+      source,
+      status,
+      branch,
+      assignedTo,
       notes,
       appointment_date,
       slot_time,
@@ -193,7 +155,7 @@ export const createLead = async (req, res) => {
     // Handle name field - support both old 'name' and new 'first_name'/'last_name'
     let firstName = first_name || ''
     let lastName = last_name || ''
-    
+
     if (name && !first_name) {
       // Split name if first_name not provided
       const nameParts = name.trim().split(' ')
@@ -267,6 +229,18 @@ export const createLead = async (req, res) => {
       }
     }
 
+    // Auto-assign to branch user if branch is provided and no assignedTo is given
+    let finalAssignedTo = assignedTo || null
+    if (branchId && !assignedTo) {
+      const autoAssignedUserId = await autoAssignLeadToBranchUser(branchId)
+      if (autoAssignedUserId) {
+        finalAssignedTo = autoAssignedUserId
+        console.log(`✅ Auto-assigned new lead to user: ${autoAssignedUserId} in branch: ${branchId}`)
+      } else {
+        console.log(`⚠️  Could not auto-assign lead: No active staff/supervisor users found in branch ${branchId}`)
+      }
+    }
+
     // Create new lead
     const lead = new Lead({
       first_name: firstName.trim(),
@@ -282,7 +256,7 @@ export const createLead = async (req, res) => {
       appointment_date: appointment_date ? new Date(appointment_date) : null,
       slot_time: slot_time ? slot_time.trim() : '',
       spa_package: spa_package ? spa_package.trim() : '',
-      assignedTo: assignedTo || null,
+      assignedTo: finalAssignedTo,
       notes: notes ? notes.trim() : '',
       lastInteraction: new Date(),
     })
@@ -290,14 +264,33 @@ export const createLead = async (req, res) => {
     await lead.save()
 
     const savedLead = await Lead.findById(lead._id)
-      .populate('branch', 'name')
+      .populate({
+        path: 'branch',
+        select: 'name assignedUsers',
+        populate: {
+          path: 'assignedUsers',
+          select: 'name email role status'
+        }
+      })
       .populate('assignedTo', 'name email')
 
-    res.status(201).json({
+    // Ensure userCount is calculated
+    if (savedLead.branch) {
+      savedLead.branch.userCount = savedLead.branch.assignedUsers
+        ? (Array.isArray(savedLead.branch.assignedUsers) ? savedLead.branch.assignedUsers.length : 0)
+        : 0
+    }
+
+    const populatedLead = await Lead.findById(lead._id)
+      .populate("assignedTo", "name email")
+      .populate("branch", "name");
+
+    return res.status(201).json({
       success: true,
-      message: 'Lead created successfully',
-      lead: savedLead,
-    })
+      message: "Lead created successfully",
+      lead: populatedLead
+    });
+
   } catch (error) {
     console.error('Create lead error:', error)
     if (error.name === 'ValidationError') {
@@ -354,18 +347,45 @@ export const getLeads = async (req, res) => {
 
     // Get leads with pagination
     const leads = await Lead.find(query)
-      .populate('branch', 'name')
-      .populate('assignedTo', 'name email')
+      .populate({
+        path: 'branch',
+        select: 'name assignedUsers',
+        populate: {
+          path: 'assignedUsers',
+          select: 'name email role status'
+        }
+      })
+      .populate('assignedTo', 'name email status')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
+
+    // Clean up leads - set assignedTo to null if populated user doesn't exist or is inactive
+    // Also ensure branch userCount is calculated correctly
+    const cleanedLeads = leads.map(lead => {
+      const leadObj = lead.toObject()
+      // If assignedTo is null, undefined, or user is inactive, set to null
+      if (!leadObj.assignedTo) leadObj.assignedTo = null;
+      // If assignedTo exists but has no name, it's an invalid reference
+      if (leadObj.assignedTo && !leadObj.assignedTo.name) {
+        leadObj.assignedTo = null
+      }
+      // Ensure branch userCount is calculated correctly
+      if (leadObj.branch) {
+        // Calculate userCount from assignedUsers array
+        leadObj.branch.userCount = leadObj.branch.assignedUsers
+          ? (Array.isArray(leadObj.branch.assignedUsers) ? leadObj.branch.assignedUsers.length : 0)
+          : 0
+      }
+      return leadObj
+    })
 
     // Get total count
     const total = await Lead.countDocuments(query)
 
     res.json({
       success: true,
-      leads,
+      leads: cleanedLeads,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -385,8 +405,22 @@ export const getLeads = async (req, res) => {
 export const getLead = async (req, res) => {
   try {
     const lead = await Lead.findById(req.params.id)
-      .populate('branch', 'name address phone email')
+      .populate({
+        path: 'branch',
+        select: 'name address phone email assignedUsers',
+        populate: {
+          path: 'assignedUsers',
+          select: 'name email role status'
+        }
+      })
       .populate('assignedTo', 'name email phone')
+
+    // Ensure userCount is calculated
+    if (lead && lead.branch) {
+      lead.branch.userCount = lead.branch.assignedUsers
+        ? (Array.isArray(lead.branch.assignedUsers) ? lead.branch.assignedUsers.length : 0)
+        : 0
+    }
 
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Lead not found' })
@@ -404,19 +438,19 @@ export const getLead = async (req, res) => {
 // @access  Private
 export const updateLead = async (req, res) => {
   try {
-    const { 
-      name, 
-      first_name, 
-      last_name, 
-      email, 
-      phone, 
-      whatsapp, 
-      subject, 
-      message, 
-      source, 
-      status, 
-      branch, 
-      assignedTo, 
+    const {
+      name,
+      first_name,
+      last_name,
+      email,
+      phone,
+      whatsapp,
+      subject,
+      message,
+      source,
+      status,
+      branch,
+      assignedTo,
       notes,
       appointment_date,
       slot_time,
@@ -478,16 +512,53 @@ export const updateLead = async (req, res) => {
     if (appointment_date !== undefined) lead.appointment_date = appointment_date ? new Date(appointment_date) : null
     if (slot_time !== undefined) lead.slot_time = slot_time.trim()
     if (spa_package !== undefined) lead.spa_package = spa_package.trim()
-    if (assignedTo !== undefined) lead.assignedTo = assignedTo || null
     if (notes !== undefined) lead.notes = notes.trim()
-    
+
+    // Handle assignedTo: if explicitly set, use it; otherwise auto-assign if branch is set and not assigned
+    if (assignedTo !== undefined) {
+      // Explicitly setting assignedTo - use the provided value
+      lead.assignedTo = assignedTo || null
+    } else {
+      // If assignedTo is not being updated, check if we should auto-assign
+      // Auto-assign if branch is set (either existing or newly set) and lead is not currently assigned
+      const finalBranchId = lead.branch
+      if (finalBranchId && !lead.assignedTo) {
+        console.log(`🔄 Auto-assignment check for lead ${lead._id}: Branch ${finalBranchId}, currently unassigned`)
+        const autoAssignedUserId = await autoAssignLeadToBranchUser(finalBranchId)
+        if (autoAssignedUserId) {
+          lead.assignedTo = autoAssignedUserId
+          console.log(`✅ Auto-assigned lead ${lead._id} to user: ${autoAssignedUserId} in branch: ${finalBranchId}`)
+        } else {
+          console.log(`⚠️  Could not auto-assign lead ${lead._id}: No active staff/supervisor users found in branch ${finalBranchId}`)
+        }
+      } else if (finalBranchId && lead.assignedTo) {
+        console.log(`ℹ️  Lead ${lead._id} already assigned to ${lead.assignedTo}, skipping auto-assignment`)
+      } else if (!finalBranchId) {
+        console.log(`ℹ️  Lead ${lead._id} has no branch, skipping auto-assignment`)
+      }
+    }
+
     lead.lastInteraction = new Date()
 
     await lead.save()
 
     const updatedLead = await Lead.findById(lead._id)
-      .populate('branch', 'name')
+      .populate({
+        path: 'branch',
+        select: 'name assignedUsers',
+        populate: {
+          path: 'assignedUsers',
+          select: 'name email role status'
+        }
+      })
       .populate('assignedTo', 'name email')
+
+    // Ensure userCount is calculated
+    if (updatedLead.branch) {
+      updatedLead.branch.userCount = updatedLead.branch.assignedUsers
+        ? (Array.isArray(updatedLead.branch.assignedUsers) ? updatedLead.branch.assignedUsers.length : 0)
+        : 0
+    }
 
     res.json({ success: true, lead: updatedLead })
   } catch (error) {
@@ -624,7 +695,7 @@ export const importLeads = async (req, res) => {
 
     // Allowed fields (mandatory + optional)
     const allowedFields = ['first_name', 'last_name', 'name', 'phone', 'email', 'whatsapp', 'subject', 'message', 'appointment_date', 'slot_time', 'spa_package', 'branch']
-    
+
     const results = {
       total: leadsData.length,
       success: 0,
@@ -654,7 +725,7 @@ export const importLeads = async (req, res) => {
         // Handle name field - support both old 'name' and new 'first_name'/'last_name'
         let firstName = row.first_name || ''
         let lastName = row.last_name || ''
-        
+
         if (row.name && !row.first_name) {
           const nameParts = row.name.trim().split(' ')
           firstName = nameParts[0] || ''
@@ -783,6 +854,122 @@ export const importLeads = async (req, res) => {
     })
   } catch (error) {
     console.error('Import leads error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Server error. Please try again later.',
+    })
+  }
+}
+
+// @desc    Auto-assign unassigned leads to branch users
+// @route   POST /api/leads/auto-assign
+// @access  Private
+export const autoAssignUnassignedLeads = async (req, res) => {
+  try {
+    const { branchId } = req.body // Optional: if provided, only assign leads for that branch
+
+    // Find all unassigned leads with a branch
+    const query = {
+      assignedTo: null,
+      branch: { $ne: null }
+    }
+
+    if (branchId) {
+      query.branch = branchId
+    }
+
+    const unassignedLeads = await Lead.find(query)
+      .populate({
+        path: 'branch',
+        select: 'name assignedUsers',
+        populate: {
+          path: 'assignedUsers',
+          select: 'name email role status'
+        }
+      })
+
+    if (unassignedLeads.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No unassigned leads found',
+        assigned: 0,
+        failed: 0,
+      })
+    }
+
+    let assignedCount = 0
+    let failedCount = 0
+    const results = []
+
+    for (const lead of unassignedLeads) {
+      try {
+        // Get branch ID - handle both ObjectId and populated branch object
+        const branchId = lead.branch?._id || lead.branch || null
+
+        if (!branchId) {
+          failedCount++
+          results.push({
+            leadId: lead._id,
+            leadName: `${lead.first_name} ${lead.last_name}`.trim(),
+            branch: lead.branch?.name || 'Unknown',
+            status: 'failed',
+            reason: 'Lead has no branch assigned'
+          })
+          continue
+        }
+
+        console.log(`🔄 Processing lead ${lead._id} (${lead.first_name} ${lead.last_name}) for branch ${branchId}`)
+        const assignedUserId = await autoAssignLeadToBranchUser(branchId)
+
+        if (assignedUserId) {
+          let assignedUserId = null;
+          if (branchId) {
+            assignedUserId = await autoAssignLeadToBranchUser(branchId);
+          }
+          await lead.save()
+          assignedCount++
+          results.push({
+            leadId: lead._id,
+            leadName: `${lead.first_name} ${lead.last_name}`.trim(),
+            branch: lead.branch?.name || 'Unknown',
+            assignedTo: assignedUserId,
+            status: 'success'
+          })
+          console.log(`✅ Successfully assigned lead ${lead._id} to user ${assignedUserId}`)
+        } else {
+          failedCount++
+          results.push({
+            leadId: lead._id,
+            leadName: `${lead.first_name} ${lead.last_name}`.trim(),
+            branch: lead.branch?.name || 'Unknown',
+            status: 'failed',
+            reason: 'No active staff/supervisor users found in branch'
+          })
+          console.log(`⚠️  Failed to assign lead ${lead._id}: No users found`)
+        }
+      } catch (error) {
+        failedCount++
+        console.error(`❌ Error assigning lead ${lead._id}:`, error.message)
+        results.push({
+          leadId: lead._id,
+          leadName: `${lead.first_name} ${lead.last_name}`.trim(),
+          branch: lead.branch?.name || 'Unknown',
+          status: 'error',
+          error: error.message
+        })
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Auto-assignment completed: ${assignedCount} assigned, ${failedCount} failed`,
+      assigned: assignedCount,
+      failed: failedCount,
+      total: unassignedLeads.length,
+      results,
+    })
+  } catch (error) {
+    console.error('Auto-assign unassigned leads error:', error)
     res.status(500).json({
       success: false,
       message: 'Server error. Please try again later.',

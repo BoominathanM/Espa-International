@@ -9,6 +9,7 @@ import {
   exportLeads,
   importLeads,
   getSampleCSV,
+  autoAssignUnassignedLeads,
 } from '../controllers/leadController.js'
 import { authenticate, isSuperAdmin, authenticateApiKey } from '../middleware/auth.js'
 
@@ -19,6 +20,7 @@ router.post('/website', authenticateApiKey, createWebsiteLead)
 
 // Regular CRUD endpoints (protected with JWT)
 router.post('/', authenticate, createLead)
+router.post('/auto-assign', authenticate, autoAssignUnassignedLeads)
 router.get('/', authenticate, getLeads)
 router.get('/export', authenticate, exportLeads)
 router.get('/import/sample', authenticate, getSampleCSV)
