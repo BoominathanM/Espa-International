@@ -2,10 +2,16 @@ import mongoose from 'mongoose'
 
 const leadSchema = new mongoose.Schema(
   {
-    name: {
+    first_name: {
       type: String,
       required: true,
       trim: true,
+    },
+    last_name: {
+      type: String,
+      required: false,
+      trim: true,
+      default: '',
     },
     email: {
       type: String,
@@ -51,6 +57,20 @@ const leadSchema = new mongoose.Schema(
       ref: 'Branch',
       default: null,
     },
+    appointment_date: {
+      type: Date,
+      default: null,
+    },
+    slot_time: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    spa_package: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     assignedTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -78,12 +98,22 @@ const leadSchema = new mongoose.Schema(
   }
 )
 
+// Virtual for full name (backward compatibility)
+leadSchema.virtual('name').get(function() {
+  return `${this.first_name} ${this.last_name || ''}`.trim()
+})
+
 // Index for faster queries
 leadSchema.index({ email: 1 })
 leadSchema.index({ phone: 1 })
 leadSchema.index({ status: 1 })
 leadSchema.index({ source: 1 })
+leadSchema.index({ appointment_date: 1 })
 leadSchema.index({ createdAt: -1 })
+
+// Ensure virtuals are included in JSON
+leadSchema.set('toJSON', { virtuals: true })
+leadSchema.set('toObject', { virtuals: true })
 
 const Lead = mongoose.model('Lead', leadSchema)
 

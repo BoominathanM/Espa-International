@@ -52,6 +52,28 @@ import dayjs from 'dayjs'
 const { RangePicker } = DatePicker
 const { Option } = Select
 
+const SPA_PACKAGES = [
+  'Bali Signature (2 Hours)',
+  'Bamboo Massage (2 Hours)',
+  'Banana Leaf Spa (2 Hours)',
+  'Couple Combo (2 Hours)',
+  'Cucumber Full Body Facial Signature (2 Hours)',
+  'E Spa Signature (2 Hours)',
+  'Full Body Facial Signature (2 Hours)',
+  'Hot Stone Massage (2 Hours)',
+  'Thailand Balm Signature (2 Hours)',
+  'Thailand Signature (2 Hours)',
+]
+
+const SLOT_TIMES = [
+  '10 AM - 12 PM',
+  '12 PM - 2 PM',
+  '2 PM - 4 PM',
+  '4 PM - 6 PM',
+  '6 PM - 8 PM',
+  '8 PM - 10 PM',
+]
+
 const Leads = () => {
   const { message: messageApi } = App.useApp()
   const { isMobile } = useResponsive()
@@ -61,10 +83,7 @@ const Leads = () => {
   const [isImportModalVisible, setIsImportModalVisible] = useState(false)
   const [selectedLead, setSelectedLead] = useState(null)
   const [showFilters, setShowFilters] = useState(false)
-  const [isCallModalVisible, setIsCallModalVisible] = useState(false)
-  const [callLeadRecord, setCallLeadRecord] = useState(null)
-  const [callCampaign, setCallCampaign] = useState('')
-  
+
   // Filter states
   const [searchText, setSearchText] = useState('')
   const [filterSource, setFilterSource] = useState(null)
@@ -125,7 +144,9 @@ const Leads = () => {
     return leads.map((lead) => ({
       key: lead._id || lead.id,
       _id: lead._id || lead.id,
-      name: lead.name,
+      name: lead.name || `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || '',
+      first_name: lead.first_name || '',
+      last_name: lead.last_name || '',
       mobile: lead.phone,
       whatsapp: lead.whatsapp || lead.phone,
       email: lead.email,
@@ -135,8 +156,29 @@ const Leads = () => {
       status: lead.status,
       branch: lead.branch?.name || lead.branch || 'Unassigned',
       branchId: lead.branch?._id || lead.branch?.id || null,
-      assignedTo: lead.assignedTo?.name || lead.assignedTo || 'Unassigned',
-      assignedToId: lead.assignedTo?._id || lead.assignedTo?.id || null,
+      appointment_date: lead.appointment_date || null,
+      slot_time: lead.slot_time || '',
+      spa_package: lead.spa_package || '',
+      assignedTo: (() => {
+        if (!lead.assignedTo) return 'Unassigned'
+        if (typeof lead.assignedTo === 'object' && lead.assignedTo.name) {
+          return lead.assignedTo.name
+        }
+        if (typeof lead.assignedTo === 'string' && lead.assignedTo.trim() !== '' && lead.assignedTo !== 'undefined') {
+          return lead.assignedTo
+        }
+        return 'Unassigned'
+      })(),
+      assignedToId: (() => {
+        if (!lead.assignedTo) return null
+        if (typeof lead.assignedTo === 'object') {
+          return lead.assignedTo._id || lead.assignedTo.id || null
+        }
+        if (typeof lead.assignedTo === 'string' && lead.assignedTo.trim() !== '' && lead.assignedTo !== 'undefined') {
+          return lead.assignedTo
+        }
+        return null
+      })(),
       lastInteraction: lead.lastInteraction ? dayjs(lead.lastInteraction).format('YYYY-MM-DD HH:mm') : dayjs(lead.createdAt).format('YYYY-MM-DD HH:mm'),
       notes: lead.notes || '',
       createdAt: lead.createdAt ? dayjs(lead.createdAt).format('YYYY-MM-DD') : '',
@@ -223,7 +265,12 @@ const Leads = () => {
       title: 'Assigned Agent',
       dataIndex: 'assignedTo',
       key: 'assignedTo',
-      render: (assignedTo) => assignedTo || 'Unassigned',
+      render: (assignedTo) => {
+        if (!assignedTo || assignedTo === 'undefined' || assignedTo === 'null' || assignedTo === 'Unassigned') {
+          return 'Unassigned'
+        }
+        return String(assignedTo).trim() || 'Unassigned'
+      },
     },
     {
       title: 'Last Interaction',
@@ -300,7 +347,8 @@ const Leads = () => {
   const handleEdit = (record) => {
     setSelectedLead(record)
     form.setFieldsValue({
-      name: record.name,
+      first_name: record.first_name || '',
+      last_name: record.last_name || '',
       email: record.email,
       phone: record.mobile,
       whatsapp: record.whatsapp,
@@ -309,6 +357,9 @@ const Leads = () => {
       source: record.source,
       status: record.status,
       branch: record.branchId,
+      appointment_date: record.appointment_date ? dayjs(record.appointment_date) : null,
+      slot_time: record.slot_time || '',
+      spa_package: record.spa_package || '',
       assignedTo: record.assignedToId,
       notes: record.notes,
     })
@@ -369,7 +420,8 @@ const Leads = () => {
   const handleSubmit = async (values) => {
     try {
       const leadData = {
-        name: values.name.trim(),
+        first_name: values.first_name?.trim() || '',
+        last_name: values.last_name?.trim() || '',
         email: values.email?.trim() || '',
         phone: values.phone.trim(),
         whatsapp: values.whatsapp?.trim() || values.phone.trim(),
@@ -378,6 +430,9 @@ const Leads = () => {
         source: values.source,
         status: values.status || 'New',
         branch: values.branch || null,
+        appointment_date: values.appointment_date ? values.appointment_date.format('YYYY-MM-DD') : null,
+        slot_time: values.slot_time || '',
+        spa_package: values.spa_package || '',
         assignedTo: values.assignedTo || null,
         notes: values.notes?.trim() || '',
       }
@@ -413,27 +468,31 @@ const Leads = () => {
 
   const timelineData = selectedLead
     ? [
-        {
-          color: 'blue',
-          children: `Lead created - ${selectedLead.createdAt || 'N/A'}`,
-        },
-        {
-          color: 'green',
-          children: `Last interaction - ${selectedLead.lastInteraction || 'N/A'}`,
-        },
-        selectedLead.assignedTo && selectedLead.assignedTo !== 'Unassigned' && {
-          color: 'orange',
-          children: `Assigned to ${selectedLead.assignedTo}`,
-        },
-        selectedLead.notes && {
-          color: 'purple',
-          children: `Notes: ${selectedLead.notes}`,
-        },
-        selectedLead.source === 'Website' && selectedLead.websiteUrl && {
-          color: 'cyan',
-          children: `Source: ${selectedLead.websiteUrl}`,
-        },
-      ].filter(Boolean)
+      {
+        color: 'blue',
+        children: `Lead created - ${selectedLead.createdAt || 'N/A'}`,
+      },
+      selectedLead.appointment_date && {
+        color: 'gold',
+        children: `Appointment scheduled - ${dayjs(selectedLead.appointment_date).format('MMMM DD, YYYY')}${selectedLead.slot_time ? ` at ${selectedLead.slot_time}` : ''}${selectedLead.spa_package ? ` (${selectedLead.spa_package})` : ''}`,
+      },
+      selectedLead.assignedTo && selectedLead.assignedTo !== 'Unassigned' && {
+        color: 'orange',
+        children: `Assigned to ${selectedLead.assignedTo}`,
+      },
+      {
+        color: 'green',
+        children: `Last interaction - ${selectedLead.lastInteraction || 'N/A'}`,
+      },
+      selectedLead.notes && {
+        color: 'purple',
+        children: `Notes: ${selectedLead.notes}`,
+      },
+      selectedLead.source === 'Website' && selectedLead.websiteUrl && {
+        color: 'cyan',
+        children: `Source: ${selectedLead.websiteUrl}`,
+      },
+    ].filter(Boolean)
     : []
 
   // CSV Parser function - handles quoted fields with commas
@@ -471,7 +530,7 @@ const Leads = () => {
 
     // Parse header
     const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''))
-    
+
     // Allowed headers only (case-insensitive mapping)
     const headerMap = {
       'name': 'name',
@@ -506,7 +565,7 @@ const Leads = () => {
     for (let i = 1; i < lines.length; i++) {
       const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, ''))
       const lead = {}
-      
+
       Object.keys(columnIndices).forEach(key => {
         const index = columnIndices[key]
         if (index !== undefined && values[index] && values[index].trim()) {
@@ -546,7 +605,7 @@ const Leads = () => {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-      
+
       messageApi.success('Sample CSV file downloaded')
     } catch (error) {
       console.error('Download sample error:', error)
@@ -570,17 +629,17 @@ const Leads = () => {
 
       // Import leads
       const result = await importLeads(leads).unwrap()
-      
+
       // Show summary
       const summary = `Import completed: ${result.results.success} successful, ${result.results.failed} failed, ${result.results.duplicates} duplicates`
-      
+
       if (result.results.errors.length > 0) {
         // Show errors in a detailed message
         const errorDetails = result.results.errors
           .slice(0, 10) // Show first 10 errors
           .map(err => `Row ${err.row}: ${err.error}`)
           .join('\n')
-        
+
         messageApi.warning({
           content: (
             <div>
@@ -590,10 +649,10 @@ const Leads = () => {
                   Showing first 10 errors. Total errors: {result.results.errors.length}
                 </p>
               )}
-              <pre style={{ 
-                background: '#2a2a2a', 
-                padding: 8, 
-                borderRadius: 4, 
+              <pre style={{
+                background: '#2a2a2a',
+                padding: 8,
+                borderRadius: 4,
                 fontSize: '11px',
                 maxHeight: '200px',
                 overflow: 'auto',
@@ -633,12 +692,12 @@ const Leads = () => {
       if (searchText) params.append('search', searchText)
 
       const queryString = params.toString()
-      
+
       // Use the same base URL logic as apiSlice
       const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === ''
       const baseUrl = isLocalhost
         ? 'http://localhost:3001/api'
-        : 'https://espa-international.onrender.com/api'
+        : 'https://e-spa.askeva.net/api'
 
       const response = await fetch(`${baseUrl}/leads/export${queryString ? `?${queryString}` : ''}`, {
         method: 'GET',
@@ -662,7 +721,7 @@ const Leads = () => {
       a.click()
       window.URL.revokeObjectURL(url)
       document.body.removeChild(a)
-      
+
       messageApi.success('Leads exported successfully')
     } catch (error) {
       console.error('Export error:', error)
@@ -672,10 +731,10 @@ const Leads = () => {
 
   return (
     <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <div style={{ 
-        display: 'flex', 
+      <div style={{
+        display: 'flex',
         flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between', 
+        justifyContent: 'space-between',
         alignItems: isMobile ? 'stretch' : 'center',
         marginBottom: 16,
         gap: 12,
@@ -705,8 +764,8 @@ const Leads = () => {
 
       {showFilters && (
         <Card style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}>
-          <div style={{ 
-            display: 'flex', 
+          <div style={{
+            display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',
             flexWrap: isMobile ? 'nowrap' : 'wrap',
             gap: 12,
@@ -720,9 +779,9 @@ const Leads = () => {
               onPressEnter={handleApplyFilters}
               style={{ width: isMobile ? '100%' : 250, flex: isMobile ? 'none' : '1 1 auto' }}
             />
-            <Select 
-              placeholder="Filter by Source" 
-              style={{ width: isMobile ? '100%' : 150 }} 
+            <Select
+              placeholder="Filter by Source"
+              style={{ width: isMobile ? '100%' : 150 }}
               allowClear
               value={filterSource}
               onChange={setFilterSource}
@@ -735,9 +794,9 @@ const Leads = () => {
               <Option value="Website">Website</Option>
               <Option value="Import">Import</Option>
             </Select>
-            <Select 
-              placeholder="Filter by Status" 
-              style={{ width: isMobile ? '100%' : 150 }} 
+            <Select
+              placeholder="Filter by Status"
+              style={{ width: isMobile ? '100%' : 150 }}
               allowClear
               value={filterStatus}
               onChange={setFilterStatus}
@@ -748,9 +807,9 @@ const Leads = () => {
               <Option value="Converted">Converted</Option>
               <Option value="Lost">Lost</Option>
             </Select>
-            <Select 
-              placeholder="Filter by Branch" 
-              style={{ width: isMobile ? '100%' : 150 }} 
+            <Select
+              placeholder="Filter by Branch"
+              style={{ width: isMobile ? '100%' : 150 }}
               allowClear
               value={filterBranch}
               onChange={setFilterBranch}
@@ -820,17 +879,28 @@ const Leads = () => {
           }}
         >
           <Form.Item
-            name="name"
-            label="Name"
-            rules={[{ required: true, message: 'Please enter name' }]}
+            name="first_name"
+            label="First Name"
+            rules={[{ required: true, message: 'Please enter first name' }]}
           >
-            <Input placeholder="Enter name" />
+            <Input placeholder="Enter first name" />
+          </Form.Item>
+
+          <Form.Item
+            name="last_name"
+            label="Last Name"
+            rules={[{ required: true, message: 'Please enter last name' }]}
+          >
+            <Input placeholder="Enter last name (optional)" />
           </Form.Item>
 
           <Form.Item
             name="email"
             label="Email"
-            rules={[{ type: 'email', message: 'Please enter a valid email' }]}
+            rules={[
+              { required: true, message: 'Please enter email' },
+              { type: 'email', message: 'Please enter a valid email' },
+            ]}
           >
             <Input placeholder="Enter email" />
           </Form.Item>
@@ -858,11 +928,69 @@ const Leads = () => {
           <Form.Item
             name="branch"
             label="Branch"
+            rules={[{ required: true, message: 'Please select branch' }]}
           >
             <Select placeholder="Select branch (optional)" allowClear>
               {branches.map((branch) => (
                 <Option key={branch._id || branch.id} value={branch._id || branch.id}>
                   {branch.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="appointment_date"
+            label="Appointment Date"
+            rules={[
+              { required: true, message: 'Please select appointment date' },
+              {
+                validator: (_, value) => {
+                  if (!value) return Promise.resolve()
+
+                  const nowPlus24 = dayjs().add(24, 'hour')
+                  if (value.isBefore(nowPlus24, 'day')) {
+                    return Promise.reject(
+                      new Error('Appointment must be booked at least 24 hours in advance')
+                    )
+                  }
+                  return Promise.resolve()
+                },
+              },
+            ]}
+          >
+            <DatePicker
+              style={{ width: '100%' }}
+              format="YYYY-MM-DD"
+              disabledDate={(current) =>
+                current && current < dayjs().startOf('day')
+              }
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="slot_time"
+            label="Slot Time"
+            rules={[{ required: true, message: 'Please select slot time' }]}
+          >
+            <Select placeholder="Select slot time">
+              {SLOT_TIMES.map((time) => (
+                <Option key={time} value={time}>
+                  {time}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="spa_package"
+            label="Spa Package"
+            rules={[{ required: true, message: 'Please select spa package' }]}
+          >
+            <Select placeholder="Select spa package">
+              {SPA_PACKAGES.map((pkg) => (
+                <Option key={pkg} value={pkg}>
+                  {pkg}
                 </Option>
               ))}
             </Select>
@@ -908,21 +1036,21 @@ const Leads = () => {
           </Form.Item>
 
           <Form.Item>
-            <div style={{ 
-              display: 'flex', 
+            <div style={{
+              display: 'flex',
               flexDirection: isMobile ? 'column' : 'row',
               gap: 8,
               width: '100%'
             }}>
-              <Button 
-                type="primary" 
+              <Button
+                type="primary"
                 htmlType="submit"
                 loading={createLoading || updateLoading}
                 style={{ width: isMobile ? '100%' : 'auto' }}
               >
                 {selectedLead ? 'Update' : 'Create'}
               </Button>
-              <Button 
+              <Button
                 onClick={() => {
                   setIsModalVisible(false)
                   form.resetFields()
@@ -945,24 +1073,136 @@ const Leads = () => {
           setSelectedLead(null)
         }}
         footer={null}
-        width={isMobile ? '95%' : 600}
+        width={isMobile ? '95%' : 700}
+        style={{ top: 20 }}
+        bodyStyle={{
+          maxHeight: 'calc(100vh - 120px)',
+          overflowY: 'auto',
+          padding: '16px',
+        }}
       >
         {selectedLead && (
           <div>
-            <div style={{ marginBottom: 16 }}>
-              <p><strong>Name:</strong> {selectedLead.name}</p>
-              <p><strong>Email:</strong> {selectedLead.email || 'N/A'}</p>
-              <p><strong>Mobile:</strong> {selectedLead.mobile}</p>
-              <p><strong>WhatsApp:</strong> {selectedLead.whatsapp || 'N/A'}</p>
-              <p><strong>Source:</strong> <Tag color="purple">{selectedLead.source}</Tag></p>
-              <p><strong>Status:</strong> <Tag>{selectedLead.status}</Tag></p>
-              <p><strong>Branch:</strong> {selectedLead.branch}</p>
-              <p><strong>Assigned To:</strong> {selectedLead.assignedTo}</p>
-              {selectedLead.subject && <p><strong>Subject:</strong> {selectedLead.subject}</p>}
-              {selectedLead.message && <p><strong>Message:</strong> {selectedLead.message}</p>}
-              {selectedLead.notes && <p><strong>Notes:</strong> {selectedLead.notes}</p>}
-            </div>
-            <Timeline items={timelineData} />
+            <Card
+              title="Personal Information"
+              style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
+              headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+                <div>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>First Name:</strong> {selectedLead.first_name || selectedLead.name?.split(' ')[0] || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Last Name:</strong> {selectedLead.last_name || selectedLead.name?.split(' ').slice(1).join(' ') || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Full Name:</strong> {selectedLead.name || `${selectedLead.first_name || ''} ${selectedLead.last_name || ''}`.trim() || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Email:</strong> {selectedLead.email || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Mobile:</strong> {selectedLead.mobile || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>WhatsApp:</strong> {selectedLead.whatsapp || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Source:</strong> <Tag color="purple">{selectedLead.source || 'N/A'}</Tag>
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Status:</strong> <Tag color={
+                      selectedLead.status === 'New' ? 'blue' :
+                        selectedLead.status === 'In Progress' ? 'orange' :
+                          selectedLead.status === 'Follow-Up' ? 'purple' :
+                            selectedLead.status === 'Converted' ? 'green' :
+                              selectedLead.status === 'Lost' ? 'red' : 'default'
+                    }>{selectedLead.status || 'N/A'}</Tag>
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Branch:</strong> {selectedLead.branch || 'Unassigned'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Assigned To:</strong> {selectedLead.assignedTo || 'Unassigned'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Created At:</strong> {selectedLead.createdAt || 'N/A'}
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Last Interaction:</strong> {selectedLead.lastInteraction || 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <Card
+              title="Appointment Details"
+              style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
+              headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+                <div>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Appointment Date:</strong> {
+                      selectedLead.appointment_date
+                        ? dayjs(selectedLead.appointment_date).format('MMMM DD, YYYY')
+                        : 'Not scheduled'
+                    }
+                  </p>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Slot Time:</strong> {selectedLead.slot_time || 'Not specified'}
+                  </p>
+                </div>
+                <div>
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Spa Package:</strong> {selectedLead.spa_package || 'Not specified'}
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            {(selectedLead.subject || selectedLead.message || selectedLead.notes) && (
+              <Card
+                title="Additional Information"
+                style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
+                headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+              >
+                {selectedLead.subject && (
+                  <p style={{ margin: '8px 0', color: '#fff' }}>
+                    <strong style={{ color: '#D4AF37' }}>Subject:</strong> {selectedLead.subject}
+                  </p>
+                )}
+                {selectedLead.message && (
+                  <div style={{ margin: '8px 0' }}>
+                    <strong style={{ color: '#D4AF37' }}>Message:</strong>
+                    <p style={{ color: '#fff', marginTop: 4, padding: 8, background: '#2a2a2a', borderRadius: 4 }}>
+                      {selectedLead.message}
+                    </p>
+                  </div>
+                )}
+                {selectedLead.notes && (
+                  <div style={{ margin: '8px 0' }}>
+                    <strong style={{ color: '#D4AF37' }}>Notes:</strong>
+                    <p style={{ color: '#fff', marginTop: 4, padding: 8, background: '#2a2a2a', borderRadius: 4 }}>
+                      {selectedLead.notes}
+                    </p>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {timelineData && timelineData.length > 0 && (
+              <Card
+                title="Timeline"
+                style={{ background: '#1a1a1a', borderColor: '#303030' }}
+                headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+              >
+                <Timeline items={timelineData} />
+              </Card>
+            )}
           </div>
         )}
       </Modal>
@@ -1024,29 +1264,30 @@ const Leads = () => {
         onCancel={() => setIsImportModalVisible(false)}
         footer={null}
         width={isMobile ? '95%' : 700}
+        style={{ color: '#000000' }}
       >
         <Alert
           message="CSV Format Requirements"
           description={
             <div>
-              <p><strong>Mandatory Fields:</strong> Name, Phone</p>
-              <p><strong>Optional Fields:</strong> Email, WhatsApp, Subject, Message</p>
+              <p style={{ color: '#000000' }}><strong >Mandatory Fields:</strong> Name, Phone</p>
+              <p style={{ color: '#000000' }}><strong >Optional Fields:</strong> Email, WhatsApp, Subject, Message</p>
               <p><strong style={{ color: '#ff4d4f' }}>Important:</strong> Only the above fields are allowed. Any other columns will be rejected.</p>
               <p style={{ marginTop: 8, fontSize: '12px', color: '#888' }}>
-                • Duplicate email/phone entries (in file or database) will be rejected<br/>
-                • Source will be set to "Import" automatically<br/>
-                • Status will be set to "New" automatically<br/>
+                • Duplicate email/phone entries (in file or database) will be rejected<br />
+                • Source will be set to "Import" automatically<br />
+                • Status will be set to "New" automatically<br />
                 • Branch, Assigned To, Notes, and Status cannot be imported via CSV
               </p>
             </div>
           }
           type="info"
           showIcon
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 16, color: '#000000' }}
         />
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <Button 
-            icon={<DownloadOutlined />} 
+          <Button
+            icon={<DownloadOutlined />}
             onClick={handleDownloadSample}
             block
             type="default"

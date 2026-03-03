@@ -16,6 +16,7 @@ import cloudAgentRoutes from './routes/cloudagent.js'
 import webhookRoutes from './routes/webhook.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
+import Branch from './models/Branch.js'
 
 dotenv.config()
 
@@ -36,13 +37,20 @@ const getCorsOrigins = () => {
       'http://localhost:3000',
       'http://localhost:3001',
       'http://127.0.0.1:5173',
-      'http://127.0.0.1:5500',
+      'http://127.0.0.1:5500'
     )
   }
   
-  // Add production frontend URL
+  // Add production frontend URLs (always allow these)
+  origins.push('https://e-spa.askeva.net')
+  origins.push('http://e-spa.askeva.net')
+  
+  // Add production frontend URL from environment variable
   if (process.env.PRODUCTION_FRONTEND_URL) {
-    origins.push(process.env.PRODUCTION_FRONTEND_URL)
+    const prodUrl = process.env.PRODUCTION_FRONTEND_URL.trim()
+    if (prodUrl && !origins.includes(prodUrl)) {
+      origins.push(prodUrl)
+    }
   }
   
   // Add website URL for contact form integration
@@ -82,7 +90,10 @@ app.use(cors({
     // Check if origin matches any allowed origin (including regex patterns)
     const isAllowed = allowedOrigins.some(allowedOrigin => {
       if (typeof allowedOrigin === 'string') {
-        return origin === allowedOrigin
+        // Normalize URLs for comparison (remove trailing slashes)
+        const normalizedOrigin = origin.replace(/\/$/, '')
+        const normalizedAllowed = allowedOrigin.replace(/\/$/, '')
+        return normalizedOrigin === normalizedAllowed || origin === allowedOrigin
       } else if (allowedOrigin instanceof RegExp) {
         return allowedOrigin.test(origin)
       }
@@ -93,7 +104,9 @@ app.use(cors({
       callback(null, true)
     } else {
       // Log for debugging
-      console.log(`CORS blocked origin: ${origin}`)
+      const timestamp = new Date().toISOString()
+      console.warn(`[${timestamp}] ⚠️  CORS blocked origin: ${origin}`)
+      console.warn(`[${timestamp}] 📋 Allowed origins: ${JSON.stringify(allowedOrigins.filter(o => typeof o === 'string'))}`)
       callback(new Error('Not allowed by CORS'))
     }
   },
@@ -106,6 +119,33 @@ app.options('*', cors())
 app.use(cookieParser())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString()
+  const startTime = Date.now()
+  
+  // Log incoming request
+  console.log(`[${timestamp}] 📥 ${req.method} ${req.originalUrl}`)
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+    // Log request body (excluding sensitive data)
+    const logBody = { ...req.body }
+    if (logBody.password) logBody.password = '***'
+    if (logBody.token) logBody.token = '***'
+    if (logBody.apiKey) logBody.apiKey = '***'
+    console.log(`[${timestamp}] 📦 Request Body:`, JSON.stringify(logBody, null, 2))
+  }
+  
+  // Log response when it finishes
+  res.on('finish', () => {
+    const duration = Date.now() - startTime
+    const timestamp = new Date().toISOString()
+    const statusEmoji = res.statusCode >= 400 ? '❌' : res.statusCode >= 300 ? '⚠️' : '✅'
+    console.log(`[${timestamp}] ${statusEmoji} ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`)
+  })
+  
+  next()
+})
 
 // Health check (before routes for quick testing)
 app.get('/api/health', (req, res) => {
@@ -127,9 +167,27 @@ app.use('/webhook', webhookRoutes)
 
 // 404 handler for undefined routes
 app.use('/api/*', (req, res) => {
+  const timestamp = new Date().toISOString()
+  console.warn(`[${timestamp}] ⚠️  404 - Route not found: ${req.method} ${req.originalUrl}`)
   res.status(404).json({ 
     success: false,
     message: `Route ${req.method} ${req.originalUrl} not found`
+  })
+})
+
+// Global error handler
+app.use((err, req, res, next) => {
+  const timestamp = new Date().toISOString()
+  console.error(`[${timestamp}] ❌ Error:`, err.message)
+  console.error(`[${timestamp}] 📍 Route: ${req.method} ${req.originalUrl}`)
+  if (err.stack) {
+    console.error(`[${timestamp}] 📚 Stack:`, err.stack)
+  }
+  
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
   })
 })
 
@@ -234,18 +292,94 @@ const seedSuperAdminIfNeeded = async () => {
   }
 }
 
+// Function to seed default branches if they don't exist
+const seedDefaultBranchesIfNeeded = async () => {
+  try {
+    const defaultBranches = [
+      {
+        name: 'Anna Nagar',
+        address: 'Anna Nagar, Chennai',
+        phone: '+91-0000000000',
+      },
+      {
+        name: 'Medavakkam',
+        address: 'Medavakkam, Chennai',
+        phone: '+91-0000000000',
+      },
+      {
+        name: 'Vallakkottai',
+        address: 'Vallakkottai, Chennai',
+        phone: '+91-0000000000',
+      },
+      {
+        name: 'Coimbatore',
+        address: 'Coimbatore, Tamil Nadu',
+        phone: '+91-0000000000',
+      },
+      {
+        name: 'Bangalore',
+        address: 'Bangalore, Karnataka',
+        phone: '+91-0000000000',
+      },
+    ]
+
+    let createdCount = 0
+    for (const branchData of defaultBranches) {
+      const existingBranch = await Branch.findOne({ name: branchData.name })
+      if (!existingBranch) {
+        const branch = new Branch(branchData)
+        await branch.save()
+        createdCount++
+        console.log(`✅ Branch "${branchData.name}" created`)
+      }
+    }
+
+    if (createdCount > 0) {
+      console.log(`✅ ${createdCount} default branch(es) created`)
+    } else {
+      console.log('ℹ️  Default branches already exist')
+    }
+  } catch (error) {
+    console.error('❌ Error seeding default branches:', error.message)
+    // Don't exit - let server start even if seeding fails
+  }
+}
+
+// Ensure console output is not buffered
+process.stdout.setEncoding('utf8')
+process.stderr.setEncoding('utf8')
+
+// Log startup information
+console.log('='.repeat(60))
+console.log('🚀 Starting ESPA International Backend Server')
+console.log('='.repeat(60))
+console.log(`📅 Started at: ${new Date().toISOString()}`)
+console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
+console.log(`🔌 Port: ${process.env.PORT || 3001}`)
+console.log('='.repeat(60))
+
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(async () => {
-    console.log('✅ Connected to MongoDB')
+    const timestamp = new Date().toISOString()
+    console.log(`[${timestamp}] ✅ Connected to MongoDB`)
+    console.log(`[${timestamp}] 📊 Database: ${process.env.MONGODB_URI.split('@')[1]?.split('/')[1] || 'Connected'}`)
     
     // Seed super admin if needed
     await seedSuperAdminIfNeeded()
     
+    // Seed default branches if needed
+    await seedDefaultBranchesIfNeeded()
+    
     const server = app.listen(PORT, () => {
-      console.log(`✅ Server is running on port ${PORT}`)
-      console.log(`✅ Health check: http://localhost:${PORT}/api/health`)
-      console.log(`✅ Login endpoint: http://localhost:${PORT}/api/auth/login`)
+      const timestamp = new Date().toISOString()
+      console.log('='.repeat(60))
+      console.log(`[${timestamp}] ✅ Server is running on port ${PORT}`)
+      console.log(`[${timestamp}] ✅ Health check: http://localhost:${PORT}/api/health`)
+      console.log(`[${timestamp}] ✅ Login endpoint: http://localhost:${PORT}/api/auth/login`)
+      console.log('='.repeat(60))
+      console.log('📝 Server logs will appear below:')
+      console.log('='.repeat(60))
     })
     
     server.on('error', (error) => {
