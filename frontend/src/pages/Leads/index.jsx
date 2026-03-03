@@ -81,6 +81,9 @@ const Leads = () => {
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [isTimelineVisible, setIsTimelineVisible] = useState(false)
   const [isImportModalVisible, setIsImportModalVisible] = useState(false)
+  const [isCallModalVisible, setIsCallModalVisible] = useState(false)
+  const [callLeadRecord, setCallLeadRecord] = useState(null)
+  const [callCampaign, setCallCampaign] = useState('')
   const [selectedLead, setSelectedLead] = useState(null)
   const [showFilters, setShowFilters] = useState(false)
 
