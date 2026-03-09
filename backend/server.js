@@ -11,6 +11,7 @@ import notificationRoutes from './routes/notifications.js'
 import loginHistoryRoutes from './routes/loginHistory.js'
 import leadRoutes from './routes/leads.js'
 import websiteSettingsRoutes from './routes/websiteSettings.js'
+import whatsappRoutes from './routes/whatsapp.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
 import Branch from './models/Branch.js'
@@ -158,6 +159,7 @@ app.use('/api/notifications', notificationRoutes)
 app.use('/api/login-history', loginHistoryRoutes)
 app.use('/api/leads', leadRoutes)
 app.use('/api/website-settings', websiteSettingsRoutes)
+app.use('/api/whatsapp', whatsappRoutes)
 
 // 404 handler for undefined routes
 app.use('/api/*', (req, res) => {

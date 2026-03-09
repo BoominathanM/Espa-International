@@ -93,3 +93,49 @@ export const authenticateApiKey = async (req, res, next) => {
     })
   }
 }
+
+// WhatsApp API Key authentication for WhatsApp webhook integration
+export const authenticateWhatsAppApiKey = async (req, res, next) => {
+  try {
+    // Get API key from header (X-API-Key, Authorization header, or X-WhatsApp-API-Key)
+    const apiKey = req.header('X-WhatsApp-API-Key') || 
+                   req.header('X-API-Key') || 
+                   req.header('Authorization')?.replace('Bearer ', '')
+    
+    if (!apiKey) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'WhatsApp API key is required. Please provide X-WhatsApp-API-Key or X-API-Key header.' 
+      })
+    }
+
+    // Get WhatsApp API key from environment variable
+    const expectedApiKey = process.env.WHATSAPP_API_KEY
+    
+    if (!expectedApiKey) {
+      console.error('❌ WHATSAPP_API_KEY is not set in environment variables')
+      return res.status(500).json({ 
+        success: false,
+        message: 'Server configuration error: WhatsApp API key not configured' 
+      })
+    }
+
+    // Compare API keys
+    if (apiKey !== expectedApiKey) {
+      console.warn(`[WhatsApp Webhook] Invalid API key attempt from ${req.ip}`)
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid WhatsApp API key' 
+      })
+    }
+
+    // API key is valid, proceed
+    next()
+  } catch (error) {
+    console.error('WhatsApp API key authentication error:', error)
+    res.status(500).json({ 
+      success: false,
+      message: 'Authentication error' 
+    })
+  }
+}

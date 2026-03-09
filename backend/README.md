@@ -11,14 +11,17 @@ Backend API server for ESPA International CRM system.
    ```
 
 2. **Configure Environment Variables**
-   - Copy `.env.example` to `.env` (or create `.env` file)
-   - Update the MongoDB URI and JWT secret in `.env`:
+   - Create `.env` file in the backend directory
+   - Add the following environment variables:
      ```
      PORT=3001
      MONGODB_URI=mongodb+srv://boominathanaskeva_db:Boomi%40183724@boominathan.b5yavux.mongodb.net/e-spa
      JWT_SECRET=your_jwt_secret_key_change_in_production
      NODE_ENV=development
      WEBSITE_API_KEY=esp_b3ed2ffba4d8d15a52b3eeca54f9b6dfeba5b8364dfafcc67c807784d32b5de4
+     WHATSAPP_API_KEY=74f3c98f9f65fa76cf3b8d349442e004ee27b990ac5a67c91f3c2695e1a251a681d9a566e2ef45ee476cf46c13745b74d69c77a6b1b51c914b7cfc2d6c3522f5
+     FRONTEND_URLS=https://e-spa.askeva.net,http://localhost:3000
+     PRODUCTION_FRONTEND_URL=https://e-spa.askeva.net
      ```
 
 3. **Seed Super Admin**
@@ -62,6 +65,7 @@ Backend API server for ESPA International CRM system.
 
 ### Leads
 - `POST /api/leads/website` - Create lead from website contact form (requires API key)
+- `GET /api/leads/whatsapp` - Get leads for WhatsApp API (requires WhatsApp API key)
 - `POST /api/leads` - Create lead from frontend (requires auth)
 - `GET /api/leads` - Get all leads with filters and pagination (requires auth)
 - `GET /api/leads/export` - Export leads to CSV (requires auth)
@@ -69,6 +73,10 @@ Backend API server for ESPA International CRM system.
 - `GET /api/leads/:id` - Get single lead (requires auth)
 - `PUT /api/leads/:id` - Update lead (requires auth)
 - `DELETE /api/leads/:id` - Delete lead (requires superadmin)
+
+### WhatsApp Integration
+- `POST /api/whatsapp/webhook` - Receive webhook events from WhatsApp API (requires WhatsApp API key)
+- `GET /api/whatsapp/webhook/sample` - Get sample webhook payload (public)
 
 ## Features
 
@@ -78,6 +86,9 @@ Backend API server for ESPA International CRM system.
 - Prevents duplicate user assignments across branches
 - MongoDB database integration
 - Password hashing with bcrypt
+- WhatsApp webhook integration for real-time lead synchronization
+- Website contact form integration
+- Lead auto-assignment to branch users
 
 ## Database Models
 
@@ -88,4 +99,24 @@ Backend API server for ESPA International CRM system.
 - name, address, phone, email, assignedUsers
 
 ### Lead
-- name, email, phone, whatsapp, subject, message, source, status, branch, assignedTo, notes, websiteUrl, ipAddress, lastInteraction
+- first_name, last_name, email, phone, whatsapp, subject, message, source, status, branch, assignedTo, notes, websiteUrl, ipAddress, lastInteraction, appointment_date, slot_time, spa_package
+
+## WhatsApp Webhook Integration
+
+For detailed information about configuring WhatsApp webhooks, see [WHATSAPP_WEBHOOK_INTEGRATION.md](./WHATSAPP_WEBHOOK_INTEGRATION.md)
+
+### Quick Setup
+
+1. **Add WhatsApp API Key to `.env`:**
+   ```
+   WHATSAPP_API_KEY=74f3c98f9f65fa76cf3b8d349442e004ee27b990ac5a67c91f3c2695e1a251a681d9a566e2ef45ee476cf46c13745b74d69c77a6b1b51c914b7cfc2d6c3522f5
+   ```
+
+2. **Configure Webhook URL in ASK EVA Platform:**
+   - Production: `https://e-spa.askeva.net/api/whatsapp/webhook`
+   - Development: `http://localhost:3001/api/whatsapp/webhook` (use ngrok for local testing)
+
+3. **Webhook Events Supported:**
+   - `lead_created` - Creates a new lead in CRM
+   - `lead_updated` - Updates an existing lead
+   - `lead_deleted` - Deletes a lead from CRM
