@@ -17,7 +17,7 @@ export const handleWebhook = async (req, res) => {
       'x-api-key': req.headers['x-api-key'] ? '***' : undefined,
       'authorization': req.headers['authorization'] ? '***' : undefined,
     })
-    
+
     const { event, timestamp, data } = req.body
 
     // Log request body (sanitized)
@@ -45,16 +45,22 @@ export const handleWebhook = async (req, res) => {
     }
 
     // Validate required fields
-    if (!event || !data) {
-      console.warn(`[WhatsApp Webhook] Missing required fields - event: ${!!event}, data: ${!!data}`)
+    if (!event) {
       return res.status(400).json({
         success: false,
-        message: 'Event and data are required fields',
-        received: {
-          hasEvent: !!event,
-          hasData: !!data,
-        },
-        hint: 'Ensure your webhook payload includes both "event" and "data" fields'
+        message: 'Event is required',
+      })
+    }
+
+    // Allow webhook test without data
+    if (!data) {
+      console.log('[WhatsApp Webhook] No data field detected – treating as webhook test')
+
+      return res.status(200).json({
+        success: true,
+        message: 'Webhook endpoint reachable. Test successful.',
+        event,
+        timestamp: new Date().toISOString()
       })
     }
 
@@ -65,13 +71,13 @@ export const handleWebhook = async (req, res) => {
     switch (event) {
       case 'lead_created':
         return await handleLeadCreated(req, res, data, timestamp)
-      
+
       case 'lead_updated':
         return await handleLeadUpdated(req, res, data, timestamp)
-      
+
       case 'lead_deleted':
         return await handleLeadDeleted(req, res, data, timestamp)
-      
+
       default:
         console.warn(`[WhatsApp Webhook] Unknown event type: ${event}`)
         return res.status(200).json({
@@ -113,7 +119,7 @@ const handleLeadCreated = async (req, res, data, timestamp) => {
     const duplicateQuery = {
       $or: []
     }
-    
+
     if (email && email.trim()) {
       duplicateQuery.$or.push({ email: email.toLowerCase().trim() })
     }
@@ -221,7 +227,7 @@ const handleLeadUpdated = async (req, res, data, timestamp) => {
 
     // Try to find lead by leadId (from WhatsApp API) or by email/phone
     let lead = null
-    
+
     if (leadId) {
       // Check if leadId is a valid MongoDB ObjectId
       if (leadId.match(/^[0-9a-fA-F]{24}$/)) {
@@ -238,7 +244,7 @@ const handleLeadUpdated = async (req, res, data, timestamp) => {
       if (mobile && mobile.trim()) {
         query.$or.push({ phone: mobile.trim() })
       }
-      
+
       if (query.$or.length > 0) {
         lead = await Lead.findOne(query)
       }
@@ -257,11 +263,11 @@ const handleLeadUpdated = async (req, res, data, timestamp) => {
       lead.first_name = nameParts[0] || lead.first_name
       lead.last_name = nameParts.slice(1).join(' ') || lead.last_name
     }
-    
+
     if (email) {
       lead.email = email.toLowerCase().trim()
     }
-    
+
     if (mobile) {
       lead.phone = mobile.trim()
       lead.whatsapp = mobile.trim()
@@ -321,7 +327,7 @@ const handleLeadDeleted = async (req, res, data, timestamp) => {
 
     // Try to find lead
     let lead = null
-    
+
     if (leadId) {
       if (leadId.match(/^[0-9a-fA-F]{24}$/)) {
         lead = await Lead.findById(leadId)
@@ -336,7 +342,7 @@ const handleLeadDeleted = async (req, res, data, timestamp) => {
       if (mobile && mobile.trim()) {
         query.$or.push({ phone: mobile.trim() })
       }
-      
+
       if (query.$or.length > 0) {
         lead = await Lead.findOne(query)
       }
@@ -378,7 +384,7 @@ export const verifyWebhook = (req, res) => {
   // Return a simple success response
   console.log('[WhatsApp Webhook] GET verification request received from', req.ip)
   console.log('[WhatsApp Webhook] Query params:', req.query)
-  
+
   res.status(200).json({
     success: true,
     message: 'Webhook endpoint is active and ready to receive events',
@@ -399,7 +405,7 @@ export const testWebhook = async (req, res) => {
     console.log('[WhatsApp Webhook Test] Headers:', req.headers)
     console.log('[WhatsApp Webhook Test] Query params:', req.query)
     console.log('[WhatsApp Webhook Test] Body:', req.body)
-    
+
     // Handle GET requests
     if (req.method === 'GET') {
       return res.status(200).json({
@@ -412,11 +418,11 @@ export const testWebhook = async (req, res) => {
         info: 'Use POST method to test webhook payload processing',
       })
     }
-    
+
     // Handle POST requests
     // Try to process as a normal webhook
     const { event, timestamp, data } = req.body
-    
+
     if (event && data) {
       // Process the webhook normally (but without authentication)
       console.log('[WhatsApp Webhook Test] Processing webhook event:', event)
