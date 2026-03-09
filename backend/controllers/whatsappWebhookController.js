@@ -9,18 +9,39 @@ import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
  */
 export const handleWebhook = async (req, res) => {
   try {
+    // Log incoming webhook request details
+    console.log(`[WhatsApp Webhook] POST request received from ${req.ip}`)
+    console.log(`[WhatsApp Webhook] Headers:`, {
+      'content-type': req.headers['content-type'],
+      'x-whatsapp-api-key': req.headers['x-whatsapp-api-key'] ? '***' : undefined,
+      'x-api-key': req.headers['x-api-key'] ? '***' : undefined,
+    })
+    
     const { event, timestamp, data } = req.body
+
+    // Log request body (sanitized)
+    console.log(`[WhatsApp Webhook] Request body:`, {
+      event,
+      timestamp,
+      hasData: !!data,
+      dataKeys: data ? Object.keys(data) : [],
+    })
 
     // Validate required fields
     if (!event || !data) {
+      console.warn(`[WhatsApp Webhook] Missing required fields - event: ${!!event}, data: ${!!data}`)
       return res.status(400).json({
         success: false,
         message: 'Event and data are required fields',
+        received: {
+          hasEvent: !!event,
+          hasData: !!data,
+        },
       })
     }
 
     // Log incoming webhook
-    console.log(`[WhatsApp Webhook] Received event: ${event} at ${timestamp || new Date().toISOString()}`)
+    console.log(`[WhatsApp Webhook] Processing event: ${event} at ${timestamp || new Date().toISOString()}`)
 
     // Handle different event types
     switch (event) {
@@ -325,6 +346,86 @@ const handleLeadDeleted = async (req, res, data, timestamp) => {
       success: false,
       message: 'Error deleting lead from webhook',
       error: process.env.NODE_ENV !== 'production' ? error.message : undefined,
+    })
+  }
+}
+
+/**
+ * @desc    Verify webhook endpoint (GET request for webhook verification)
+ * @route   GET /api/whatsapp/webhook
+ * @access  Public (for webhook verification)
+ */
+export const verifyWebhook = (req, res) => {
+  // Many webhook systems send GET requests to verify the endpoint
+  // Return a simple success response
+  console.log('[WhatsApp Webhook] GET verification request received from', req.ip)
+  console.log('[WhatsApp Webhook] Query params:', req.query)
+  
+  res.status(200).json({
+    success: true,
+    message: 'Webhook endpoint is active and ready to receive events',
+    endpoint: '/api/whatsapp/webhook',
+    methods: ['GET', 'POST'],
+    timestamp: new Date().toISOString(),
+  })
+}
+
+/**
+ * @desc    Test webhook endpoint (for testing without authentication)
+ * @route   GET/POST /api/whatsapp/webhook/test
+ * @access  Public (for testing purposes)
+ */
+export const testWebhook = async (req, res) => {
+  try {
+    console.log(`[WhatsApp Webhook Test] ${req.method} test request received from`, req.ip)
+    console.log('[WhatsApp Webhook Test] Headers:', req.headers)
+    console.log('[WhatsApp Webhook Test] Query params:', req.query)
+    console.log('[WhatsApp Webhook Test] Body:', req.body)
+    
+    // Handle GET requests
+    if (req.method === 'GET') {
+      return res.status(200).json({
+        success: true,
+        message: 'Test webhook endpoint is working (GET)',
+        method: 'GET',
+        endpoint: '/api/whatsapp/webhook/test',
+        availableMethods: ['GET', 'POST'],
+        timestamp: new Date().toISOString(),
+        info: 'Use POST method to test webhook payload processing',
+      })
+    }
+    
+    // Handle POST requests
+    // Try to process as a normal webhook
+    const { event, timestamp, data } = req.body
+    
+    if (event && data) {
+      // Process the webhook normally (but without authentication)
+      console.log('[WhatsApp Webhook Test] Processing webhook event:', event)
+      return await handleWebhook(req, res)
+    } else {
+      // Return test response
+      return res.status(200).json({
+        success: true,
+        message: 'Test webhook endpoint is working (POST)',
+        method: 'POST',
+        received: {
+          hasEvent: !!event,
+          hasData: !!data,
+          bodyKeys: Object.keys(req.body || {}),
+          body: req.body,
+        },
+        timestamp: new Date().toISOString(),
+        note: 'Send a valid webhook payload with event and data fields to test processing',
+      })
+    }
+  } catch (error) {
+    console.error('[WhatsApp Webhook Test] Error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Test webhook error',
+      error: error.message,
+      stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
     })
   }
 }
