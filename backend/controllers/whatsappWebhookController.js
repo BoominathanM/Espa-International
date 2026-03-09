@@ -15,6 +15,7 @@ export const handleWebhook = async (req, res) => {
       'content-type': req.headers['content-type'],
       'x-whatsapp-api-key': req.headers['x-whatsapp-api-key'] ? '***' : undefined,
       'x-api-key': req.headers['x-api-key'] ? '***' : undefined,
+      'authorization': req.headers['authorization'] ? '***' : undefined,
     })
     
     const { event, timestamp, data } = req.body
@@ -27,6 +28,22 @@ export const handleWebhook = async (req, res) => {
       dataKeys: data ? Object.keys(data) : [],
     })
 
+    // Handle test events gracefully
+    if (event === 'test' || event === 'webhook_test') {
+      console.log(`[WhatsApp Webhook] Test event received`)
+      return res.status(200).json({
+        success: true,
+        message: 'Webhook test successful! The endpoint is working correctly.',
+        endpoint: '/api/whatsapp/webhook',
+        timestamp: new Date().toISOString(),
+        received: {
+          event,
+          timestamp,
+          hasData: !!data,
+        }
+      })
+    }
+
     // Validate required fields
     if (!event || !data) {
       console.warn(`[WhatsApp Webhook] Missing required fields - event: ${!!event}, data: ${!!data}`)
@@ -37,6 +54,7 @@ export const handleWebhook = async (req, res) => {
           hasEvent: !!event,
           hasData: !!data,
         },
+        hint: 'Ensure your webhook payload includes both "event" and "data" fields'
       })
     }
 

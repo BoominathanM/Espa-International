@@ -66,11 +66,17 @@ PRODUCTION_FRONTEND_URL=https://e-spa.askeva.net
      - ✅ lead_updated
      - ✅ lead_deleted
 
-4. **Add Header Parameters (Optional but Recommended)**
+4. **Add Header Parameters (REQUIRED for webhook to work)**
    - **Header Key:** `X-WhatsApp-API-Key`
    - **Header Value:** `74f3c98f9f65fa76cf3b8d349442e004ee27b990ac5a67c91f3c2695e1a251a681d9a566e2ef45ee476cf46c13745b74d69c77a6b1b51c914b7cfc2d6c3522f5`
+   
+   **⚠️ IMPORTANT:** Without this header, webhook tests will fail with "401 Unauthorized" error!
 
 5. **Save Configuration**
+
+6. **Test the Webhook**
+   - Click the "Test Webhook" button in ASK EVA platform
+   - Should return success if configured correctly
 
 ---
 
@@ -358,40 +364,53 @@ curl https://e-spa.askeva.net/api/whatsapp/webhook/sample
 
 ### Issue 1: "Webhook test failed" in ASK EVA Platform
 
+**Error Message:** `"WhatsApp API key is required. Please provide X-WhatsApp-API-Key or X-API-Key header."`
+
+#### Root Cause:
+The webhook test is failing because the API key header is not being sent from ASK EVA platform.
+
 #### Solutions:
 
-1. **Verify Server is Running**
+1. **Configure Header Parameters in ASK EVA Platform (MOST IMPORTANT)**
+   - In the webhook configuration page, find "Header Parameters (Optional)" section
+   - **Header Key:** `X-WhatsApp-API-Key` (exactly as shown, case-sensitive)
+   - **Header Value:** `74f3c98f9f65fa76cf3b8d349442e004ee27b990ac5a67c91f3c2695e1a251a681d9a566e2ef45ee476cf46c13745b74d69c77a6b1b51c914b7cfc2d6c3522f5`
+   - **⚠️ CRITICAL:** This field is marked "Optional" but it's REQUIRED for the webhook to work!
+   - Click "Save" after adding the header
+
+2. **Verify Server is Running**
    ```bash
    curl https://e-spa.askeva.net/api/health
    ```
 
-2. **Check Environment Variables**
+3. **Check Environment Variables**
    - Ensure `WHATSAPP_API_KEY` is set in `.env`
    - Restart server after updating `.env`
 
-3. **Verify API Key**
+4. **Verify API Key**
    - Check API key in ASK EVA platform matches `.env`
    - Ensure complete API key (not truncated):
      ```
      74f3c98f9f65fa76cf3b8d349442e004ee27b990ac5a67c91f3c2695e1a251a681d9a566e2ef45ee476cf46c13745b74d69c77a6b1b51c914b7cfc2d6c3522f5
      ```
 
-4. **Test Endpoint Directly**
+5. **Test Endpoint Directly**
    ```bash
-   # Test GET
+   # Test GET (should work without auth)
    curl https://e-spa.askeva.net/api/whatsapp/webhook
    
-   # Test POST
+   # Test POST (requires API key)
    curl -X POST https://e-spa.askeva.net/api/whatsapp/webhook \
      -H "Content-Type: application/json" \
-     -H "X-WhatsApp-API-Key: YOUR_KEY" \
+     -H "X-WhatsApp-API-Key: 74f3c98f9f65fa76cf3b8d349442e004ee27b990ac5a67c91f3c2695e1a251a681d9a566e2ef45ee476cf46c13745b74d69c77a6b1b51c914b7cfc2d6c3522f5" \
      -d '{"event":"lead_created","data":{"name":"Test","mobile":"1234567890"}}'
    ```
 
-5. **Check Server Logs**
+6. **Check Server Logs**
    - Look for: `[WhatsApp Webhook]` messages
    - Check for authentication errors
    - Verify request is reaching the server
+   - Look for: `Missing API key` or `Invalid API key` messages
 
 ### Issue 2: Authentication Errors
 

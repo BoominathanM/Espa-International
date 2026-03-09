@@ -97,15 +97,43 @@ export const authenticateApiKey = async (req, res, next) => {
 // WhatsApp API Key authentication for WhatsApp webhook integration
 export const authenticateWhatsAppApiKey = async (req, res, next) => {
   try {
-    // Get API key from header (X-API-Key, Authorization header, or X-WhatsApp-API-Key)
+    // Get API key from header (X-WhatsApp-API-Key, X-API-Key, or Authorization header)
     const apiKey = req.header('X-WhatsApp-API-Key') || 
+                   req.header('x-whatsapp-api-key') || // lowercase variant
                    req.header('X-API-Key') || 
-                   req.header('Authorization')?.replace('Bearer ', '')
+                   req.header('x-api-key') || // lowercase variant
+                   req.header('Authorization')?.replace('Bearer ', '') ||
+                   req.header('authorization')?.replace('Bearer ', '') // lowercase variant
+    
+    // Check if this is a test request (from ASK EVA platform test feature)
+    // Test requests might not have authentication, so we'll handle them gracefully
+    const isTestRequest = req.body?.event === 'test' || 
+                         req.body?.test === true ||
+                         req.query?.test === 'true' ||
+                         req.header('X-Test-Request') === 'true'
     
     if (!apiKey) {
+      // For test requests, provide helpful error message
+      if (isTestRequest) {
+        console.warn(`[WhatsApp Webhook] Test request without API key from ${req.ip}`)
+        return res.status(401).json({ 
+          success: false,
+          message: 'WhatsApp API key is required for webhook requests. Please configure the API key in the Header Parameters section of your webhook configuration.',
+          error: 'Missing API key',
+          hint: 'Add "X-WhatsApp-API-Key" header with your API key value in the webhook configuration',
+          apiKey: process.env.WHATSAPP_API_KEY ? 'Configured on server' : 'Not configured on server'
+        })
+      }
+      
+      // Log all headers for debugging
+      console.warn(`[WhatsApp Webhook] Missing API key from ${req.ip}`)
+      console.warn(`[WhatsApp Webhook] Available headers:`, Object.keys(req.headers))
+      
       return res.status(401).json({ 
         success: false,
-        message: 'WhatsApp API key is required. Please provide X-WhatsApp-API-Key or X-API-Key header.' 
+        message: 'WhatsApp API key is required. Please provide X-WhatsApp-API-Key or X-API-Key header.',
+        error: 'Missing API key',
+        hint: 'Configure the header in your webhook settings: Header Key: "X-WhatsApp-API-Key", Header Value: your API key'
       })
     }
 
@@ -116,26 +144,35 @@ export const authenticateWhatsAppApiKey = async (req, res, next) => {
       console.error('❌ WHATSAPP_API_KEY is not set in environment variables')
       return res.status(500).json({ 
         success: false,
-        message: 'Server configuration error: WhatsApp API key not configured' 
+        message: 'Server configuration error: WhatsApp API key not configured',
+        error: 'Server misconfiguration'
       })
     }
 
-    // Compare API keys
-    if (apiKey !== expectedApiKey) {
+    // Compare API keys (trim whitespace)
+    const trimmedApiKey = apiKey.trim()
+    const trimmedExpectedKey = expectedApiKey.trim()
+    
+    if (trimmedApiKey !== trimmedExpectedKey) {
       console.warn(`[WhatsApp Webhook] Invalid API key attempt from ${req.ip}`)
+      console.warn(`[WhatsApp Webhook] Received key length: ${trimmedApiKey.length}, Expected length: ${trimmedExpectedKey.length}`)
       return res.status(401).json({ 
         success: false,
-        message: 'Invalid WhatsApp API key' 
+        message: 'Invalid WhatsApp API key',
+        error: 'Authentication failed',
+        hint: 'Verify the API key in your webhook configuration matches the server configuration'
       })
     }
 
     // API key is valid, proceed
+    console.log(`[WhatsApp Webhook] Authentication successful from ${req.ip}`)
     next()
   } catch (error) {
     console.error('WhatsApp API key authentication error:', error)
     res.status(500).json({ 
       success: false,
-      message: 'Authentication error' 
+      message: 'Authentication error',
+      error: error.message
     })
   }
 }
