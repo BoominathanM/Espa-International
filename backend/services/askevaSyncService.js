@@ -73,12 +73,23 @@ export async function fetchAskEvaLeads() {
     'Expires': '0',
   }
 
+  const basesToTry = [base]
+  if (base === 'https://apiv2.askeva.io') {
+    basesToTry.push('https://api.askeva.io', 'https://apiv2.askeva.net')
+  }
+  const pathVariants = ['v1/lead-configuration/leads', 'api/v1/lead-configuration/leads', 'v2/lead-configuration/leads']
   const urlVariants = []
-  urlVariants.push(`${base}/v1/lead-configuration/leads`)
+  for (const b of basesToTry) {
+    for (const p of pathVariants) {
+      urlVariants.push(`${b.replace(/\/$/, '')}/${p}`)
+    }
+  }
   if (userId.length > 0) {
-    urlVariants.push(`${base}/v1/users/${encodeURIComponent(userId)}/lead-configuration/leads`)
-    urlVariants.push(`${base}/v1/lead-configuration/leads?userId=${encodeURIComponent(userId)}`)
-    urlVariants.push(`${base}/v1/users/${encodeURIComponent(userId)}/leads`)
+    for (const b of basesToTry) {
+      const bClean = b.replace(/\/$/, '')
+      urlVariants.push(`${bClean}/v1/users/${encodeURIComponent(userId)}/lead-configuration/leads`)
+      urlVariants.push(`${bClean}/v1/lead-configuration/leads?userId=${encodeURIComponent(userId)}`)
+    }
   }
 
   // AskEva returns 500 "Malformed UTF-8 data" when Authorization: Bearer is sent - use API-key headers first
@@ -113,9 +124,11 @@ export async function fetchAskEvaLeads() {
       const status = res?.status
       const is403 = status === 403
       const is304 = status === 304
+      const is404 = status === 404
       let hint = ''
-      if (is403) hint = ' AskEva returned 403: ensure your API key can read leads. In AskEva dashboard look for an API/Integration token with "read leads" (or ask support for the correct endpoint and auth for GET leads).'
-      else if (is304) hint = ' AskEva returned 304 Not Modified (cached). Sync uses cache-busting; if this persists, try Sync AskEva again in a few seconds.'
+      if (is403) hint = ' AskEva returned 403: ensure your API key can read leads. Check AskEva dashboard for API token with "read leads" permission.'
+      else if (is304) hint = ' AskEva returned 304 Not Modified. Try Sync AskEva again in a few seconds.'
+      else if (is404) hint = ' AskEva returned 404: API URL/path may differ in production. Set ASKEVA_API_URL in .env to your AskEva API base (e.g. https://apiv2.askeva.io). New leads still sync via webhook.'
       return {
         success: false,
         error: `AskEva API error ${status || 'unknown'}: ${text || res?.statusText || 'Unknown'}${hint}`,

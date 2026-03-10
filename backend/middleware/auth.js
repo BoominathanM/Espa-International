@@ -113,27 +113,26 @@ export const authenticateWhatsAppApiKey = async (req, res, next) => {
                          req.header('X-Test-Request') === 'true'
     
     if (!apiKey) {
-      // For test requests, provide helpful error message
+      // Bypass: when AskEva cannot send API key in headers (e.g. platform limitation)
+      const skipAuth = process.env.WHATSAPP_WEBHOOK_SKIP_AUTH === 'true' || process.env.WHATSAPP_WEBHOOK_SKIP_AUTH === '1'
+      const hasValidPayload = req.body && (req.body.event || req.body.data || req.body.message)
+      if (skipAuth && hasValidPayload) {
+        console.log(`[WhatsApp Webhook] Auth bypass (WHATSAPP_WEBHOOK_SKIP_AUTH) from ${req.ip}`)
+        return next()
+      }
       if (isTestRequest) {
         console.warn(`[WhatsApp Webhook] Test request without API key from ${req.ip}`)
-        return res.status(401).json({ 
+        return res.status(401).json({
           success: false,
-          message: 'WhatsApp API key is required for webhook requests. Please configure the API key in the Header Parameters section of your webhook configuration.',
-          error: 'Missing API key',
-          hint: 'Add "X-WhatsApp-API-Key" header with your API key value in the webhook configuration',
-          apiKey: process.env.WHATSAPP_API_KEY ? 'Configured on server' : 'Not configured on server'
+          message: 'WhatsApp API key is required. Configure X-WhatsApp-API-Key in webhook settings, or set WHATSAPP_WEBHOOK_SKIP_AUTH=true in .env to bypass.',
+          error: 'Missing API key'
         })
       }
-      
-      // Log all headers for debugging
       console.warn(`[WhatsApp Webhook] Missing API key from ${req.ip}`)
-      console.warn(`[WhatsApp Webhook] Available headers:`, Object.keys(req.headers))
-      
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'WhatsApp API key is required. Please provide X-WhatsApp-API-Key or X-API-Key header.',
-        error: 'Missing API key',
-        hint: 'Configure the header in your webhook settings: Header Key: "X-WhatsApp-API-Key", Header Value: your API key'
+        message: 'WhatsApp API key is required. If AskEva cannot send headers, set WHATSAPP_WEBHOOK_SKIP_AUTH=true in backend .env',
+        error: 'Missing API key'
       })
     }
 
