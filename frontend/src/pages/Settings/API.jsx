@@ -8,6 +8,10 @@ import {
   useUpdateWebsiteSettingsMutation,
 } from '../../store/api/websiteSettingsApi'
 import {
+  useGetWhatsAppSettingsQuery,
+  useUpdateWhatsAppSettingsMutation,
+} from '../../store/api/whatsappSettingsApi'
+import {
   useGetOzonetelSettingsQuery,
   useUpdateOzonetelSettingsMutation,
 } from '../../store/api/ozonetelSettingsApi'
@@ -22,7 +26,12 @@ const API = () => {
   // Website integration API hooks
   const { data: settingsData, isLoading: isLoadingSettings, error: settingsError, refetch: refetchSettings } = useGetWebsiteSettingsQuery()
   const [updateWebsiteSettings, { isLoading: isUpdatingWebsite }] = useUpdateWebsiteSettingsMutation()
+
+  // WhatsApp integration API hooks
+  const { data: whatsappSettingsData, isLoading: isLoadingWhatsApp, error: whatsappError, refetch: refetchWhatsApp } = useGetWhatsAppSettingsQuery()
+  const [updateWhatsAppSettings, { isLoading: isUpdatingWhatsApp }] = useUpdateWhatsAppSettingsMutation()
   const websiteSettings = settingsData?.settings
+  const whatsappSettings = whatsappSettingsData?.settings
 
   // Ozonetel integration API hooks (only Super Admin can load/save)
   const isSuperAdminUser = isSuperAdmin()
@@ -40,6 +49,26 @@ const API = () => {
       })
     }
   }, [websiteSettings, websiteForm])
+
+  // Load WhatsApp settings into form when data is available
+  useEffect(() => {
+    if (whatsappSettings) {
+      whatsappForm.setFieldsValue({
+        backendUrl: whatsappSettings.backendUrl || '',
+        apiKey: whatsappSettings.apiKey || '',
+      })
+    }
+  }, [whatsappSettings, whatsappForm])
+
+  // Load WhatsApp settings into form when data is available
+  useEffect(() => {
+    if (whatsappSettings) {
+      whatsappForm.setFieldsValue({
+        backendUrl: whatsappSettings.backendUrl || '',
+        apiKey: whatsappSettings.apiKey || '',
+      })
+    }
+  }, [whatsappSettings, whatsappForm])
 
   // Load Ozonetel settings into form when data is available
   useEffect(() => {
@@ -74,9 +103,21 @@ const API = () => {
     }
   }
 
-  const handleWhatsAppSave = (values) => {
-    message.success('WhatsApp API configuration saved')
-    // In production, this would save to backend
+  const handleWhatsAppSave = async (values) => {
+    try {
+      const result = await updateWhatsAppSettings({
+        backendUrl: values.backendUrl.trim(),
+        apiKey: values.apiKey.trim(),
+      }).unwrap()
+
+      if (result.success) {
+        message.success('WhatsApp API settings saved successfully')
+        refetchWhatsApp() // Refresh the data
+      }
+    } catch (error) {
+      console.error('Save error:', error)
+      message.error(error?.data?.message || 'Failed to save settings. Please try again.')
+    }
   }
 
   const handleFacebookSave = (values) => {
@@ -240,65 +281,100 @@ const API = () => {
       label: 'WhatsApp API',
       children: (
         <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
-          <Form
-            form={whatsappForm}
-            layout="vertical"
-            onFinish={handleWhatsAppSave}
-            initialValues={{
-              apiKey: 'your_whatsapp_api_key',
-              apiSecret: 'your_whatsapp_api_secret',
-              phoneNumberId: 'your_phone_number_id',
-            }}
-          >
-            <Form.Item
-              name="apiKey"
-              label="API Key"
-              rules={[{ required: true, message: 'Please enter API key' }]}
-            >
-              <Input.Password placeholder="Enter WhatsApp API Key" />
-            </Form.Item>
+          {isLoadingWhatsApp ? (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <Spin size="large" />
+              <p style={{ color: '#fff', marginTop: 16 }}>Loading settings...</p>
+            </div>
+          ) : (
+            <>
+              {whatsappError && (
+                <Alert
+                  message="Error Loading Settings"
+                  description={whatsappError?.data?.message || 'Failed to load WhatsApp API settings. You can still enter and save new settings.'}
+                  type="warning"
+                  showIcon
+                  style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}
+                />
+              )}
+              <Form
+                form={whatsappForm}
+                layout="vertical"
+                onFinish={handleWhatsAppSave}
+                initialValues={{
+                  backendUrl: '',
+                  apiKey: '',
+                }}
+              >
+                <Form.Item
+                  name="backendUrl"
+                  label="Backend URL"
+                  rules={[
+                    { required: true, message: 'Please enter Backend URL' },
+                    { type: 'url', message: 'Please enter a valid URL (e.g., https://api.example.com)' },
+                  ]}
+                >
+                  <Input 
+                    placeholder="Enter Backend URL (e.g., https://api.example.com)" 
+                  />
+                </Form.Item>
 
-            <Form.Item
-              name="apiSecret"
-              label="API Secret"
-              rules={[{ required: true, message: 'Please enter API secret' }]}
-            >
-              <Input.Password placeholder="Enter WhatsApp API Secret" />
-            </Form.Item>
+                <Form.Item
+                  name="apiKey"
+                  label="WhatsApp API Key"
+                  rules={[{ required: true, message: 'Please enter WhatsApp API Key' }]}
+                  help="This API key will be used to authenticate WhatsApp API requests."
+                >
+                  <Input.Password placeholder="Enter WhatsApp API Key" />
+                </Form.Item>
 
-            <Form.Item
-              name="phoneNumberId"
-              label="Phone Number ID"
-              rules={[{ required: true, message: 'Please enter phone number ID' }]}
-            >
-              <Input placeholder="Enter Phone Number ID" />
-            </Form.Item>
+                <Form.Item>
+                  <div style={{ 
+                    display: 'flex', 
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: 8,
+                    width: '100%'
+                  }}>
+                    {isSuperAdmin() && (
+                      <Button 
+                        type="primary" 
+                        htmlType="submit" 
+                        icon={<SaveOutlined />}
+                        loading={isUpdatingWhatsApp}
+                        style={{ width: isMobile ? '100%' : 'auto' }}
+                      >
+                        Save Configuration
+                      </Button>
+                    )}
+                    {!isSuperAdmin() && (
+                      <p style={{ color: '#ffffff', margin: 0 }}>
+                        Only Super Admin can configure API settings.
+                      </p>
+                    )}
+                  </div>
+                </Form.Item>
+              </Form>
 
-            <Form.Item>
               <div style={{ 
-                display: 'flex', 
-                flexDirection: isMobile ? 'column' : 'row',
-                gap: 8,
-                width: '100%'
+                marginTop: 24, 
+                padding: 16, 
+                background: '#2a2a2a', 
+                borderRadius: 4,
+                border: '1px solid #444'
               }}>
-                {isSuperAdmin() && (
-                  <Button 
-                    type="primary" 
-                    htmlType="submit" 
-                    icon={<SaveOutlined />}
-                    style={{ width: isMobile ? '100%' : 'auto' }}
-                  >
-                    Save Configuration
-                  </Button>
-                )}
-                {!isSuperAdmin() && (
-                  <p style={{ color: '#ffffff', margin: 0 }}>
-                    Only Super Admin can configure API settings.
-                  </p>
-                )}
+                <h4 style={{ color: '#D4AF37', marginBottom: 8 }}>Integration Information</h4>
+                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
+                  <strong>Backend URL:</strong> Used for WhatsApp API webhook configuration
+                </p>
+                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
+                  <strong>API Key:</strong> Used to authenticate WhatsApp API requests
+                </p>
+                <p style={{ color: '#ccc', margin: '8px 0 0 0', fontSize: '13px' }}>
+                  After saving, these settings will be used for WhatsApp API integration.
+                </p>
               </div>
-            </Form.Item>
-          </Form>
+            </>
+          )}
         </Card>
       ),
     },
