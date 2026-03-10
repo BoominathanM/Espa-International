@@ -27,6 +27,7 @@ import {
   EyeOutlined,
   ImportOutlined,
   ExportOutlined,
+  SyncOutlined,
   UpOutlined,
   DownOutlined,
   UploadOutlined,
@@ -42,6 +43,7 @@ import {
   useDeleteLeadMutation,
   useLazyExportLeadsQuery,
   useImportLeadsMutation,
+  useSyncAskEvaLeadsMutation,
 } from '../../store/api/leadApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
@@ -136,6 +138,7 @@ const Leads = () => {
   const [deleteLeadMutation] = useDeleteLeadMutation()
   const [exportLeads] = useLazyExportLeadsQuery()
   const [importLeads, { isLoading: importLoading }] = useImportLeadsMutation()
+  const [syncAskEvaLeads, { isLoading: syncAskEvaLoading }] = useSyncAskEvaLeadsMutation()
 
   const leads = leadsData?.leads || []
   const branches = branchesData?.branches || []
@@ -620,6 +623,19 @@ const Leads = () => {
     setIsImportModalVisible(true)
   }
 
+  const handleSyncAskEva = async () => {
+    try {
+      const result = await syncAskEvaLeads().unwrap()
+      messageApi.success(
+        `AskEva sync completed: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`
+      )
+      refetchLeads()
+    } catch (error) {
+      console.error('AskEva sync error:', error)
+      messageApi.error(error?.data?.message || error?.message || 'Failed to sync AskEva leads')
+    }
+  }
+
   const handleFileImport = async (file) => {
     try {
       const text = await file.text()
@@ -744,6 +760,9 @@ const Leads = () => {
       }}>
         <h1 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '20px' : '24px' }}>Lead Management</h1>
         <Space wrap style={{ width: isMobile ? '100%' : 'auto' }}>
+          <Button icon={<SyncOutlined />} onClick={handleSyncAskEva} loading={syncAskEvaLoading} size={isMobile ? 'small' : 'middle'}>
+            {isMobile ? 'Sync AskEva' : 'Sync AskEva'}
+          </Button>
           <Button icon={<ImportOutlined />} onClick={handleImport} size={isMobile ? 'small' : 'middle'}>
             {isMobile ? 'Import' : 'Import'}
           </Button>

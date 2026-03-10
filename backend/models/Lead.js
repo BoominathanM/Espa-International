@@ -92,6 +92,12 @@ const leadSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    askevaLeadId: {
+      type: String,
+      default: '',
+      trim: true,
+      sparse: true,
+    },
   },
   {
     timestamps: true,
@@ -110,6 +116,7 @@ leadSchema.index({ status: 1 })
 leadSchema.index({ source: 1 })
 leadSchema.index({ appointment_date: 1 })
 leadSchema.index({ createdAt: -1 })
+leadSchema.index({ askevaLeadId: 1 }, { sparse: true })
 
 // Ensure virtuals are included in JSON
 leadSchema.set('toJSON', { virtuals: true })

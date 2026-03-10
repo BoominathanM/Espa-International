@@ -84,6 +84,13 @@ export const leadApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['Lead'],
     }),
+    syncAskEvaLeads: builder.mutation({
+      query: () => ({
+        url: '/leads/sync-askeva',
+        method: 'POST',
+      }),
+      invalidatesTags: ['Lead'],
+    }),
   }),
 })
 
@@ -95,4 +102,5 @@ export const {
   useDeleteLeadMutation,
   useLazyExportLeadsQuery,
   useImportLeadsMutation,
+  useSyncAskEvaLeadsMutation,
 } = leadApi

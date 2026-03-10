@@ -3,6 +3,7 @@ import Lead from '../models/Lead.js'
 import Branch from '../models/Branch.js'
 import User from '../models/User.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
+import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
 
 // @desc    Create lead from website contact form
 // @route   POST /api/leads/website
@@ -351,6 +352,40 @@ export const getLeadsDiagnostics = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error getting diagnostics',
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined,
+    })
+  }
+}
+
+// @desc    Sync all leads from AskEva CRM API to local leads collection
+// @route   POST /api/leads/sync-askeva
+// @access  Private (JWT)
+export const syncAskEvaLeads = async (req, res) => {
+  try {
+    const result = await syncAskEvaLeadsToDb({
+      Lead,
+      Branch,
+      autoAssignLeadToBranchUser,
+    })
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: result.error || 'AskEva sync failed',
+      })
+    }
+    res.json({
+      success: true,
+      message: 'AskEva leads synced successfully',
+      created: result.created,
+      updated: result.updated,
+      skipped: result.skipped,
+      total: result.created + result.updated + result.skipped,
+    })
+  } catch (error) {
+    console.error('[AskEva Sync] ❌ Error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing AskEva leads',
       error: process.env.NODE_ENV !== 'production' ? error.message : undefined,
     })
   }

@@ -1,6 +1,35 @@
 import Lead from '../models/Lead.js'
 import Branch from '../models/Branch.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
+import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
+
+// Throttle: run full AskEva sync at most once per 90 seconds when webhook is triggered
+const WEBHOOK_SYNC_THROTTLE_MS = 90 * 1000
+let lastWebhookSyncAt = 0
+
+function triggerBackgroundAskEvaSync() {
+  const now = Date.now()
+  if (now - lastWebhookSyncAt < WEBHOOK_SYNC_THROTTLE_MS) {
+    return
+  }
+  lastWebhookSyncAt = now
+  setImmediate(async () => {
+    try {
+      const result = await syncAskEvaLeadsToDb({
+        Lead,
+        Branch,
+        autoAssignLeadToBranchUser,
+      })
+      if (result.success) {
+        console.log(`[WhatsApp Webhook] Background AskEva sync: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`)
+      } else if (result.error) {
+        console.warn('[WhatsApp Webhook] Background AskEva sync failed:', result.error)
+      }
+    } catch (err) {
+      console.warn('[WhatsApp Webhook] Background AskEva sync error:', err.message)
+    }
+  })
+}
 
 /**
  * @desc    Handle WhatsApp webhook events
@@ -18,7 +47,9 @@ export const handleWebhook = async (req, res) => {
       'authorization': req.headers['authorization'] ? '***' : undefined,
     })
 
-    const { event, timestamp, data } = req.body
+    const { event, timestamp, message } = req.body
+    // AskEva sends lead inside message.data; some senders use top-level data
+    const data = req.body.data || (message && message.data) || null
 
     // Log request body (sanitized)
     console.log(`[WhatsApp Webhook] Request body:`, {
@@ -67,15 +98,34 @@ export const handleWebhook = async (req, res) => {
     // Log incoming webhook
     console.log(`[WhatsApp Webhook] Processing event: ${event} at ${timestamp || new Date().toISOString()}`)
 
+    // Trigger background sync of all AskEva leads (including existing) so they appear in DB
+    triggerBackgroundAskEvaSync()
+
     // Handle different event types
+    // AskEva formats: lead_webhook (message.data), or leadCreation/leadUpdate/leadDeletion (top-level data)
     switch (event) {
       case 'lead_created':
+      case 'leadCreation':
+        return await handleLeadCreated(req, res, data, timestamp)
+
+      case 'lead_webhook':
+        if (message?.event === 'leadCreation') {
+          return await handleLeadCreated(req, res, data, timestamp)
+        }
+        if (message?.event === 'leadUpdate') {
+          return await handleLeadUpdated(req, res, data, timestamp)
+        }
+        if (message?.event === 'leadDeletion') {
+          return await handleLeadDeleted(req, res, data, timestamp)
+        }
         return await handleLeadCreated(req, res, data, timestamp)
 
       case 'lead_updated':
+      case 'leadUpdate':
         return await handleLeadUpdated(req, res, data, timestamp)
 
       case 'lead_deleted':
+      case 'leadDeletion':
         return await handleLeadDeleted(req, res, data, timestamp)
 
       default:
@@ -179,20 +229,44 @@ const handleLeadCreated = async (req, res, data, timestamp) => {
     }
     const mappedStatus = statusMap[status] || 'New'
 
-    // Create new lead
+    // Create new lead (store askevaLeadId from webhook for sync deduplication)
+    const askevaLeadId = leadId ? String(leadId) : ''
+    const notesJson = JSON.stringify({
+      leadId: askevaLeadId,
+      name,
+      email: email || '',
+      mobile,
+      company: company || 'Ask Eva',
+      status: status || 'New Lead',
+      source: data.source || 'Website',
+      createdAt: timestamp || new Date().toISOString(),
+    })
+    const emailVal = (email && String(email).trim()) ? email.toLowerCase().trim() : ''
+    const validEmail = /^\S+@\S+\.\S+$/.test(emailVal) ? emailVal : ''
+    const sourceVal = (data.source && String(data.source).trim()) || 'WhatsApp'
+    const sourceMap = {
+      'Website': 'Website',
+      'Social Media': 'Other',
+      'User Initiated - Whatsapp': 'WhatsApp',
+      'WhatsApp': 'WhatsApp',
+    }
+    const mappedSource = sourceMap[sourceVal] || 'WhatsApp'
+
     const lead = new Lead({
       first_name: firstName,
       last_name: lastName,
-      email: email ? email.toLowerCase().trim() : '',
+      email: validEmail,
       phone: mobile.trim(),
       whatsapp: mobile.trim(),
-      subject: company ? `From ${company}` : 'WhatsApp Lead',
+      subject: company ? `From ${company}` : 'AskEva Lead',
       message: `Lead created via WhatsApp API${company ? ` from ${company}` : ''}`,
-      source: 'WhatsApp',
+      source: mappedSource,
       status: mappedStatus,
       branch: branchId,
       assignedTo: assignedUserId,
       lastInteraction: timestamp ? new Date(timestamp) : new Date(),
+      askevaLeadId,
+      notes: askevaLeadId ? `Webhook Lead ID: ${askevaLeadId}\n${notesJson}` : '',
     })
 
     await lead.save()

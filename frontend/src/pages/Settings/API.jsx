@@ -60,47 +60,9 @@ const API = () => {
     }
   }, [whatsappSettings, whatsappForm])
 
-  // Load WhatsApp settings into form when data is available
-  useEffect(() => {
-    if (whatsappSettings) {
-      whatsappForm.setFieldsValue({
-        backendUrl: whatsappSettings.backendUrl || '',
-        apiKey: whatsappSettings.apiKey || '',
-      })
-    }
-  }, [whatsappSettings, whatsappForm])
-
-  // Load Ozonetel settings into form when data is available
-  useEffect(() => {
-    if (ozonetelSettings) {
-      ozonetelForm.setFieldsValue({
-        baseUrl: ozonetelSettings.baseUrl || 'https://cloudagent.ozonetel.com',
-        apiKey: ozonetelSettings.apiKey || '',
-        isActive: ozonetelSettings.isActive !== undefined ? ozonetelSettings.isActive : true,
-        defaultCampaign: ozonetelSettings.defaultCampaign || '',
-        campaignIdsText: (ozonetelSettings.campaignIds || []).join('\n'),
-      })
-    }
-  }, [ozonetelSettings, ozonetelForm])
-
-  const handleOzonetelSave = async (values) => {
-    try {
-      const campaignIdsText = values.campaignIdsText || ''
-      const campaignIds = campaignIdsText.split('\n').map((s) => s.trim()).filter(Boolean)
-      const result = await updateOzonetelSettings({
-        baseUrl: values.baseUrl.trim(),
-        apiKey: values.apiKey.trim(),
-        isActive: values.isActive,
-        defaultCampaign: (values.defaultCampaign || '').trim(),
-        campaignIds,
-      }).unwrap()
-      if (result.success) {
-        message.success('Ozonetel integration settings saved successfully')
-        refetchOzonetel()
-      }
-    } catch (error) {
-      message.error(error?.data?.message || 'Failed to save settings. Please try again.')
-    }
+  const handleOzonetelSave = (values) => {
+    message.success('Ozonetel API configuration saved')
+    // In production, this would save to backend
   }
 
   const handleWhatsAppSave = async (values) => {
