@@ -10,6 +10,7 @@ import {
   importLeads,
   getSampleCSV,
   autoAssignUnassignedLeads,
+  getLeadsDiagnostics,
 } from '../controllers/leadController.js'
 import { authenticate, isSuperAdmin, authenticateApiKey, authenticateWhatsAppApiKey } from '../middleware/auth.js'
 
@@ -24,6 +25,7 @@ router.get('/whatsapp', authenticateWhatsAppApiKey, getLeads)
 // Regular CRUD endpoints (protected with JWT)
 router.post('/', authenticate, createLead)
 router.post('/auto-assign', authenticate, autoAssignUnassignedLeads)
+router.get('/diagnostics', authenticate, getLeadsDiagnostics)
 router.get('/', authenticate, getLeads)
 router.get('/export', authenticate, exportLeads)
 router.get('/import/sample', authenticate, getSampleCSV)

@@ -4,7 +4,9 @@ import Branch from '../models/Branch.js'
 import User from '../models/User.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 
-
+// @desc    Create lead from website contact form
+// @route   POST /api/leads/website
+// @access  Public (with API key)
 export const createWebsiteLead = async (req, res) => {
   try {
     const {
@@ -19,73 +21,73 @@ export const createWebsiteLead = async (req, res) => {
       slot_time,
       spa_package,
       branch
-    } = req.body;
+    } = req.body
 
     // Handle name field
-    let firstName = first_name || "";
-    let lastName = last_name || "";
+    let firstName = first_name || ""
+    let lastName = last_name || ""
 
     if (name && !first_name) {
-      const parts = name.trim().split(" ");
-      firstName = parts[0];
-      lastName = parts.slice(1).join(" ");
+      const parts = name.trim().split(" ")
+      firstName = parts[0]
+      lastName = parts.slice(1).join(" ")
     }
 
     if (!firstName || !email || !phone) {
       return res.status(400).json({
         success: false,
         message: "First name, email, and phone are required",
-      });
+      })
     }
 
-    const emailRegex = /^\S+@\S+\.\S+$/;
+    const emailRegex = /^\S+@\S+\.\S+$/
     if (!emailRegex.test(email)) {
       return res.status(400).json({
         success: false,
         message: "Invalid email format",
-      });
+      })
     }
 
     const ipAddress =
       req.ip ||
       req.connection.remoteAddress ||
       req.headers["x-forwarded-for"]?.split(",")[0] ||
-      "Unknown";
+      "Unknown"
 
     const websiteUrl =
       req.headers.referer ||
       req.body.websiteUrl ||
-      "https://www.espainternational.co.in/contact/";
+      "https://www.espainternational.co.in/contact/"
 
     // STEP 1 — Identify branchId
-    let branchId = null;
+    let branchId = null
 
     if (branch) {
       if (mongoose.Types.ObjectId.isValid(branch)) {
-        const exists = await Branch.findById(branch);
-        if (exists) branchId = branch;
+        const exists = await Branch.findById(branch)
+        if (exists) branchId = branch
       } else {
         const byName = await Branch.findOne({
           name: { $regex: new RegExp(`^${branch}$`, "i") },
-        });
-        if (byName) branchId = byName._id;
+        })
+        if (byName) branchId = byName._id
       }
     }
 
     // STEP 2 — If branch not provided, auto-default to "Anna Nagar"
     if (!branchId) {
-      const defaultBranch = await Branch.findOne({ name: "Anna Nagar" });
+      const defaultBranch = await Branch.findOne({ name: "Anna Nagar" })
       if (defaultBranch) {
-        branchId = defaultBranch._id;
-        console.log("🌐 Default branch selected → Anna Nagar");
+        branchId = defaultBranch._id
+        console.log("🌐 Default branch selected → Anna Nagar")
       }
     }
 
     // STEP 3 — Auto-assign (now branchId always exists)
-    let assignedUserId = null;
+    let assignedUserId = null
     if (branchId) {
-      assignedUserId = await autoAssignLeadToBranchUser(branchId);
-      console.log("Assigned user:", assignedUserId);
+      assignedUserId = await autoAssignLeadToBranchUser(branchId)
+      console.log("Assigned user:", assignedUserId)
     }
 
     // STEP 4 — Save lead
@@ -107,27 +109,28 @@ export const createWebsiteLead = async (req, res) => {
       websiteUrl,
       ipAddress,
       lastInteraction: new Date(),
-    });
+    })
 
-    await lead.save();
+    await lead.save()
 
     const savedLead = await Lead.findById(lead._id)
       .populate("assignedTo", "name email")
-      .populate("branch", "name assignedUsers");
+      .populate("branch", "name assignedUsers")
 
     return res.status(201).json({
       success: true,
       message: "Lead created successfully",
       lead: savedLead,
-    });
+    })
   } catch (error) {
-    console.error("Website lead creation error:", error);
-    return res.status(500).json({
+    console.error("Website lead creation error:", error)
+    res.status(500).json({
       success: false,
       message: "Server error",
-    });
+    })
   }
-};
+}
+
 // @desc    Create lead (from frontend)
 // @route   POST /api/leads
 // @access  Private
@@ -187,49 +190,29 @@ export const createLead = async (req, res) => {
     if (branch) {
       // Check if branch is a valid ObjectId
       if (mongoose.Types.ObjectId.isValid(branch)) {
-        // Verify branch exists
-        const branchExists = await Branch.findById(branch)
-        if (!branchExists) {
-          return res.status(400).json({
-            success: false,
-            message: 'Branch not found',
-          })
+        const exists = await Branch.findById(branch)
+        if (exists) {
+          branchId = branch
         }
-        branchId = branch
       } else {
-        // If branch is a string (like branch name), try to find it by name
-        const branchByName = await Branch.findOne({ name: { $regex: new RegExp(`^${branch}$`, 'i') } })
-        if (branchByName) {
-          branchId = branchByName._id
-        } else {
-          // If branch name not found, set to null instead of error (optional field)
-          branchId = null
+        // Try to find by name
+        const byName = await Branch.findOne({
+          name: { $regex: new RegExp(`^${branch}$`, 'i') },
+        })
+        if (byName) {
+          branchId = byName._id
         }
       }
     }
 
-    // Check for duplicate email or phone
-    const duplicateQuery = {
-      $or: []
-    }
-    if (email && email.trim()) {
-      duplicateQuery.$or.push({ email: email.toLowerCase().trim() })
-    }
-    if (phone && phone.trim()) {
-      duplicateQuery.$or.push({ phone: phone.trim() })
-    }
-
-    if (duplicateQuery.$or.length > 0) {
-      const existingLead = await Lead.findOne(duplicateQuery)
-      if (existingLead) {
-        return res.status(400).json({
-          success: false,
-          message: `Lead with this ${existingLead.email === email.toLowerCase().trim() ? 'email' : 'phone'} already exists`,
-        })
+    // Default to Anna Nagar if no branch found
+    if (!branchId) {
+      const defaultBranch = await Branch.findOne({ name: 'Anna Nagar' })
+      if (defaultBranch) {
+        branchId = defaultBranch._id
       }
     }
 
-    // Auto-assign to branch user if branch is provided and no assignedTo is given
     let finalAssignedTo = assignedTo || null
     if (branchId && !assignedTo) {
       const autoAssignedUserId = await autoAssignLeadToBranchUser(branchId)
@@ -283,13 +266,13 @@ export const createLead = async (req, res) => {
 
     const populatedLead = await Lead.findById(lead._id)
       .populate("assignedTo", "name email")
-      .populate("branch", "name");
+      .populate("branch", "name")
 
     return res.status(201).json({
       success: true,
       message: "Lead created successfully",
       lead: populatedLead
-    });
+    })
 
   } catch (error) {
     console.error('Create lead error:', error)
@@ -302,6 +285,73 @@ export const createLead = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error. Please try again later.',
+    })
+  }
+}
+
+// @desc    Get database statistics and verify leads
+// @route   GET /api/leads/diagnostics
+// @access  Private (for debugging)
+export const getLeadsDiagnostics = async (req, res) => {
+  try {
+    // Get total leads count
+    const totalLeads = await Lead.countDocuments({})
+    
+    // Get leads by source
+    const leadsBySource = await Lead.aggregate([
+      {
+        $group: {
+          _id: '$source',
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { count: -1 } }
+    ])
+
+    // Get WhatsApp leads count
+    const whatsappLeadsCount = await Lead.countDocuments({ source: 'WhatsApp' })
+    
+    // Get latest 5 leads
+    const latestLeads = await Lead.find({})
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('_id first_name last_name phone email source status createdAt')
+      .lean()
+
+    // Get latest WhatsApp lead
+    const latestWhatsAppLead = await Lead.findOne({ source: 'WhatsApp' })
+      .sort({ createdAt: -1 })
+      .select('_id first_name last_name phone email source status createdAt')
+      .lean()
+
+    // Check database connection
+    const dbState = {
+      connected: true,
+      database: Lead.db.name,
+      collection: Lead.collection.name,
+    }
+
+    res.json({
+      success: true,
+      diagnostics: {
+        database: dbState,
+        totalLeads,
+        leadsBySource,
+        whatsappLeads: {
+          count: whatsappLeadsCount,
+          percentage: totalLeads > 0 ? ((whatsappLeadsCount / totalLeads) * 100).toFixed(2) + '%' : '0%',
+          latest: latestWhatsAppLead,
+        },
+        latestLeads,
+        timestamp: new Date().toISOString(),
+      },
+    })
+  } catch (error) {
+    console.error('[Leads Diagnostics] ❌ Error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error getting diagnostics',
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined,
     })
   }
 }
@@ -345,6 +395,24 @@ export const getLeads = async (req, res) => {
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit)
 
+    // Log query for debugging
+    console.log(`[Get Leads] 📊 Request received`)
+    console.log(`[Get Leads] Query parameters:`, {
+      status: status || 'none',
+      source: source || 'none',
+      branch: branch || 'none',
+      assignedTo: assignedTo || 'none',
+      search: search || 'none',
+      page,
+      limit,
+    })
+    console.log(`[Get Leads] MongoDB query:`, JSON.stringify(query))
+    console.log(`[Get Leads] Pagination: page=${page}, limit=${limit}, skip=${skip}`)
+
+    // Check total leads in database first (before filtering)
+    const totalLeadsInDb = await Lead.countDocuments({})
+    console.log(`[Get Leads] 📈 Total leads in database (no filters): ${totalLeadsInDb}`)
+
     // Get leads with pagination
     const leads = await Lead.find(query)
       .populate({
@@ -359,6 +427,27 @@ export const getLeads = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
+
+    console.log(`[Get Leads] ✅ Found ${leads.length} leads matching query`)
+
+    // Log sample lead sources if any found
+    if (leads.length > 0) {
+      const sources = leads.map(l => l.source).filter((v, i, a) => a.indexOf(v) === i)
+      console.log(`[Get Leads] 📋 Lead sources in results:`, sources)
+      console.log(`[Get Leads] 📋 Sample lead:`, {
+        id: leads[0]._id,
+        name: `${leads[0].first_name} ${leads[0].last_name}`,
+        phone: leads[0].phone,
+        source: leads[0].source,
+        status: leads[0].status,
+        createdAt: leads[0].createdAt,
+      })
+    } else {
+      console.log(`[Get Leads] ⚠️  No leads found matching query`)
+      if (Object.keys(query).length === 0) {
+        console.log(`[Get Leads] ⚠️  Query is empty (no filters) - this means database might be empty`)
+      }
+    }
 
     // Clean up leads - set assignedTo to null if populated user doesn't exist or is inactive
     // Also ensure branch userCount is calculated correctly
@@ -382,6 +471,14 @@ export const getLeads = async (req, res) => {
 
     // Get total count
     const total = await Lead.countDocuments(query)
+    console.log(`[Get Leads] 📊 Total leads matching query: ${total}`)
+    
+    // Count by source for debugging
+    const sourceCounts = await Lead.aggregate([
+      { $group: { _id: '$source', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ])
+    console.log(`[Get Leads] 📊 Leads by source:`, sourceCounts)
 
     res.json({
       success: true,
@@ -394,8 +491,13 @@ export const getLeads = async (req, res) => {
       },
     })
   } catch (error) {
-    console.error('Get leads error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
+    console.error('[Get Leads] ❌ Error:', error)
+    console.error('[Get Leads] Error stack:', error.stack)
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error',
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined
+    })
   }
 }
 
@@ -462,84 +564,76 @@ export const updateLead = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Lead not found' })
     }
 
-    // Handle name field - support both old 'name' and new 'first_name'/'last_name'
+    // Handle name field
     if (name && !first_name) {
       const nameParts = name.trim().split(' ')
-      lead.first_name = nameParts[0] || lead.first_name
-      lead.last_name = nameParts.slice(1).join(' ') || lead.last_name
+      if (nameParts[0]) lead.first_name = nameParts[0]
+      if (nameParts.slice(1).join(' ')) lead.last_name = nameParts.slice(1).join(' ')
     } else {
       if (first_name !== undefined) lead.first_name = first_name.trim()
       if (last_name !== undefined) lead.last_name = last_name.trim()
     }
 
-    // Validate and convert branch if provided
+    if (email !== undefined) {
+      if (email) {
+        const emailRegex = /^\S+@\S+\.\S+$/
+        if (!emailRegex.test(email)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Please provide a valid email address',
+          })
+        }
+        lead.email = email.toLowerCase().trim()
+      } else {
+        lead.email = ''
+      }
+    }
+
+    if (phone !== undefined) lead.phone = phone.trim()
+    if (whatsapp !== undefined) lead.whatsapp = whatsapp.trim()
+    if (subject !== undefined) lead.subject = subject.trim()
+    if (message !== undefined) lead.message = message.trim()
+    if (source !== undefined) lead.source = source
+    if (status !== undefined) lead.status = status
+    if (notes !== undefined) lead.notes = notes.trim()
+    if (appointment_date !== undefined) {
+      lead.appointment_date = appointment_date ? new Date(appointment_date) : null
+    }
+    if (slot_time !== undefined) lead.slot_time = slot_time.trim()
+    if (spa_package !== undefined) lead.spa_package = spa_package.trim()
+
+    // Handle branch
     if (branch !== undefined) {
       if (branch === null || branch === '') {
         lead.branch = null
-      } else {
-        // Check if branch is a valid ObjectId
-        if (mongoose.Types.ObjectId.isValid(branch)) {
-          // Verify branch exists
-          const branchExists = await Branch.findById(branch)
-          if (!branchExists) {
-            return res.status(400).json({
-              success: false,
-              message: 'Branch not found',
-            })
-          }
+      } else if (mongoose.Types.ObjectId.isValid(branch)) {
+        const exists = await Branch.findById(branch)
+        if (exists) {
           lead.branch = branch
-        } else {
-          // If branch is a string (like branch name), try to find it by name
-          const branchByName = await Branch.findOne({ name: { $regex: new RegExp(`^${branch}$`, 'i') } })
-          if (branchByName) {
-            lead.branch = branchByName._id
-          } else {
-            // If branch name not found, set to null instead of error (optional field)
-            lead.branch = null
-          }
+        }
+      } else {
+        const byName = await Branch.findOne({
+          name: { $regex: new RegExp(`^${branch}$`, 'i') },
+        })
+        if (byName) {
+          lead.branch = byName._id
         }
       }
     }
 
-    // Update fields
-    if (email) lead.email = email.toLowerCase().trim()
-    if (phone) lead.phone = phone.trim()
-    if (whatsapp !== undefined) lead.whatsapp = whatsapp.trim()
-    if (subject !== undefined) lead.subject = subject.trim()
-    if (message !== undefined) lead.message = message.trim()
-    if (source) lead.source = source
-    if (status) lead.status = status
-    if (appointment_date !== undefined) lead.appointment_date = appointment_date ? new Date(appointment_date) : null
-    if (slot_time !== undefined) lead.slot_time = slot_time.trim()
-    if (spa_package !== undefined) lead.spa_package = spa_package.trim()
-    if (notes !== undefined) lead.notes = notes.trim()
-
-    // Handle assignedTo: if explicitly set, use it; otherwise auto-assign if branch is set and not assigned
+    // Handle assignedTo
     if (assignedTo !== undefined) {
-      // Explicitly setting assignedTo - use the provided value
-      lead.assignedTo = assignedTo || null
-    } else {
-      // If assignedTo is not being updated, check if we should auto-assign
-      // Auto-assign if branch is set (either existing or newly set) and lead is not currently assigned
-      const finalBranchId = lead.branch
-      if (finalBranchId && !lead.assignedTo) {
-        console.log(`🔄 Auto-assignment check for lead ${lead._id}: Branch ${finalBranchId}, currently unassigned`)
-        const autoAssignedUserId = await autoAssignLeadToBranchUser(finalBranchId)
-        if (autoAssignedUserId) {
-          lead.assignedTo = autoAssignedUserId
-          console.log(`✅ Auto-assigned lead ${lead._id} to user: ${autoAssignedUserId} in branch: ${finalBranchId}`)
-        } else {
-          console.log(`⚠️  Could not auto-assign lead ${lead._id}: No active staff/supervisor users found in branch ${finalBranchId}`)
+      if (assignedTo === null || assignedTo === '') {
+        lead.assignedTo = null
+      } else if (mongoose.Types.ObjectId.isValid(assignedTo)) {
+        const exists = await User.findById(assignedTo)
+        if (exists) {
+          lead.assignedTo = assignedTo
         }
-      } else if (finalBranchId && lead.assignedTo) {
-        console.log(`ℹ️  Lead ${lead._id} already assigned to ${lead.assignedTo}, skipping auto-assignment`)
-      } else if (!finalBranchId) {
-        console.log(`ℹ️  Lead ${lead._id} has no branch, skipping auto-assignment`)
       }
     }
 
     lead.lastInteraction = new Date()
-
     await lead.save()
 
     const updatedLead = await Lead.findById(lead._id)
@@ -551,20 +645,26 @@ export const updateLead = async (req, res) => {
           select: 'name email role status'
         }
       })
-      .populate('assignedTo', 'name email')
+      .populate('assignedTo', 'name email status')
 
-    // Ensure userCount is calculated
     if (updatedLead.branch) {
       updatedLead.branch.userCount = updatedLead.branch.assignedUsers
         ? (Array.isArray(updatedLead.branch.assignedUsers) ? updatedLead.branch.assignedUsers.length : 0)
         : 0
     }
 
-    res.json({ success: true, lead: updatedLead })
+    res.json({
+      success: true,
+      message: 'Lead updated successfully',
+      lead: updatedLead,
+    })
   } catch (error) {
     console.error('Update lead error:', error)
     if (error.name === 'ValidationError') {
-      return res.status(400).json({ success: false, message: error.message })
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      })
     }
     res.status(500).json({ success: false, message: 'Server error' })
   }
@@ -581,7 +681,6 @@ export const deleteLead = async (req, res) => {
     }
 
     await Lead.findByIdAndDelete(req.params.id)
-
     res.json({ success: true, message: 'Lead deleted successfully' })
   } catch (error) {
     console.error('Delete lead error:', error)
@@ -619,62 +718,32 @@ export const exportLeads = async (req, res) => {
     // Convert to CSV format
     const csvHeaders = ['First Name', 'Last Name', 'Email', 'Phone', 'WhatsApp', 'Subject', 'Message', 'Source', 'Status', 'Branch', 'Appointment Date', 'Slot Time', 'Spa Package', 'Assigned To', 'Notes', 'Last Interaction', 'Created At']
     const csvRows = leads.map(lead => [
-      `"${(lead.first_name || '').replace(/"/g, '""')}"`,
-      `"${(lead.last_name || '').replace(/"/g, '""')}"`,
-      `"${(lead.email || '').replace(/"/g, '""')}"`,
-      `"${(lead.phone || '').replace(/"/g, '""')}"`,
-      `"${(lead.whatsapp || '').replace(/"/g, '""')}"`,
-      `"${(lead.subject || '').replace(/"/g, '""')}"`,
-      `"${(lead.message || '').replace(/"/g, '""')}"`,
-      `"${(lead.source || '').replace(/"/g, '""')}"`,
-      `"${(lead.status || '').replace(/"/g, '""')}"`,
-      `"${(lead.branch?.name || '').replace(/"/g, '""')}"`,
-      `"${lead.appointment_date ? new Date(lead.appointment_date).toISOString().split('T')[0] : ''}"`,
-      `"${(lead.slot_time || '').replace(/"/g, '""')}"`,
-      `"${(lead.spa_package || '').replace(/"/g, '""')}"`,
-      `"${(lead.assignedTo?.name || '').replace(/"/g, '""')}"`,
-      `"${(lead.notes || '').replace(/"/g, '""')}"`,
-      `"${lead.lastInteraction ? new Date(lead.lastInteraction).toISOString() : ''}"`,
-      `"${lead.createdAt ? new Date(lead.createdAt).toISOString() : ''}"`,
+      `"${lead.first_name || ''}"`,
+      `"${lead.last_name || ''}"`,
+      `"${lead.email || ''}"`,
+      `"${lead.phone || ''}"`,
+      `"${lead.whatsapp || ''}"`,
+      `"${lead.subject || ''}"`,
+      `"${lead.message || ''}"`,
+      `"${lead.source || ''}"`,
+      `"${lead.status || ''}"`,
+      `"${lead.branch?.name || ''}"`,
+      `"${lead.appointment_date ? lead.appointment_date.toISOString().split('T')[0] : ''}"`,
+      `"${lead.slot_time || ''}"`,
+      `"${lead.spa_package || ''}"`,
+      `"${lead.assignedTo?.name || ''}"`,
+      `"${lead.notes || ''}"`,
+      `"${lead.lastInteraction ? lead.lastInteraction.toISOString() : ''}"`,
+      `"${lead.createdAt ? lead.createdAt.toISOString() : ''}"`,
     ])
 
-    const csvContent = [
-      csvHeaders.join(','),
-      ...csvRows.map(row => row.join(','))
-    ].join('\n')
+    const csvContent = [csvHeaders.join(','), ...csvRows.map(row => row.join(','))].join('\n')
 
-    // Set headers for CSV download
     res.setHeader('Content-Type', 'text/csv')
-    res.setHeader('Content-Disposition', `attachment; filename="leads_${new Date().toISOString().split('T')[0]}.csv"`)
-    res.send('\ufeff' + csvContent) // BOM for Excel compatibility
+    res.setHeader('Content-Disposition', 'attachment; filename=leads.csv')
+    res.send(csvContent)
   } catch (error) {
     console.error('Export leads error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
-  }
-}
-
-// @desc    Get sample CSV file for import
-// @route   GET /api/leads/import/sample
-// @access  Private
-export const getSampleCSV = async (req, res) => {
-  try {
-    // Create sample CSV with only allowed fields
-    const csvHeaders = ['First Name', 'Last Name', 'Phone', 'Email', 'WhatsApp', 'Subject', 'Message', 'Appointment Date', 'Slot Time', 'Spa Package']
-    const sampleRows = [
-      ['John', 'Doe', '9876543210', 'john@example.com', '9876543210', 'Test Subject', 'Test message', '2024-12-25', '10:00 AM', 'Full Body Massage'],
-      ['Jane', 'Smith', '9876543211', 'jane@example.com', '9876543211', '', '', '', '', ''],
-    ]
-
-    const csvContent = [
-      csvHeaders.join(','),
-      ...sampleRows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n')
-
-    res.setHeader('Content-Type', 'text/csv')
-    res.setHeader('Content-Disposition', 'attachment; filename="leads_import_sample.csv"')
-    res.send('\ufeff' + csvContent) // BOM for Excel compatibility
-  } catch (error) {
-    console.error('Get sample CSV error:', error)
     res.status(500).json({ success: false, message: 'Server error' })
   }
 }
@@ -686,43 +755,50 @@ export const importLeads = async (req, res) => {
   try {
     const { leads: leadsData } = req.body
 
-    if (!Array.isArray(leadsData) || leadsData.length === 0) {
+    if (!leadsData || !Array.isArray(leadsData) || leadsData.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid data. Please provide an array of leads.',
+        message: 'Leads data is required and must be an array',
       })
     }
 
-    // Allowed fields (mandatory + optional)
-    const allowedFields = ['first_name', 'last_name', 'name', 'phone', 'email', 'whatsapp', 'subject', 'message', 'appointment_date', 'slot_time', 'spa_package', 'branch']
-
     const results = {
-      total: leadsData.length,
       success: 0,
       failed: 0,
       duplicates: 0,
       errors: [],
     }
 
-    // Track duplicates within the import file itself
-    const fileDuplicates = new Set()
-    const fileEmails = new Map()
     const filePhones = new Map()
 
     // Process each lead
     for (let i = 0; i < leadsData.length; i++) {
       const row = leadsData[i]
-      const rowNumber = i + 1
-      const rowErrors = []
+      const rowNumber = i + 2 // +2 because row 1 is header, and array is 0-indexed
 
       try {
-        // Check for disallowed fields
-        const disallowedFields = Object.keys(row).filter(key => !allowedFields.includes(key.toLowerCase()))
-        if (disallowedFields.length > 0) {
-          rowErrors.push(`Disallowed fields found: ${disallowedFields.join(', ')}. Only these fields are allowed: ${allowedFields.join(', ')}`)
+        // Validate required fields
+        if (!row.first_name && !row.name) {
+          results.failed++
+          results.errors.push({
+            row: rowNumber,
+            error: 'First name or name is required',
+            data: row,
+          })
+          continue
         }
 
-        // Handle name field - support both old 'name' and new 'first_name'/'last_name'
+        if (!row.phone) {
+          results.failed++
+          results.errors.push({
+            row: rowNumber,
+            error: 'Phone is required',
+            data: row,
+          })
+          continue
+        }
+
+        // Handle name field
         let firstName = row.first_name || ''
         let lastName = row.last_name || ''
 
@@ -732,67 +808,34 @@ export const importLeads = async (req, res) => {
           lastName = nameParts.slice(1).join(' ') || ''
         }
 
-        // Validate mandatory fields
-        if (!firstName || !firstName.trim()) {
-          rowErrors.push('First name (or name) is mandatory and cannot be empty')
-        }
-        if (!row.phone || !row.phone.trim()) {
-          rowErrors.push('Phone is mandatory and cannot be empty')
-        }
-
-        // If mandatory fields are missing, skip further validation
-        if (rowErrors.length > 0) {
+        // Normalize phone
+        const normalizedPhone = row.phone.trim().replace(/\D/g, '')
+        if (normalizedPhone.length < 10) {
           results.failed++
           results.errors.push({
             row: rowNumber,
-            error: rowErrors.join('; '),
+            error: 'Invalid phone number',
             data: row,
           })
           continue
         }
 
-        // Validate email format if provided
-        if (row.email && row.email.trim()) {
-          const emailRegex = /^\S+@\S+\.\S+$/
-          if (!emailRegex.test(row.email.trim())) {
-            rowErrors.push(`Invalid email format: "${row.email}"`)
-          }
-        }
-
-        // Check for duplicates within the file itself
-        const normalizedEmail = row.email ? row.email.toLowerCase().trim() : null
-        const normalizedPhone = row.phone.trim()
-
-        // Check if email already exists in file
-        if (normalizedEmail && fileEmails.has(normalizedEmail)) {
-          rowErrors.push(`Duplicate email "${row.email}" found in row ${fileEmails.get(normalizedEmail)}`)
-        }
-        // Check if phone already exists in file
+        // Check for duplicates in file
         if (filePhones.has(normalizedPhone)) {
-          rowErrors.push(`Duplicate phone "${row.phone}" found in row ${filePhones.get(normalizedPhone)}`)
-        }
-
-        // If file duplicates found, skip (don't track this row)
-        if (rowErrors.length > 0) {
-          results.failed++
+          results.duplicates++
           results.errors.push({
             row: rowNumber,
-            error: rowErrors.join('; '),
+            error: `Duplicate in file: Phone "${row.phone}" already appears in row ${filePhones.get(normalizedPhone)}`,
             data: row,
           })
           continue
-        }
-
-        // Track this row's email/phone for file duplicate checking (only if no errors so far)
-        if (normalizedEmail) {
-          fileEmails.set(normalizedEmail, rowNumber)
         }
         filePhones.set(normalizedPhone, rowNumber)
 
-        // Check for duplicates in database (email or phone)
-        const duplicateQuery = {
-          $or: []
-        }
+        // Check for duplicates in database
+        const duplicateQuery = { $or: [] }
+        const normalizedEmail = row.email ? row.email.toLowerCase().trim() : ''
+
         if (normalizedEmail) {
           duplicateQuery.$or.push({ email: normalizedEmail })
         }
@@ -854,11 +897,24 @@ export const importLeads = async (req, res) => {
     })
   } catch (error) {
     console.error('Import leads error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error. Please try again later.',
-    })
+    res.status(500).json({ success: false, message: 'Server error' })
   }
+}
+
+// @desc    Get sample CSV for import
+// @route   GET /api/leads/import/sample
+// @access  Private
+export const getSampleCSV = (req, res) => {
+  const sampleData = [
+    ['First Name', 'Last Name', 'Email', 'Phone', 'WhatsApp', 'Subject', 'Message', 'Source', 'Status', 'Branch', 'Appointment Date', 'Slot Time', 'Spa Package'],
+    ['John', 'Doe', 'john@example.com', '1234567890', '1234567890', 'Inquiry', 'Sample message', 'Add', 'New', '', '', '', ''],
+  ]
+
+  const csvContent = sampleData.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n')
+
+  res.setHeader('Content-Type', 'text/csv')
+  res.setHeader('Content-Disposition', 'attachment; filename=sample_leads.csv')
+  res.send(csvContent)
 }
 
 // @desc    Auto-assign unassigned leads to branch users
@@ -866,113 +922,53 @@ export const importLeads = async (req, res) => {
 // @access  Private
 export const autoAssignUnassignedLeads = async (req, res) => {
   try {
-    const { branchId } = req.body // Optional: if provided, only assign leads for that branch
-
-    // Find all unassigned leads with a branch
-    const query = {
+    // Find all unassigned leads that have a branch
+    const unassignedLeads = await Lead.find({
       assignedTo: null,
-      branch: { $ne: null }
-    }
-
-    if (branchId) {
-      query.branch = branchId
-    }
-
-    const unassignedLeads = await Lead.find(query)
-      .populate({
-        path: 'branch',
-        select: 'name assignedUsers',
-        populate: {
-          path: 'assignedUsers',
-          select: 'name email role status'
-        }
-      })
+      branch: { $ne: null },
+    }).populate('branch', 'name')
 
     if (unassignedLeads.length === 0) {
       return res.json({
         success: true,
         message: 'No unassigned leads found',
         assigned: 0,
-        failed: 0,
       })
     }
 
     let assignedCount = 0
-    let failedCount = 0
-    const results = []
+    const errors = []
 
     for (const lead of unassignedLeads) {
       try {
-        // Get branch ID - handle both ObjectId and populated branch object
-        const branchId = lead.branch?._id || lead.branch || null
-
-        if (!branchId) {
-          failedCount++
-          results.push({
-            leadId: lead._id,
-            leadName: `${lead.first_name} ${lead.last_name}`.trim(),
-            branch: lead.branch?.name || 'Unknown',
-            status: 'failed',
-            reason: 'Lead has no branch assigned'
-          })
-          continue
-        }
-
-        console.log(`🔄 Processing lead ${lead._id} (${lead.first_name} ${lead.last_name}) for branch ${branchId}`)
-        const assignedUserId = await autoAssignLeadToBranchUser(branchId)
-
+        const assignedUserId = await autoAssignLeadToBranchUser(lead.branch._id)
         if (assignedUserId) {
-          let assignedUserId = null;
-          if (branchId) {
-            assignedUserId = await autoAssignLeadToBranchUser(branchId);
-          }
+          lead.assignedTo = assignedUserId
           await lead.save()
           assignedCount++
-          results.push({
-            leadId: lead._id,
-            leadName: `${lead.first_name} ${lead.last_name}`.trim(),
-            branch: lead.branch?.name || 'Unknown',
-            assignedTo: assignedUserId,
-            status: 'success'
-          })
-          console.log(`✅ Successfully assigned lead ${lead._id} to user ${assignedUserId}`)
         } else {
-          failedCount++
-          results.push({
+          errors.push({
             leadId: lead._id,
-            leadName: `${lead.first_name} ${lead.last_name}`.trim(),
-            branch: lead.branch?.name || 'Unknown',
-            status: 'failed',
-            reason: 'No active staff/supervisor users found in branch'
+            message: `No available users in branch ${lead.branch.name}`,
           })
-          console.log(`⚠️  Failed to assign lead ${lead._id}: No users found`)
         }
       } catch (error) {
-        failedCount++
-        console.error(`❌ Error assigning lead ${lead._id}:`, error.message)
-        results.push({
+        errors.push({
           leadId: lead._id,
-          leadName: `${lead.first_name} ${lead.last_name}`.trim(),
-          branch: lead.branch?.name || 'Unknown',
-          status: 'error',
-          error: error.message
+          message: error.message,
         })
       }
     }
 
     res.json({
       success: true,
-      message: `Auto-assignment completed: ${assignedCount} assigned, ${failedCount} failed`,
+      message: `Auto-assigned ${assignedCount} out of ${unassignedLeads.length} leads`,
       assigned: assignedCount,
-      failed: failedCount,
       total: unassignedLeads.length,
-      results,
+      errors: errors.length > 0 ? errors : undefined,
     })
   } catch (error) {
-    console.error('Auto-assign unassigned leads error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error. Please try again later.',
-    })
+    console.error('Auto-assign leads error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
   }
 }
