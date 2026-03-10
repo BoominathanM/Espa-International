@@ -81,16 +81,16 @@ export async function fetchAskEvaLeads() {
     urlVariants.push(`${base}/v1/users/${encodeURIComponent(userId)}/leads`)
   }
 
+  // AskEva returns 500 "Malformed UTF-8 data" when Authorization: Bearer is sent - use API-key headers first
   const authStrategies = [
-    { headers: { 'Authorization': `Bearer ${token}` } },
     { headers: { 'X-API-Key': token } },
     { headers: { 'X-WhatsApp-API-Key': token } },
-    { headers: { 'Authorization': `Bearer ${token}`, 'X-API-Key': token } },
   ]
   if (userId.length > 0) {
     authStrategies.push({ headers: { 'X-API-Key': token, 'X-User-Id': userId } })
     authStrategies.push({ headers: { 'X-WhatsApp-API-Key': token, 'X-User-Id': userId } })
   }
+  authStrategies.push({ headers: { 'Authorization': `Bearer ${token}` } })
 
   const cacheBust = () => `_t=${Date.now()}`
   const tryFetch = async (url, headers) => {
