@@ -76,7 +76,23 @@ You do **not** need to share API keys or passwords in this doc; just confirm you
 - **“CloudAgent is not configured”** → Add API Key (and Default Campaign) in **Settings → Ozonetel Integration** and set Integration **Active**.
 - **“Agent ID is required”** → Set **CloudAgent Agent ID** for the logged-in user in **User Management**.
 - **“Campaign is required”** → Set **Default Campaign** in Ozonetel Integration or choose a campaign in the “Make Call” modal.
-- **Call logs not appearing** → Check webhook URL in CloudAgent; confirm backend is reachable; check backend logs for `POST /webhook/cloudagent-events`.
+- **Call logs not appearing** → See Section 5 (Troubleshooting) below.
 - **Lead not linked to call** → Ensure lead’s phone (digits only) matches the webhook’s customer number (digits only).
 
 For API details and endpoints, see **CLOUDAGENT_INTEGRATION.md**.
+
+---
+
+## 5. Troubleshooting: IP whitelisted but no call data
+
+If your server IP is whitelisted in Ozonetel but call logs still don't appear:
+
+**A. Webhook URL must be set in CloudAgent** – Campaign → URL to Push = `https://<your-backend>/webhook/cloudagent-events` (or Admin Settings → Callback URL). Save.
+
+**B. Verify backend is reachable** – Run `curl https://<your-backend>/webhook/cloudagent-events` – you should get `{"ok":true,...}`. If it fails, backend may be behind firewall.
+
+**C. IP whitelisting** – Your IP in Ozonetel = you can call their APIs. Webhooks = Ozonetel POSTs to you; your server must be public. If Ozonetel needs webhook destination whitelisted, give them your server IP (`curl ifconfig.me`).
+
+**D. Check backend logs** – After a call, look for `CloudAgent event received:`. If absent, Ozonetel is not pushing to your URL.
+
+**E. Callback timing** – Send callback immediately ON = right after call; OFF = every 5 min.

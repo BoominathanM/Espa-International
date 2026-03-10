@@ -5,24 +5,48 @@ import Lead from '../models/Lead.js'
  * CloudAgent webhook: receives call events and persists to CallLog.
  * Configure "URL to Push" in CloudAgent Campaign Settings to:
  * https://yourcrm.com/webhook/cloudagent-events
+ * Supports Ozonetel native fields: CallerID, AgentID, CallDuration, StartTime, EndTime, Status, AudioFile.
  */
+
+/** Parse CallDuration "HH:MM:SS" to seconds */
+function parseCallDuration(val) {
+  if (typeof val === 'number') return val
+  const s = String(val || '').trim()
+  if (!s) return 0
+  const parts = s.split(':').map(Number)
+  if (parts.length >= 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  return parseInt(parts[0], 10) || 0
+}
+
 export const cloudagentEvents = async (req, res) => {
   try {
     const payload = req.body
     console.log('CloudAgent event received:', JSON.stringify(payload).slice(0, 500))
 
-    const callId = payload.call_id ?? payload.callId ?? payload.request_id ?? ''
-    const agentId = payload.agent_id ?? payload.agentId ?? ''
-    const customerNumber = payload.customer_number ?? payload.customerNumber ?? payload.phone_number ?? payload.phoneNumber ?? ''
-    const callStatus = payload.call_status ?? payload.status ?? payload.event ?? ''
-    const callType = (payload.call_type ?? payload.direction ?? '').toLowerCase().includes('in') ? 'Inbound' : 'Outbound'
-    const startTime = payload.start_time ? new Date(payload.start_time) : payload.startTime ? new Date(payload.startTime) : null
-    const endTime = payload.end_time ? new Date(payload.end_time) : payload.endTime ? new Date(payload.endTime) : null
-    const durationSeconds = payload.duration ?? payload.duration_seconds ?? (startTime && endTime ? Math.round((endTime - startTime) / 1000) : 0)
-    const recordingUrl = payload.recording_url ?? payload.recordingUrl ?? ''
+    // Support both generic and Ozonetel native field names (form-data uses same casing as sent)
+    const callId = payload.call_id ?? payload.callId ?? payload.request_id ?? payload.RequestId ?? payload.requestId ?? ''
+    const agentId = payload.agent_id ?? payload.agentId ?? payload.AgentID ?? payload.AgentId ?? ''
+    const customerNumber =
+      payload.customer_number ?? payload.customerNumber ??
+      payload.phone_number ?? payload.phoneNumber ??
+      payload.CallerID ?? payload.CallerId ?? payload.DialedNumber ?? ''
+    const callStatus = payload.call_status ?? payload.status ?? payload.event ?? payload.Status ?? payload.DialStatus ?? ''
+    const callType = (payload.call_type ?? payload.direction ?? payload.CallType ?? '').toLowerCase().includes('in') ? 'Inbound' : 'Outbound'
+    const startTimeRaw = payload.start_time ?? payload.startTime ?? payload.StartTime ?? ''
+    const endTimeRaw = payload.end_time ?? payload.endTime ?? payload.EndTime ?? ''
+    const parseOzonetelDate = (s) => (s ? new Date(String(s).replace(/^(\d{4}):(\d{1,2}):(\d{1,2})/, '$1-$2-$3')) : null)
+    const startTime = startTimeRaw ? parseOzonetelDate(startTimeRaw) : null
+    const endTime = endTimeRaw ? parseOzonetelDate(endTimeRaw) : null
+    const durationSeconds =
+      payload.duration ?? payload.duration_seconds ??
+      parseCallDuration(payload.CallDuration) ??
+      (startTime && endTime ? Math.round((endTime - startTime) / 1000) : 0)
+    const recordingUrl = payload.recording_url ?? payload.recordingUrl ?? payload.AudioFile ?? ''
 
+    const effectiveCallId = callId || `oz-${Date.now()}-${agentId}-${customerNumber}`.replace(/\s/g, '')
     const doc = {
-      call_id: String(callId),
+      call_id: effectiveCallId,
       agent_id: String(agentId),
       customer_number: String(customerNumber),
       call_status: String(callStatus),
