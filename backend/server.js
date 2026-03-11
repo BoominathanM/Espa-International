@@ -3,7 +3,6 @@ import mongoose from 'mongoose'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import cookieParser from 'cookie-parser'
-import os from 'os'
 import authRoutes from './routes/auth.js'
 import userRoutes from './routes/users.js'
 import branchRoutes from './routes/branches.js'
@@ -105,18 +104,12 @@ app.use(cors({
     })
     
     if (isAllowed) {
-      // Log successful CORS in development for debugging
-      if (process.env.NODE_ENV !== 'production') {
-        const timestamp = new Date().toISOString()
-        console.log(`[${timestamp}] ✅ CORS allowed: ${origin}`)
-      }
       callback(null, true)
     } else {
       // Log for debugging
       const timestamp = new Date().toISOString()
       console.warn(`[${timestamp}] ⚠️  CORS blocked origin: ${origin}`)
       console.warn(`[${timestamp}] 📋 Allowed origins: ${JSON.stringify(allowedOrigins.filter(o => typeof o === 'string'))}`)
-      console.warn(`[${timestamp}] 💡 Tip: Add this origin to FRONTEND_URLS or PRODUCTION_FRONTEND_URL in .env`)
       callback(new Error('Not allowed by CORS'))
     }
   },
@@ -205,7 +198,6 @@ app.use((err, req, res, next) => {
 
 // Connect to MongoDB
 const PORT = process.env.PORT || 3001
-const HOST = process.env.HOST || '0.0.0.0' // Listen on all interfaces by default
 
 // Function to seed super admin if it doesn't exist
 const seedSuperAdminIfNeeded = async () => {
@@ -368,12 +360,7 @@ console.log('🚀 Starting ESPA International Backend Server')
 console.log('='.repeat(60))
 console.log(`📅 Started at: ${new Date().toISOString()}`)
 console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
-console.log(`🔌 Host: ${HOST}`)
-console.log(`🔌 Port: ${PORT}`)
-console.log(`🌐 Server will listen on: http://${HOST}:${PORT}`)
-if (HOST === '0.0.0.0') {
-  console.log(`   (Listening on all network interfaces - accessible from external connections)`)
-}
+console.log(`🔌 Port: ${process.env.PORT || 3001}`)
 console.log('='.repeat(60))
 
 mongoose
@@ -389,42 +376,12 @@ mongoose
     // Seed default branches if needed
     await seedDefaultBranchesIfNeeded()
     
-    const server = app.listen(PORT, HOST, () => {
+    const server = app.listen(PORT, () => {
       const timestamp = new Date().toISOString()
-      const networkInterfaces = os.networkInterfaces()
-      
       console.log('='.repeat(60))
-      console.log(`[${timestamp}] ✅ Server is running!`)
-      console.log(`[${timestamp}] 🌐 Listening on: http://${HOST}:${PORT}`)
-      console.log(`[${timestamp}] 🏠 Local access: http://localhost:${PORT}`)
-      
-      // Show network IP addresses for external access
-      const addresses = []
-      Object.keys(networkInterfaces).forEach((interfaceName) => {
-        networkInterfaces[interfaceName].forEach((iface) => {
-          if (iface.family === 'IPv4' && !iface.internal) {
-            addresses.push(`http://${iface.address}:${PORT}`)
-          }
-        })
-      })
-      
-      if (addresses.length > 0) {
-        console.log(`[${timestamp}] 🌍 Network access:`)
-        addresses.forEach(addr => {
-          console.log(`[${timestamp}]    ${addr}`)
-        })
-      }
-      
+      console.log(`[${timestamp}] ✅ Server is running on port ${PORT}`)
       console.log(`[${timestamp}] ✅ Health check: http://localhost:${PORT}/api/health`)
       console.log(`[${timestamp}] ✅ Login endpoint: http://localhost:${PORT}/api/auth/login`)
-      
-      // Log CORS configuration
-      const allowedOrigins = getCorsOrigins()
-      console.log(`[${timestamp}] 🔒 CORS enabled for ${allowedOrigins.filter(o => typeof o === 'string').length} origin(s)`)
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`[${timestamp}] 📋 Allowed origins: ${JSON.stringify(allowedOrigins.filter(o => typeof o === 'string'), null, 2)}`)
-      }
-      
       console.log('='.repeat(60))
       console.log('📝 Server logs will appear below:')
       console.log('='.repeat(60))
