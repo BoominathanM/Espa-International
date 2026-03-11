@@ -49,6 +49,7 @@ import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
 import { useGetCampaignsQuery, useMakeCallMutation } from '../../store/api/cloudAgentApi'
 import { useGetMeQuery } from '../../store/api/authApi'
+import { getApiBaseUrl } from '../../utils/apiConfig'
 import dayjs from 'dayjs'
 
 const { RangePicker } = DatePicker
@@ -588,10 +589,8 @@ const Leads = () => {
 
   const handleDownloadSample = async () => {
     try {
-      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === ''
-      const baseUrl = isLocalhost
-        ? 'http://localhost:3001/api'
-        : 'https://espa-international.onrender.com/api'
+      // Use the same API URL logic as apiSlice
+      const baseUrl = getApiBaseUrl()
 
       const response = await fetch(`${baseUrl}/leads/import/sample`, {
         method: 'GET',
@@ -712,11 +711,8 @@ const Leads = () => {
 
       const queryString = params.toString()
 
-      // Use the same base URL logic as apiSlice
-      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === ''
-      const baseUrl = isLocalhost
-        ? 'http://localhost:3001/api'
-        : 'https://e-spa.askeva.net/api'
+      // Use the same API URL logic as apiSlice
+      const baseUrl = getApiBaseUrl()
 
       const response = await fetch(`${baseUrl}/leads/export${queryString ? `?${queryString}` : ''}`, {
         method: 'GET',

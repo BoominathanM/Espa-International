@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useLoginMutation } from '../store/api/authApi'
 import { getDefaultPermissions } from '../utils/permissions'
+import { getApiBaseUrl } from '../utils/apiConfig'
 
 const Login = () => {
   const { message } = App.useApp()
@@ -42,7 +43,20 @@ const Login = () => {
       let errorMessage = 'Login failed. Please check your credentials.'
       
       if (error?.status === 'FETCH_ERROR' || error?.status === 'PARSING_ERROR') {
-        errorMessage = 'Cannot connect to server. Please check if backend is running on port 3001.'
+        // Get the API URL being used
+        const apiUrl = getApiBaseUrl()
+        const isLocalhost = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1' ||
+                           window.location.hostname === ''
+        
+        errorMessage = `Cannot connect to server at ${apiUrl}. Please check if backend is running and accessible.`
+        
+        // Add more helpful message for localhost
+        if (isLocalhost) {
+          errorMessage += ' Make sure the backend server is running on port 3001.'
+        } else {
+          errorMessage += ' Check your server domain configuration and ensure CORS is properly configured.'
+        }
       } else if (error?.status === 404) {
         errorMessage = 'API endpoint not found. Please check backend server configuration.'
       } else if (error?.data?.message) {
