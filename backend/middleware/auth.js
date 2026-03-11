@@ -108,31 +108,36 @@ export const authenticateWhatsAppApiKey = async (req, res, next) => {
     // Check if this is a test request (from ASK EVA platform test feature)
     // Test requests might not have authentication, so we'll handle them gracefully
     const isTestRequest = req.body?.event === 'test' || 
+                         req.body?.event === 'webhook_test' ||
                          req.body?.test === true ||
                          req.query?.test === 'true' ||
-                         req.header('X-Test-Request') === 'true'
+                         req.header('X-Test-Request') === 'true' ||
+                         (!req.body || Object.keys(req.body).length === 0) // Empty body is likely a test
     
     if (!apiKey) {
       // Bypass: when AskEva cannot send API key in headers (e.g. platform limitation)
       const skipAuth = process.env.WHATSAPP_WEBHOOK_SKIP_AUTH === 'true' || process.env.WHATSAPP_WEBHOOK_SKIP_AUTH === '1'
       const hasValidPayload = req.body && (req.body.event || req.body.data || req.body.message)
+      
+      // Allow test requests without authentication
+      if (isTestRequest) {
+        console.log(`[WhatsApp Webhook] Test request detected (no auth required) from ${req.ip}`)
+        return next()
+      }
+      
+      // Bypass auth if configured and has valid payload
       if (skipAuth && hasValidPayload) {
         console.log(`[WhatsApp Webhook] Auth bypass (WHATSAPP_WEBHOOK_SKIP_AUTH) from ${req.ip}`)
         return next()
       }
-      if (isTestRequest) {
-        console.warn(`[WhatsApp Webhook] Test request without API key from ${req.ip}`)
-        return res.status(401).json({
-          success: false,
-          message: 'WhatsApp API key is required. Configure X-WhatsApp-API-Key in webhook settings, or set WHATSAPP_WEBHOOK_SKIP_AUTH=true in .env to bypass.',
-          error: 'Missing API key'
-        })
-      }
+      
+      // If no auth and not a test, require authentication
       console.warn(`[WhatsApp Webhook] Missing API key from ${req.ip}`)
       return res.status(401).json({
         success: false,
-        message: 'WhatsApp API key is required. If AskEva cannot send headers, set WHATSAPP_WEBHOOK_SKIP_AUTH=true in backend .env',
-        error: 'Missing API key'
+        message: 'WhatsApp API key is required. For testing without headers, send a test event or set WHATSAPP_WEBHOOK_SKIP_AUTH=true in backend .env',
+        error: 'Missing API key',
+        hint: 'Test requests (event: "test" or empty body) are allowed without authentication'
       })
     }
 

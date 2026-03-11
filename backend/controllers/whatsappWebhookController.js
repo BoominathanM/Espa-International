@@ -47,6 +47,18 @@ export const handleWebhook = async (req, res) => {
       'authorization': req.headers['authorization'] ? '***' : undefined,
     })
 
+    // Handle empty body or missing body (test requests)
+    if (!req.body || Object.keys(req.body).length === 0) {
+      console.log('[WhatsApp Webhook] Empty body received – treating as webhook test')
+      return res.status(200).json({
+        success: true,
+        message: 'Webhook endpoint is reachable and working correctly. Test successful!',
+        endpoint: '/api/whatsapp/webhook',
+        timestamp: new Date().toISOString(),
+        note: 'This endpoint is ready to receive webhook events. Send a payload with event and data fields to process lead events.'
+      })
+    }
+
     const { event, timestamp, message } = req.body
     // AskEva sends lead inside message.data; some senders use top-level data
     const data = req.body.data || (message && message.data) || null
@@ -59,9 +71,9 @@ export const handleWebhook = async (req, res) => {
       dataKeys: data ? Object.keys(data) : [],
     })
 
-    // Handle test events gracefully
-    if (event === 'test' || event === 'webhook_test') {
-      console.log(`[WhatsApp Webhook] Test event received`)
+    // Handle test events gracefully (including webhook_test, test, or any test-related event)
+    if (event === 'test' || event === 'webhook_test' || event === 'test_webhook') {
+      console.log(`[WhatsApp Webhook] Test event received: ${event}`)
       return res.status(200).json({
         success: true,
         message: 'Webhook test successful! The endpoint is working correctly.',
@@ -71,27 +83,36 @@ export const handleWebhook = async (req, res) => {
           event,
           timestamp,
           hasData: !!data,
-        }
+          bodyKeys: Object.keys(req.body),
+        },
+        note: 'Webhook is ready to receive lead events. Header parameters are optional when WHATSAPP_WEBHOOK_SKIP_AUTH is enabled.'
       })
     }
 
-    // Validate required fields
-    if (!event) {
-      return res.status(400).json({
-        success: false,
-        message: 'Event is required',
-      })
-    }
-
-    // Allow webhook test without data
-    if (!data) {
-      console.log('[WhatsApp Webhook] No data field detected – treating as webhook test')
-
+    // Allow webhook test without data (but with event field)
+    if (!data && event) {
+      console.log('[WhatsApp Webhook] Event without data detected – treating as webhook test')
       return res.status(200).json({
         success: true,
         message: 'Webhook endpoint reachable. Test successful.',
+        endpoint: '/api/whatsapp/webhook',
         event,
-        timestamp: new Date().toISOString()
+        timestamp: timestamp || new Date().toISOString(),
+        note: 'Webhook is ready. Send a complete payload with data field to process lead events.'
+      })
+    }
+
+    // Validate required fields for actual webhook processing
+    if (!event) {
+      return res.status(400).json({
+        success: false,
+        message: 'Event field is required in webhook payload',
+        received: {
+          bodyKeys: Object.keys(req.body),
+          hasEvent: !!event,
+          hasData: !!data,
+        },
+        hint: 'Send a payload with event field (e.g., "lead_created", "lead_webhook") or use "test" for testing'
       })
     }
 
