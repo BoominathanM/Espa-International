@@ -14,6 +14,7 @@ import websiteSettingsRoutes from './routes/websiteSettings.js'
 import whatsappSettingsRoutes from './routes/whatsappSettings.js'
 import whatsappRoutes from './routes/whatsapp.js'
 import ozonetelSettingsRoutes from './routes/ozonetelSettings.js'
+import ozonetelRoutes from './routes/ozonetel.js'
 import cloudAgentRoutes from './routes/cloudagent.js'
 import webhookRoutes from './routes/webhook.js'
 import User from './models/User.js'
@@ -167,6 +168,7 @@ app.use('/api/website-settings', websiteSettingsRoutes)
 app.use('/api/whatsapp-settings', whatsappSettingsRoutes)
 app.use('/api/whatsapp', whatsappRoutes)
 app.use('/api/ozonetel-settings', ozonetelSettingsRoutes)
+app.use('/api/ozonetel', ozonetelRoutes)
 app.use('/api/cloudagent', cloudAgentRoutes)
 app.use('/webhook', webhookRoutes)
 

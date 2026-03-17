@@ -120,7 +120,7 @@ const Layout = ({ children }) => {
     {
       key: '/chats',
       icon: <MessageOutlined />,
-      label: 'WhatsApp & AI Chat',
+      label: 'Appoinment Booking',
       permission: 'chats:read',
     },
     {
