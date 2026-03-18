@@ -15,6 +15,9 @@ import {
   addReminder,
   updateReminder,
   deleteReminder,
+  completeAppointment,
+  rescheduleAppointment,
+  addAppointmentNote,
 } from '../controllers/leadController.js'
 import { authenticate, isSuperAdmin, authenticateApiKey, authenticateWhatsAppApiKey } from '../middleware/auth.js'
 
@@ -35,6 +38,9 @@ router.get('/', authenticate, getLeads)
 router.get('/export', authenticate, exportLeads)
 router.get('/import/sample', authenticate, getSampleCSV)
 router.post('/import', authenticate, importLeads)
+router.post('/:id/complete', authenticate, completeAppointment)
+router.post('/:id/reschedule', authenticate, rescheduleAppointment)
+router.post('/:id/appointment-notes', authenticate, addAppointmentNote)
 router.get('/:id', authenticate, getLead)
 router.put('/:id', authenticate, updateLead)
 router.delete('/:id', authenticate, isSuperAdmin, deleteLead)

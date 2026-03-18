@@ -153,7 +153,7 @@ export const createLead = async (req, res) => {
       notes,
       appointment_date,
       slot_time,
-      spa_package
+      spa_package,
     } = req.body
 
     // Handle name field - support both old 'name' and new 'first_name'/'last_name'
@@ -225,6 +225,7 @@ export const createLead = async (req, res) => {
       }
     }
 
+    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim() || firstName.trim()
     const lead = new Lead({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
@@ -244,7 +245,9 @@ export const createLead = async (req, res) => {
       lastInteraction: new Date(),
       activityLogs: [{
         action: 'Lead Created',
-        details: `Lead "${firstName.trim()}" was created`,
+        details: appointment_date
+          ? `Appointment for '${fullName}' was created`
+          : `Lead "${firstName.trim()}" was created`,
         performedBy: req.user?.name || 'System',
       }],
     })
@@ -612,7 +615,7 @@ export const updateLead = async (req, res) => {
       notes,
       appointment_date,
       slot_time,
-      spa_package
+      spa_package,
     } = req.body
 
     const lead = await Lead.findById(req.params.id)
@@ -1086,6 +1089,169 @@ export const deleteReminder = async (req, res) => {
     res.json({ success: true, message: 'Reminder deleted', lead: updatedLead })
   } catch (error) {
     console.error('Delete reminder error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
+async function getPopulatedLeadById(id) {
+  const lead = await Lead.findById(id)
+    .populate({
+      path: 'branch',
+      select: 'name address phone email assignedUsers',
+      populate: {
+        path: 'assignedUsers',
+        select: 'name email role status',
+      },
+    })
+    .populate('assignedTo', 'name email phone')
+  if (lead?.branch) {
+    lead.branch.userCount = lead.branch.assignedUsers
+      ? (Array.isArray(lead.branch.assignedUsers) ? lead.branch.assignedUsers.length : 0)
+      : 0
+  }
+  return lead
+}
+
+// @desc    Mark appointment completed (saves notes + status)
+// @route   POST /api/leads/:id/complete
+// @access  Private
+export const completeAppointment = async (req, res) => {
+  try {
+    const completion_notes = (req.body.completion_notes || '').trim()
+    if (!completion_notes) {
+      return res.status(400).json({
+        success: false,
+        message: 'Completion notes are required',
+      })
+    }
+    const lead = await Lead.findById(req.params.id)
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+    if (lead.status === 'Converted') {
+      return res.status(400).json({
+        success: false,
+        message: 'Appointment is already marked as completed',
+      })
+    }
+    lead.status = 'Converted'
+    lead.completion_notes = completion_notes
+    lead.activityLogs.push({
+      action: 'Appointment Completed',
+      details: completion_notes,
+      performedBy: req.user?.name || 'User',
+    })
+    lead.lastInteraction = new Date()
+    await lead.save()
+    const updated = await getPopulatedLeadById(lead._id)
+    res.json({
+      success: true,
+      message: 'Appointment marked as completed',
+      lead: updated,
+    })
+  } catch (error) {
+    console.error('Complete appointment error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
+// @desc    Reschedule appointment (history + DB + activity)
+// @route   POST /api/leads/:id/reschedule
+// @access  Private
+export const rescheduleAppointment = async (req, res) => {
+  try {
+    const { appointment_date, slot_time, reason } = req.body
+    if (!appointment_date || !slot_time) {
+      return res.status(400).json({
+        success: false,
+        message: 'Appointment date and time slot are required',
+      })
+    }
+    const lead = await Lead.findById(req.params.id)
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+    if (lead.status === 'Converted') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot reschedule a completed appointment',
+      })
+    }
+    const prevDate = lead.appointment_date
+    const prevSlot = lead.slot_time || ''
+    const newDate = new Date(appointment_date)
+    const newSlot = String(slot_time).trim()
+    lead.rescheduleHistory.push({
+      description: (reason || '').trim() || 'Rescheduled',
+      previousAppointmentDate: prevDate,
+      previousSlot: prevSlot,
+      newAppointmentDate: newDate,
+      newSlot,
+    })
+    lead.appointment_date = newDate
+    lead.slot_time = newSlot
+    lead.status = 'Follow-Up'
+    lead.activityLogs.push({
+      action: 'Appointment Rescheduled',
+      details: `Moved from ${prevDate ? new Date(prevDate).toLocaleDateString() : '—'} ${prevSlot} → ${newDate.toLocaleDateString()} ${newSlot}. ${(reason || '').trim()}`,
+      performedBy: req.user?.name || 'User',
+    })
+    lead.lastInteraction = new Date()
+    await lead.save()
+    const updated = await getPopulatedLeadById(lead._id)
+    res.json({
+      success: true,
+      message: 'Appointment rescheduled successfully',
+      lead: updated,
+    })
+  } catch (error) {
+    console.error('Reschedule appointment error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
+// @desc    Add appointment note (timeline entry)
+// @route   POST /api/leads/:id/appointment-notes
+// @access  Private
+export const addAppointmentNote = async (req, res) => {
+  try {
+    const text = (req.body.text || '').trim()
+    if (!text) {
+      return res.status(400).json({
+        success: false,
+        message: 'Note text is required',
+      })
+    }
+    if (text.length > 2000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Note must be 2000 characters or less',
+      })
+    }
+    const lead = await Lead.findById(req.params.id)
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+    const performedBy = req.user?.name || 'User'
+    lead.appointmentNoteEntries.push({
+      text,
+      performedBy,
+    })
+    lead.activityLogs.push({
+      action: 'Note Added',
+      details: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+      performedBy,
+    })
+    lead.lastInteraction = new Date()
+    await lead.save()
+    const updated = await getPopulatedLeadById(lead._id)
+    res.json({
+      success: true,
+      message: 'Note saved',
+      lead: updated,
+    })
+  } catch (error) {
+    console.error('Add appointment note error:', error)
     res.status(500).json({ success: false, message: 'Server error' })
   }
 }

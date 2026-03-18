@@ -125,12 +125,6 @@ const Layout = ({ children }) => {
       permission: 'leads:read',
     },
     {
-      key: '/chats',
-      icon: <MessageOutlined />,
-      label: 'Chats',
-      permission: 'chats:read',
-    },
-    {
       key: '/customers',
       icon: <TeamOutlined />,
       label: 'Customer Management',

@@ -117,6 +117,30 @@ export const leadApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: (result, error, { leadId }) => [{ type: 'Lead', id: leadId }, 'Lead'],
     }),
+    completeAppointment: builder.mutation({
+      query: ({ id, completion_notes }) => ({
+        url: `/leads/${id}/complete`,
+        method: 'POST',
+        body: { completion_notes },
+      }),
+      invalidatesTags: (result, error, { id }) => [{ type: 'Lead', id }, 'Lead'],
+    }),
+    rescheduleAppointment: builder.mutation({
+      query: ({ id, appointment_date, slot_time, reason }) => ({
+        url: `/leads/${id}/reschedule`,
+        method: 'POST',
+        body: { appointment_date, slot_time, reason },
+      }),
+      invalidatesTags: (result, error, { id }) => [{ type: 'Lead', id }, 'Lead'],
+    }),
+    addAppointmentNote: builder.mutation({
+      query: ({ id, text }) => ({
+        url: `/leads/${id}/appointment-notes`,
+        method: 'POST',
+        body: { text },
+      }),
+      invalidatesTags: (result, error, { id }) => [{ type: 'Lead', id }, 'Lead'],
+    }),
   }),
 })
 
@@ -132,4 +156,7 @@ export const {
   useAddReminderMutation,
   useUpdateReminderMutation,
   useDeleteReminderMutation,
+  useCompleteAppointmentMutation,
+  useRescheduleAppointmentMutation,
+  useAddAppointmentNoteMutation,
 } = leadApi

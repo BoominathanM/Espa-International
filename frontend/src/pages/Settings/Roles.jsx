@@ -28,7 +28,6 @@ const Roles = () => {
     { key: 'dashboard', name: 'Dashboard' },
     { key: 'leads', name: 'Lead Management' },
     { key: 'calls', name: 'Call Management' },
-    { key: 'chats', name: 'WhatsApp & AI Chat' },
     { key: 'customers', name: 'Customer Management' },
     { key: 'reports', name: 'Reports & Analytics' },
     { key: 'settings', name: 'System Settings' },

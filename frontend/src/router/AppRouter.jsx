@@ -7,7 +7,6 @@ import Dashboard from '../pages/Dashboard/DashboardPage'
 import Leads from '../pages/Leads/LeadsPage'
 import AppointmentBookings from '../pages/AppointmentBookings/AppointmentBookingsPage'
 import Calls from '../pages/Calls/CallsPage'
-import Chats from '../pages/Chats/ChatsPage'
 import Customers from '../pages/Customers/CustomersPage'
 import Reports from '../pages/Reports/ReportsPage'
 import Settings from '../pages/Settings/SettingsPage'
@@ -62,16 +61,6 @@ const AppRouter = () => {
           <ProtectedRoute requiredPermission="calls:read">
             <Layout>
               <Calls />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/chats"
-        element={
-          <ProtectedRoute requiredPermission="chats:read">
-            <Layout>
-              <Chats />
             </Layout>
           </ProtectedRoute>
         }

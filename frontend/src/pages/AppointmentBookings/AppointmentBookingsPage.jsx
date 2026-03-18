@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Button,
   Input,
@@ -14,6 +14,10 @@ import {
   App,
   Empty,
   Tag,
+  Timeline,
+  Spin,
+  Alert,
+  Avatar,
 } from 'antd'
 import {
   PlusOutlined,
@@ -26,12 +30,23 @@ import {
   RightOutlined,
   EditOutlined,
   EyeOutlined,
+  CheckCircleOutlined,
+  HistoryOutlined,
+  UserOutlined,
+  IdcardOutlined,
+  MessageOutlined,
+  ArrowLeftOutlined,
+  ScheduleOutlined,
 } from '@ant-design/icons'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
   useGetLeadsQuery,
+  useGetLeadQuery,
   useCreateLeadMutation,
   useUpdateLeadMutation,
+  useCompleteAppointmentMutation,
+  useRescheduleAppointmentMutation,
+  useAddAppointmentNoteMutation,
 } from '../../store/api/leadApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import dayjs from 'dayjs'
@@ -67,6 +82,445 @@ const APPOINTMENT_TAB_STATUS = {
   feedbacks: [],
 }
 
+function appointmentDisplayId(lead) {
+  if (!lead?._id) return '-'
+  const id = String(lead._id)
+  const tail = id.slice(-6).toUpperCase().replace(/[^A-F0-9]/g, '0')
+  return `A${tail.padStart(6, '0')}`
+}
+
+function uiAppointmentStatus(status) {
+  if (status === 'Converted') return { label: 'Completed', color: 'green' }
+  if (status === 'Follow-Up') return { label: 'Rescheduled', color: 'orange' }
+  if (status === 'In Progress') return { label: 'Current', color: 'blue' }
+  return { label: 'Current', color: 'blue' }
+}
+
+/** Full appointment detail: tabs persist via API (complete / reschedule / notes). */
+function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
+  const { data, isLoading, isFetching, error, refetch } = useGetLeadQuery(leadId)
+  const [detailTab, setDetailTab] = useState('details')
+  const [completeForm] = Form.useForm()
+  const [rescheduleForm] = Form.useForm()
+  const [noteForm] = Form.useForm()
+  const [completeAppt, { isLoading: completing }] = useCompleteAppointmentMutation()
+  const [rescheduleAppt, { isLoading: rescheduling }] = useRescheduleAppointmentMutation()
+  const [addNote, { isLoading: noteSaving }] = useAddAppointmentNoteMutation()
+
+  const lead = data?.lead
+  const isDone = lead?.status === 'Converted'
+
+  useEffect(() => {
+    if (lead && detailTab === 'reschedule') {
+      rescheduleForm.setFieldsValue({
+        appointment_date: lead.appointment_date ? dayjs(lead.appointment_date) : null,
+        slot_time: lead.slot_time || undefined,
+        reason: '',
+      })
+    }
+  }, [lead, detailTab, rescheduleForm])
+
+  const onComplete = async () => {
+    try {
+      const v = await completeForm.validateFields()
+      await completeAppt({ id: leadId, completion_notes: v.completion_notes }).unwrap()
+      messageApi.success('Appointment marked complete')
+      completeForm.resetFields()
+      refetch()
+    } catch (e) {
+      if (e?.data?.message) messageApi.error(e.data.message)
+    }
+  }
+
+  const onReschedule = async () => {
+    try {
+      const v = await rescheduleForm.validateFields()
+      await rescheduleAppt({
+        id: leadId,
+        appointment_date: v.appointment_date.format('YYYY-MM-DD'),
+        slot_time: v.slot_time,
+        reason: v.reason || '',
+      }).unwrap()
+      messageApi.success('Reschedule saved')
+      rescheduleForm.setFieldsValue({ reason: '' })
+      refetch()
+    } catch (e) {
+      if (e?.data?.message) messageApi.error(e.data.message)
+    }
+  }
+
+  const onAddNote = async () => {
+    try {
+      const v = await noteForm.validateFields()
+      await addNote({ id: leadId, text: v.note_text }).unwrap()
+      messageApi.success('Note saved')
+      noteForm.resetFields()
+      refetch()
+    } catch (e) {
+      if (e?.data?.message) messageApi.error(e.data.message)
+    }
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <Alert type="error" message="Could not load appointment" showIcon />
+        <Button onClick={onBack} style={{ marginTop: 16 }}>
+          Back
+        </Button>
+      </Card>
+    )
+  }
+
+  if (isLoading || !lead) {
+    return (
+      <Card>
+        <Spin size="large" style={{ display: 'block', margin: 48 }} />
+      </Card>
+    )
+  }
+
+  const name = `${(lead.first_name || '').trim()} ${(lead.last_name || '').trim()}`.trim() || 'Patient'
+  const st = uiAppointmentStatus(lead.status)
+  const history = [...(lead.rescheduleHistory || [])].reverse()
+  const logs = [...(lead.activityLogs || [])].reverse()
+  const notesList = [...(lead.appointmentNoteEntries || [])].reverse()
+
+  const detailTabItems = [
+    {
+      key: 'details',
+      label: (
+        <span>
+          <UserOutlined /> Appointment Details
+        </span>
+      ),
+      children: (
+        <div style={{ color: '#fff' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+            <div>
+              <div style={{ color: '#888', fontSize: 12 }}>Created</div>
+              <div>{lead.createdAt ? dayjs(lead.createdAt).format('D/M/YYYY h:mm A') : '-'}</div>
+            </div>
+            <div>
+              <div style={{ color: '#888', fontSize: 12 }}>ID</div>
+              <div>{appointmentDisplayId(lead)}</div>
+            </div>
+            <div>
+              <div style={{ color: '#888', fontSize: 12 }}>User</div>
+              <div>{lead.assignedTo?.name || '-'}</div>
+            </div>
+            <div>
+              <div style={{ color: '#888', fontSize: 12 }}>Department</div>
+              <div>{lead.branch?.name || '-'}</div>
+            </div>
+            <div>
+              <div style={{ color: '#888', fontSize: 12 }}>Status</div>
+              <Tag color={st.color}>{st.label}</Tag>
+            </div>
+            <div>
+              <div style={{ color: '#888', fontSize: 12 }}>Appointment</div>
+              <div>
+                {lead.appointment_date ? dayjs(lead.appointment_date).format('DD/MM/YYYY') : '-'} · {lead.slot_time || '-'}
+              </div>
+            </div>
+            <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+              <div style={{ color: '#888', fontSize: 12 }}>Description</div>
+              <div>{lead.message || lead.notes || '-'}</div>
+            </div>
+            {lead.completion_notes && (
+              <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+                <div style={{ color: '#888', fontSize: 12 }}>Completion notes</div>
+                <div>{lead.completion_notes}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'complete',
+      label: (
+        <span>
+          <CheckCircleOutlined /> Complete
+        </span>
+      ),
+      children: isDone ? (
+        <div style={{ color: '#fff' }}>
+          <Tag color="success" style={{ marginBottom: 12 }}>
+            Completed
+          </Tag>
+          <div style={{ color: '#888', fontSize: 12 }}>Completion notes</div>
+          <div>{lead.completion_notes || '-'}</div>
+        </div>
+      ) : (
+        <Form form={completeForm} layout="vertical" style={{ maxWidth: 560 }}>
+          <Form.Item
+            name="completion_notes"
+            label="Completion Notes / Description"
+            rules={[{ required: true, message: 'Required' }, { max: 500 }]}
+          >
+            <Input.TextArea rows={5} maxLength={500} showCount placeholder="Enter completion notes and details" />
+          </Form.Item>
+          <Space>
+            <Button type="primary" icon={<CheckCircleOutlined />} loading={completing} onClick={onComplete} style={{ background: '#52c41a', borderColor: '#52c41a' }}>
+              Mark as Complete
+            </Button>
+          </Space>
+        </Form>
+      ),
+    },
+    {
+      key: 'reschedule',
+      label: (
+        <span>
+          <ScheduleOutlined /> Reschedule
+        </span>
+      ),
+      children: isDone ? (
+        <Alert type="info" message="Completed appointments cannot be rescheduled" showIcon />
+      ) : (
+        <>
+          <Form form={rescheduleForm} layout="vertical" style={{ maxWidth: 560 }}>
+            <Form.Item name="appointment_date" label="Appointment Date" rules={[{ required: true }]}>
+              <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+            </Form.Item>
+            <Form.Item name="slot_time" label="Appointment Timing" rules={[{ required: true, message: 'Select time slot' }]}>
+              <Select placeholder="Select Time Slot" options={SLOT_TIMES.map((t) => ({ label: t, value: t }))} />
+            </Form.Item>
+            <Form.Item name="reason" label="Reschedule Reason / Description" rules={[{ max: 500 }]}>
+              <Input.TextArea rows={4} maxLength={500} showCount />
+            </Form.Item>
+            <Space>
+              <Button type="primary" loading={rescheduling} onClick={onReschedule} style={{ background: '#52c41a', borderColor: '#52c41a' }}>
+                Save Reschedule
+              </Button>
+            </Space>
+          </Form>
+          <h4 style={{ color: '#fff', marginTop: 24 }}>Reschedule History</h4>
+          <Table
+            size="small"
+            rowKey={(r) => r._id || `${r.newAppointmentDate}-${r.newSlot}`}
+            dataSource={history}
+            pagination={false}
+            columns={[
+              { title: 'S.No.', render: (_, __, i) => i + 1, width: 60 },
+              { title: 'Description', dataIndex: 'description', ellipsis: true },
+              {
+                title: 'Update Date',
+                render: (_, r) => (r.createdAt ? dayjs(r.createdAt).format('DD/MM/YYYY') : '-'),
+              },
+              {
+                title: 'Update Time',
+                render: (_, r) => (r.createdAt ? dayjs(r.createdAt).format('HH:mm') : '-'),
+              },
+            ]}
+            locale={{ emptyText: 'No reschedule history yet' }}
+          />
+        </>
+      ),
+    },
+    {
+      key: 'activity',
+      label: (
+        <span>
+          <HistoryOutlined /> Activity Logs
+        </span>
+      ),
+      children: (
+        <div style={{ color: '#fff' }}>
+          <h4 style={{ marginBottom: 16 }}>Appointment Activity Timeline</h4>
+          {logs.length === 0 ? (
+            <Empty description="No activity" />
+          ) : (
+            <Timeline
+              items={logs.map((log) => ({
+                children: (
+                  <div>
+                    <div>{log.action}</div>
+                    <div style={{ color: '#888', fontSize: 12 }}>{log.details}</div>
+                    <div style={{ color: '#666', fontSize: 11 }}>
+                      {log.createdAt ? dayjs(log.createdAt).format('DD/MM/YYYY, HH:mm:ss') : ''}
+                    </div>
+                  </div>
+                ),
+              }))}
+            />
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'profile',
+      label: (
+        <span>
+          <IdcardOutlined /> Profile
+        </span>
+      ),
+      children: (
+        <div style={{ color: '#fff' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+            <Avatar size={64} style={{ background: '#52c41a' }}>
+              {(lead.first_name || '?')[0]}
+            </Avatar>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 600 }}>{name}</div>
+              <div style={{ color: '#888' }}>{lead.phone || '-'}</div>
+            </div>
+          </div>
+          <Space wrap style={{ marginBottom: 16 }}>
+            <Card size="small" style={{ minWidth: 120, background: '#252525', borderColor: '#333' }}>
+              <div style={{ fontSize: 20, fontWeight: 600 }}>1</div>
+              <div style={{ fontSize: 12, color: '#888' }}>Total Visits</div>
+            </Card>
+            <Card size="small" style={{ minWidth: 120, background: '#252525', borderColor: '#333' }}>
+              <div style={{ fontSize: 20, fontWeight: 600 }}>{isDone ? 1 : 0}</div>
+              <div style={{ fontSize: 12, color: '#888' }}>Completed</div>
+            </Card>
+            <Card size="small" style={{ minWidth: 120, background: '#252525', borderColor: '#333' }}>
+              <div style={{ fontSize: 20, fontWeight: 600 }}>{history.length}</div>
+              <div style={{ fontSize: 12, color: '#888' }}>Rescheduled</div>
+            </Card>
+            <Card size="small" style={{ minWidth: 120, background: '#252525', borderColor: '#333' }}>
+              <div style={{ fontSize: 20, fontWeight: 600 }}>{notesList.length}</div>
+              <div style={{ fontSize: 12, color: '#888' }}>Total Notes</div>
+            </Card>
+          </Space>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+            <Card size="small" title="Visit Timeline" style={{ background: '#252525', borderColor: '#333' }}>
+              First visit: {lead.appointment_date ? dayjs(lead.appointment_date).format('DD/MM/YYYY') : '-'}
+            </Card>
+            <Card size="small" title="Departments Visited" style={{ background: '#252525', borderColor: '#333' }}>
+              {lead.branch?.name ? <Tag>{lead.branch.name}</Tag> : '-'}
+            </Card>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'notes',
+      label: (
+        <span>
+          <EditOutlined /> Notes
+        </span>
+      ),
+      children: (
+        <div>
+          <Form form={noteForm} layout="vertical" style={{ maxWidth: 560 }}>
+            <Form.Item name="note_text" label="Add note" rules={[{ required: true }, { max: 2000 }]}>
+              <Input.TextArea rows={4} maxLength={2000} showCount />
+            </Form.Item>
+            <Button type="primary" loading={noteSaving} onClick={onAddNote} style={{ background: '#52c41a', borderColor: '#52c41a' }}>
+              Save Note
+            </Button>
+          </Form>
+          <h4 style={{ color: '#fff', marginTop: 24 }}>Saved notes</h4>
+          {notesList.length === 0 ? (
+            <Empty description="No notes yet" style={{ color: '#888' }} />
+          ) : (
+            <ul style={{ color: '#fff', paddingLeft: 20 }}>
+              {notesList.map((n) => (
+                <li key={n._id || n.createdAt} style={{ marginBottom: 12 }}>
+                  <div>{n.text}</div>
+                  <div style={{ color: '#888', fontSize: 12 }}>
+                    {n.performedBy} · {n.createdAt ? dayjs(n.createdAt).format('DD/MM/YYYY HH:mm') : ''}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'feedback',
+      label: (
+        <span>
+          <MessageOutlined /> Feedback
+        </span>
+      ),
+      children: (
+        <div
+          style={{
+            padding: 24,
+            background: '#1a1a1a',
+            borderRadius: 8,
+            border: '1px solid #333',
+            minHeight: 120,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 12,
+              padding: 16,
+              background: '#252525',
+              borderRadius: 8,
+              border: '1px solid #404040',
+            }}
+          >
+            <span
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: '50%',
+                background: '#1890ff',
+                color: '#fff',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 12,
+                fontWeight: 600,
+                flexShrink: 0,
+              }}
+            >
+              i
+            </span>
+            <div style={{ flex: 1, color: '#e8e8e8' }}>
+              <div style={{ fontWeight: 600, marginBottom: 8, color: '#fff' }}>No Feedback Found</div>
+              <div style={{ fontSize: 13, lineHeight: 1.5, color: '#ccc' }}>
+                No feedback responses found for appointment <strong style={{ color: '#e8e8e8' }}>{appointmentDisplayId(lead)}</strong>, patient{' '}
+                <strong style={{ color: '#e8e8e8' }}>{name}</strong>, mobile <strong style={{ color: '#e8e8e8' }}>{lead.phone || '—'}</strong>.
+              </div>
+              <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
+                Feedback can be linked when your WhatsApp flows store responses by this mobile number.
+              </div>
+            </div>
+          </div>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <Card
+      style={{ background: '#1a1a1a', borderColor: '#333' }}
+      title={
+        <Space>
+          <Button type="link" icon={<ArrowLeftOutlined />} onClick={onBack} style={{ color: '#52c41a', padding: 0 }}>
+            Bookings
+          </Button>
+          <span style={{ color: '#fff' }}>Appointment Details — {appointmentDisplayId(lead)}</span>
+          {isFetching && !isLoading && <Spin size="small" />}
+        </Space>
+      }
+    >
+      <div style={{ marginBottom: 20, padding: 16, background: '#252525', borderRadius: 8, border: '1px solid #333' }}>
+        <div style={{ color: '#52c41a', fontWeight: 600, marginBottom: 12 }}>{name}&apos;s Appointment Details</div>
+        <Space wrap size="large" style={{ color: '#ccc', fontSize: 13 }}>
+          <span>Created: {lead.createdAt ? dayjs(lead.createdAt).format('D/M/YYYY h:mm A') : '-'}</span>
+          <span>ID: {appointmentDisplayId(lead)}</span>
+          <span>User: {lead.assignedTo?.name || '-'}</span>
+          <span>Dept: {lead.branch?.name || '-'}</span>
+          <Tag color={st.color}>{st.label}</Tag>
+          <span>Desc: {lead.message || lead.notes || '—'}</span>
+        </Space>
+      </div>
+      <Tabs activeKey={detailTab} onChange={setDetailTab} items={detailTabItems} style={{ color: '#fff' }} />
+    </Card>
+  )
+}
+
 const AppointmentBookingsPage = () => {
   const { message: messageApi } = App.useApp()
   const { isMobile } = useResponsive()
@@ -77,7 +531,7 @@ const AppointmentBookingsPage = () => {
   const [calendarMonth, setCalendarMonth] = useState(dayjs())
   const [newAppointmentOpen, setNewAppointmentOpen] = useState(false)
   const [editingLead, setEditingLead] = useState(null)
-  const [viewingLead, setViewingLead] = useState(null)
+  const [detailLeadId, setDetailLeadId] = useState(null)
   const [searchText, setSearchText] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
 
@@ -132,11 +586,11 @@ const AppointmentBookingsPage = () => {
   }
 
   const handleView = (record) => {
-    setViewingLead(record)
+    setDetailLeadId(record._id)
   }
 
   const handleEdit = (record) => {
-    setViewingLead(null)
+    setDetailLeadId(null)
     setEditingLead(record)
     form.setFieldsValue({
       first_name: record.first_name,
@@ -147,16 +601,11 @@ const AppointmentBookingsPage = () => {
       spaPackage: record.spa_package,
       preferredAppointmentDate: record.appointment_date ? dayjs(record.appointment_date) : null,
       preferredSlotTime: record.slot_time,
+      description: record.message || '',
     })
     setNewAppointmentOpen(true)
   }
 
-  const openEditFromView = () => {
-    if (viewingLead) {
-      handleEdit(viewingLead)
-      setViewingLead(null)
-    }
-  }
 
   const handleFormSubmit = async (values) => {
     try {
@@ -172,6 +621,7 @@ const AppointmentBookingsPage = () => {
           ? values.preferredAppointmentDate.format('YYYY-MM-DD')
           : null,
         slot_time: values.preferredSlotTime || '',
+        message: (values.description || '').trim(),
         source: 'Add',
         status: 'New',
       }
@@ -193,7 +643,12 @@ const AppointmentBookingsPage = () => {
 
   const listColumns = [
     { title: 'S.No.', key: 'sno', width: 60, render: (_, __, i) => i + 1 },
-    { title: 'ID', dataIndex: '_id', key: 'id', width: 80, ellipsis: true, render: (id) => (id ? String(id).slice(-6) : '-') },
+    {
+      title: 'ID',
+      key: 'id',
+      width: 100,
+      render: (_, r) => appointmentDisplayId(r),
+    },
     {
       title: 'Name',
       key: 'name',
@@ -225,16 +680,11 @@ const AppointmentBookingsPage = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
-      render: (s) => (
-        <Tag
-          color={
-            s === 'Converted' ? 'green' : s === 'Follow-Up' ? 'orange' : s === 'In Progress' ? 'blue' : 'default'
-          }
-        >
-          {s || 'New'}
-        </Tag>
-      ),
+      width: 110,
+      render: (s) => {
+        const u = uiAppointmentStatus(s)
+        return <Tag color={u.color}>{u.label}</Tag>
+      },
     },
     {
       title: 'Action',
@@ -264,6 +714,22 @@ const AppointmentBookingsPage = () => {
     })
     return map
   }, [leads])
+
+  if (detailLeadId) {
+    return (
+      <div style={{ padding: isMobile ? 8 : 0 }}>
+        <AppointmentDetailPanel
+          leadId={detailLeadId}
+          onBack={() => {
+            setDetailLeadId(null)
+            refetchLeads()
+          }}
+          isMobile={isMobile}
+          messageApi={messageApi}
+        />
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: isMobile ? 8 : 0 }}>
@@ -545,80 +1011,6 @@ const AppointmentBookingsPage = () => {
         </>
       )}
 
-      {/* View Appointment modal (read-only) */}
-      <Modal
-        title="View Appointment"
-        open={!!viewingLead}
-        onCancel={() => setViewingLead(null)}
-        footer={[
-          <Button key="close" onClick={() => setViewingLead(null)}>
-            Close
-          </Button>,
-          <Button
-            key="edit"
-            type="primary"
-            icon={<EditOutlined />}
-            onClick={openEditFromView}
-            style={{ background: '#D4AF37', borderColor: '#D4AF37' }}
-          >
-            Edit
-          </Button>,
-        ]}
-        width={560}
-        styles={{ body: { padding: 24, background: '#1a1a1a' } }}
-      >
-        {viewingLead && (
-          <div style={{ color: '#fff' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>First Name</div>
-                <div>{viewingLead.first_name || '-'}</div>
-              </div>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Last Name</div>
-                <div>{viewingLead.last_name || '-'}</div>
-              </div>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Contact</div>
-                <div>{viewingLead.phone || '-'}</div>
-              </div>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Email</div>
-                <div>{viewingLead.email || '-'}</div>
-              </div>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Branch</div>
-                <div>{viewingLead.branch?.name || viewingLead.branch || '-'}</div>
-              </div>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Spa Package</div>
-                <div>{viewingLead.spa_package || '-'}</div>
-              </div>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Preferred Appointment Date</div>
-                <div>{viewingLead.appointment_date ? dayjs(viewingLead.appointment_date).format('MM/DD/YYYY') : '-'}</div>
-              </div>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Preferred Slot Time</div>
-                <div>{viewingLead.slot_time || '-'}</div>
-              </div>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Status</div>
-                <div>
-                  <Tag color={viewingLead.status === 'Converted' ? 'green' : viewingLead.status === 'Follow-Up' ? 'orange' : viewingLead.status === 'In Progress' ? 'blue' : 'default'}>
-                    {viewingLead.status || 'New'}
-                  </Tag>
-                </div>
-              </div>
-              <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Assigned To</div>
-                <div>{viewingLead.assignedTo?.name || viewingLead.assignedTo || '-'}</div>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
-
       <Modal
         title={editingLead ? 'Edit Appointment' : 'New Appointment'}
         open={newAppointmentOpen}
@@ -709,19 +1101,22 @@ const AppointmentBookingsPage = () => {
               disabledDate={(current) => current && current < dayjs().startOf('day')}
             />
           </Form.Item>
-          <Form.Item
-            name="preferredSlotTime"
-            label="PREFERRED SLOT TIME"
-            rules={[{ required: true, message: 'Required' }]}
-          >
-            <Select placeholder="PREFERRED SLOT TIME *" allowClear style={{ borderRadius: 6 }}>
-              {SLOT_TIMES.map((t) => (
-                <Option key={t} value={t}>
-                  {t}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
+            <Form.Item
+              name="preferredSlotTime"
+              label="PREFERRED SLOT TIME"
+              rules={[{ required: true, message: 'Required' }]}
+            >
+              <Select placeholder="PREFERRED SLOT TIME *" allowClear style={{ borderRadius: 6 }}>
+                {SLOT_TIMES.map((t) => (
+                  <Option key={t} value={t}>
+                    {t}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item name="description" label="DESCRIPTION / NOTES">
+              <Input.TextArea rows={2} placeholder="Short description for appointment card" />
+            </Form.Item>
           <Form.Item style={{ marginBottom: 0, marginTop: 16 }}>
             <Space>
               <Button type="primary" htmlType="submit" loading={createLoading || updateLoading} style={{ background: '#D4AF37', borderColor: '#D4AF37' }}>

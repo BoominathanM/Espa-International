@@ -3,7 +3,6 @@ import { Row, Col, Card, Statistic, Table, Tag, Select, Space, DatePicker } from
 import {
   UserAddOutlined,
   PhoneOutlined,
-  MessageOutlined,
   TeamOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
@@ -56,7 +55,6 @@ const Dashboard = () => {
   const todayLeads = 45
   const callsReceived = 120
   const callsMissed = 8
-  const activeChats = 23
   const onlineAgents = 12
   const offlineAgents = 3
 
@@ -378,21 +376,6 @@ const Dashboard = () => {
             <div style={{ marginTop: 8, color: '#ff4d4f', fontSize: 12 }}>
               {callsMissed} missed
             </div>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={12} lg={6} xl={6}>
-          <Card
-            hoverable
-            onClick={() => navigate('/chats')}
-            style={{ cursor: 'pointer', background: '#1a1a1a', border: '1px solid #333', height: '100%', minHeight: '120px' }}
-          >
-            <Statistic
-              title={<span style={{ color: '#ffffff' }}>Active Chats</span>}
-              value={activeChats}
-              prefix={<MessageOutlined style={{ color: '#D4AF37' }} />}
-              valueStyle={{ color: '#D4AF37' }}
-            />
-            <div style={{ marginTop: 8, height: '20px' }}></div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={12} lg={6} xl={6}>

@@ -19,6 +19,25 @@ const activityLogSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
+const rescheduleHistorySchema = new mongoose.Schema(
+  {
+    description: { type: String, default: '' },
+    previousAppointmentDate: { type: Date, default: null },
+    previousSlot: { type: String, default: '' },
+    newAppointmentDate: { type: Date, required: true },
+    newSlot: { type: String, default: '' },
+  },
+  { timestamps: true }
+)
+
+const appointmentNoteEntrySchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true, trim: true },
+    performedBy: { type: String, default: 'User' },
+  },
+  { timestamps: true }
+)
+
 const leadSchema = new mongoose.Schema(
   {
     first_name: {
@@ -99,6 +118,13 @@ const leadSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    completion_notes: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    rescheduleHistory: [rescheduleHistorySchema],
+    appointmentNoteEntries: [appointmentNoteEntrySchema],
     lastInteraction: {
       type: Date,
       default: Date.now,
