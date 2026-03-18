@@ -9,6 +9,7 @@ import branchRoutes from './routes/branches.js'
 import roleRoutes from './routes/roles.js'
 import notificationRoutes from './routes/notifications.js'
 import loginHistoryRoutes from './routes/loginHistory.js'
+import systemLogsRoutes from './routes/systemLogs.js'
 import leadRoutes from './routes/leads.js'
 import websiteSettingsRoutes from './routes/websiteSettings.js'
 import whatsappSettingsRoutes from './routes/whatsappSettings.js'
@@ -166,6 +167,7 @@ app.use('/api/branches', branchRoutes)
 app.use('/api/roles', roleRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/login-history', loginHistoryRoutes)
+app.use('/api/system-logs', systemLogsRoutes)
 app.use('/api/leads', leadRoutes)
 app.use('/api/website-settings', websiteSettingsRoutes)
 app.use('/api/whatsapp-settings', whatsappSettingsRoutes)

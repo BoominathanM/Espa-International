@@ -1,6 +1,8 @@
+import mongoose from 'mongoose'
 import User from '../models/User.js'
 import Branch from '../models/Branch.js'
 import Notification from '../models/Notification.js'
+import Lead from '../models/Lead.js'
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -287,56 +289,142 @@ export const updateUser = async (req, res) => {
   }
 }
 
-// @desc    Delete user
-// @route   DELETE /api/users/:id
+// @desc    Preview what must be reassigned before disabling a user
+// @route   GET /api/users/:id/disable-preview
 // @access  Private (Super Admin only)
-export const deleteUser = async (req, res) => {
+export const getDisablePreview = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id)
+    const { id } = req.params
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid user id' })
+    }
+    const user = await User.findById(id).select('name email status')
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
     }
+    const uidStr = user._id.toString()
+    const assignedLeadCount = await Lead.countDocuments({ assignedTo: user._id })
+    const leadsWithReminders = await Lead.find({
+      reminders: { $elemMatch: { assignedTo: uidStr } },
+    }).select('_id')
+    const reminderLeadCount = leadsWithReminders.length
+    const idSet = new Set()
+    ;(await Lead.find({ assignedTo: user._id }).select('_id')).forEach((l) =>
+      idSet.add(l._id.toString())
+    )
+    leadsWithReminders.forEach((l) => idSet.add(l._id.toString()))
+    const needsReassignment = assignedLeadCount > 0 || reminderLeadCount > 0
 
-    // Populate user's branch before deletion for notification
-    const userWithBranch = await User.findById(req.params.id).populate('branch', 'name')
-    
-    // Store user info before deletion for notification
-    const deletedUserName = userWithBranch.name
-    const deletedUserEmail = userWithBranch.email
-    const deletedUserRole = userWithBranch.role
-    const deletedUserBranchName = userWithBranch.branch?.name || 'No Branch'
+    res.json({
+      success: true,
+      user: { name: user.name, email: user.email, status: user.status },
+      needsReassignment,
+      assignedLeadCount,
+      leadsWithReminderAssignments: reminderLeadCount,
+      totalLeadsAffected: idSet.size,
+    })
+  } catch (error) {
+    console.error('getDisablePreview error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+}
 
-    // Remove user from branch's assignedUsers array
+// @desc    Disable user (reassign leads/reminders first when required)
+// @route   POST /api/users/:id/disable
+// @access  Private (Super Admin only)
+export const disableUser = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { reassignToUserId } = req.body || {}
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid user id' })
+    }
+    if (req.user._id.toString() === id) {
+      return res.status(400).json({ message: 'You cannot disable your own account' })
+    }
+
+    const user = await User.findById(id)
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+    if (user.status === 'inactive') {
+      return res.status(400).json({ message: 'User is already disabled' })
+    }
+
+    const uidStr = user._id.toString()
+    const assignedLeadCount = await Lead.countDocuments({ assignedTo: user._id })
+    const reminderLeads = await Lead.find({
+      reminders: { $elemMatch: { assignedTo: uidStr } },
+    })
+    const needsReassign = assignedLeadCount > 0 || reminderLeads.length > 0
+
+    let targetId = null
+    if (needsReassign) {
+      if (!reassignToUserId || !mongoose.Types.ObjectId.isValid(reassignToUserId)) {
+        return res.status(400).json({
+          message:
+            'This user has assigned leads or reminders. Select another active user to reassign them before disabling.',
+        })
+      }
+      if (reassignToUserId.toString() === id) {
+        return res.status(400).json({ message: 'Cannot reassign to the same user' })
+      }
+      const target = await User.findById(reassignToUserId)
+      if (!target || target.status !== 'active') {
+        return res.status(400).json({ message: 'Reassign target must be an active user' })
+      }
+      targetId = target._id
+
+      await Lead.updateMany({ assignedTo: user._id }, { $set: { assignedTo: targetId } })
+
+      const targetStr = targetId.toString()
+      for (const lead of reminderLeads) {
+        let dirty = false
+        for (const r of lead.reminders) {
+          if (r.assignedTo === uidStr) {
+            r.assignedTo = targetStr
+            dirty = true
+          }
+        }
+        if (dirty) await lead.save()
+      }
+    }
+
     if (user.branch) {
       await Branch.findByIdAndUpdate(user.branch, {
         $pull: { assignedUsers: user._id },
       })
     }
+    user.branch = null
+    user.status = 'inactive'
+    await user.save()
 
-    await User.findByIdAndDelete(req.params.id)
-
-    // Create notification for admins about user deletion
     try {
       const creatorName = req.user?.name || 'System Admin'
       const creatorBranchName = req.user?.branch?.name || 'No Branch'
+      const reassignName = targetId
+        ? (await User.findById(targetId).select('name'))?.name || 'another user'
+        : null
       const adminNotification = new Notification({
-        title: 'User Deleted',
-        message: `${creatorName} (${creatorBranchName}) deleted user: ${deletedUserName} (${deletedUserEmail}). Role: ${deletedUserRole.charAt(0).toUpperCase() + deletedUserRole.slice(1)}, Branch: ${deletedUserBranchName}`,
+        title: 'User Disabled',
+        message: reassignName
+          ? `${creatorName} (${creatorBranchName}) disabled user ${user.name} (${user.email}). Leads/reminders reassigned to ${reassignName}.`
+          : `${creatorName} (${creatorBranchName}) disabled user ${user.name} (${user.email}).`,
         type: 'warning',
         user: null,
-        role: 'superadmin', // Notify superadmins
+        role: 'superadmin',
         branch: null,
-        createdBy: req.user?._id || null, // Store creator
+        createdBy: req.user?._id || null,
       })
       await adminNotification.save()
-    } catch (notificationError) {
-      // Don't fail user deletion if notification fails
-      console.error('Failed to create admin deletion notification:', notificationError)
+    } catch (e) {
+      console.error('disableUser notification:', e)
     }
 
-    res.json({ success: true, message: 'User deleted successfully' })
+    res.json({ success: true, message: 'User disabled successfully' })
   } catch (error) {
-    console.error('Delete user error:', error)
+    console.error('disableUser error:', error)
     res.status(500).json({ message: 'Server error' })
   }
 }

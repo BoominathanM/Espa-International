@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   Table,
   Button,
@@ -12,17 +12,20 @@ import {
   Row,
   Col,
   Dropdown,
+  Spin,
+  Alert,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, MoreOutlined, StopOutlined } from '@ant-design/icons'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import MotionButton from '../../components/MotionButton'
-import { canCreate, canEdit, canDelete, isSuperAdmin } from '../../utils/permissions'
+import { isSuperAdmin } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
   useGetUsersQuery,
   useCreateUserMutation,
   useUpdateUserMutation,
-  useDeleteUserMutation,
+  useLazyGetDisablePreviewQuery,
+  useDisableUserMutation,
 } from '../../store/api/userApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { countryCodes, parsePhoneNumber, formatPhoneNumber } from '../../utils/countryCodes'
@@ -36,13 +39,18 @@ const Users = () => {
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [selectedCountryCode, setSelectedCountryCode] = useState('+91')
+  const [disableModalOpen, setDisableModalOpen] = useState(false)
+  const [disableTarget, setDisableTarget] = useState(null)
+  const [disableForm] = Form.useForm()
 
   // API hooks
   const { data: usersData, isLoading: usersLoading, refetch: refetchUsers } = useGetUsersQuery()
   const { data: branchesData, refetch: refetchBranches } = useGetBranchesQuery()
   const [createUser, { isLoading: createLoading }] = useCreateUserMutation()
   const [updateUser, { isLoading: updateLoading }] = useUpdateUserMutation()
-  const [deleteUser] = useDeleteUserMutation()
+  const [fetchDisablePreview, { data: disablePreview, isFetching: disablePreviewLoading }] =
+    useLazyGetDisablePreviewQuery()
+  const [disableUser, { isLoading: disableSubmitting }] = useDisableUserMutation()
 
   const users = usersData?.users || []
   const branches = branchesData?.branches || []
@@ -105,21 +113,22 @@ const Users = () => {
             menu={{
               items: [
                 { key: 'edit', label: 'Edit', icon: <EditOutlined /> },
-                { key: 'delete', label: 'Delete', icon: <DeleteOutlined />, danger: true },
+                ...(record.status === 'active'
+                  ? [
+                      { type: 'divider' },
+                      {
+                        key: 'disable',
+                        label: 'Disable user',
+                        icon: <StopOutlined />,
+                        danger: true,
+                      },
+                    ]
+                  : []),
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent?.stopPropagation()
                 if (key === 'edit') handleEdit(record)
-                if (key === 'delete') {
-                  Modal.confirm({
-                    title: 'Delete this user?',
-                    content: 'This cannot be undone.',
-                    okText: 'Delete',
-                    okType: 'danger',
-                    cancelText: 'Cancel',
-                    onOk: () => handleDelete(record._id || record.id),
-                  })
-                }
+                if (key === 'disable') openDisableModal(record)
               },
             }}
             trigger={['click']}
@@ -168,15 +177,38 @@ const Users = () => {
     setIsModalVisible(true)
   }
 
-  const handleDelete = async (id) => {
+  const openDisableModal = (record) => {
+    setDisableTarget(record)
+    disableForm.resetFields()
+    setDisableModalOpen(true)
+    fetchDisablePreview(record._id || record.id)
+  }
+
+  const closeDisableModal = () => {
+    setDisableModalOpen(false)
+    setDisableTarget(null)
+    disableForm.resetFields()
+  }
+
+  const handleConfirmDisable = async () => {
+    if (!disableTarget) return
+    const id = disableTarget._id || disableTarget.id
     try {
-      await deleteUser(id).unwrap()
-      message.success('User deleted successfully')
+      const needs = disablePreview?.needsReassignment
+      let reassignToUserId
+      if (needs) {
+        const values = await disableForm.validateFields(['reassignToUserId'])
+        reassignToUserId = values.reassignToUserId
+      }
+      await disableUser({ id, reassignToUserId }).unwrap()
+      message.success('User disabled successfully')
+      closeDisableModal()
       refetchUsers()
-      // Refetch branches to update agent count and display
       refetchBranches()
-    } catch (error) {
-      message.error(error?.data?.message || 'Failed to delete user')
+    } catch (e) {
+      if (e?.errorFields) throw e
+      message.error(e?.data?.message || e?.message || 'Failed to disable user')
+      throw e
     }
   }
 
@@ -451,6 +483,93 @@ const Users = () => {
             </div>
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="Disable user"
+        open={disableModalOpen}
+        onCancel={closeDisableModal}
+        destroyOnClose
+        okText="Disable user"
+        okButtonProps={{ danger: true, loading: disableSubmitting, disabled: disablePreviewLoading || !disablePreview }}
+        onOk={handleConfirmDisable}
+        cancelText="Cancel"
+        width={isMobile ? '95%' : 520}
+      >
+        {disablePreviewLoading ? (
+          <div style={{ textAlign: 'center', padding: 32 }}>
+            <Spin />
+            <p className="mgmt-muted" style={{ marginTop: 12 }}>
+              Checking assigned leads…
+            </p>
+          </div>
+        ) : disablePreview ? (
+          <>
+            <p style={{ marginBottom: 12 }}>
+              <strong>{disableTarget?.name}</strong> ({disableTarget?.email}) will be set to <strong>inactive</strong> and
+              cannot sign in. Branch membership will be removed.
+            </p>
+            {disablePreview.needsReassignment ? (
+              <>
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message="Reassign before disabling"
+                  description={
+                    <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                      <li>{disablePreview.assignedLeadCount} lead(s) assigned to this user</li>
+                      {disablePreview.leadsWithReminderAssignments > 0 ? (
+                        <li>
+                          {disablePreview.leadsWithReminderAssignments} lead(s) with follow-up reminders assigned to this
+                          user
+                        </li>
+                      ) : null}
+                      <li>
+                        <strong>{disablePreview.totalLeadsAffected}</strong> unique lead record(s) will be updated.
+                      </li>
+                    </ul>
+                  }
+                />
+                <Form form={disableForm} layout="vertical">
+                  <Form.Item
+                    name="reassignToUserId"
+                    label="Reassign all of the above to"
+                    rules={[{ required: true, message: 'Select an active user' }]}
+                  >
+                    <Select
+                      placeholder="Choose active user"
+                      showSearch
+                      optionFilterProp="children"
+                      getPopupContainer={(n) => n.parentElement}
+                    >
+                      {users
+                        .filter(
+                          (u) =>
+                            u.status === 'active' &&
+                            String(u._id || u.id) !== String(disableTarget?._id || disableTarget?.id)
+                        )
+                        .map((u) => (
+                          <Option key={u._id || u.id} value={u._id || u.id}>
+                            {u.name} ({u.email}) — {u.role}
+                          </Option>
+                        ))}
+                    </Select>
+                  </Form.Item>
+                </Form>
+              </>
+            ) : (
+              <Alert
+                type="info"
+                showIcon
+                message="No reassignment needed"
+                description="This user has no leads assigned and no reminders tied to them. You can disable immediately."
+              />
+            )}
+          </>
+        ) : (
+          <Alert type="error" message="Could not load preview. Close and try again." />
+        )}
       </Modal>
     </PageLayout>
   )

@@ -30,12 +30,16 @@ export const userApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['User'],
     }),
-    deleteUser: builder.mutation({
-      query: (id) => ({
-        url: `/users/${id}`,
-        method: 'DELETE',
+    getDisablePreview: builder.query({
+      query: (id) => `/users/${id}/disable-preview`,
+    }),
+    disableUser: builder.mutation({
+      query: ({ id, reassignToUserId }) => ({
+        url: `/users/${id}/disable`,
+        method: 'POST',
+        body: reassignToUserId ? { reassignToUserId } : {},
       }),
-      invalidatesTags: ['User'],
+      invalidatesTags: ['User', 'Lead', 'Branch'],
     }),
   }),
 })
@@ -46,5 +50,6 @@ export const {
   useGetUserQuery,
   useCreateUserMutation,
   useUpdateUserMutation,
-  useDeleteUserMutation,
+  useLazyGetDisablePreviewQuery,
+  useDisableUserMutation,
 } = userApi

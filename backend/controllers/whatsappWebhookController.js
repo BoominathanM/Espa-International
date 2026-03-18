@@ -1,5 +1,6 @@
 import Lead from '../models/Lead.js'
 import Branch from '../models/Branch.js'
+import ChatDeletionLog from '../models/ChatDeletionLog.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
 
@@ -448,6 +449,22 @@ const handleLeadDeleted = async (req, res, data, timestamp) => {
         success: false,
         message: 'Lead not found for deletion',
       })
+    }
+
+    const customer =
+      [lead.first_name, lead.last_name].filter(Boolean).join(' ').trim() || lead.phone || 'Unknown'
+    try {
+      await ChatDeletionLog.create({
+        source: 'whatsapp_webhook',
+        performedBy: 'WhatsApp (ASK EVA)',
+        chatId: leadId || String(lead._id),
+        leadId: String(lead._id),
+        customer,
+        phone: lead.phone || '',
+        branch: lead.branch || null,
+      })
+    } catch (logErr) {
+      console.error('[WhatsApp Webhook] ChatDeletionLog:', logErr)
     }
 
     await Lead.findByIdAndDelete(lead._id)

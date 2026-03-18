@@ -2,6 +2,7 @@ import mongoose from 'mongoose'
 import Lead from '../models/Lead.js'
 import Branch from '../models/Branch.js'
 import User from '../models/User.js'
+import ChatDeletionLog from '../models/ChatDeletionLog.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
 
@@ -758,6 +759,23 @@ export const deleteLead = async (req, res) => {
     const lead = await Lead.findById(req.params.id)
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+
+    const customer =
+      [lead.first_name, lead.last_name].filter(Boolean).join(' ').trim() || lead.phone || 'Unknown'
+    try {
+      await ChatDeletionLog.create({
+        source: 'crm',
+        performedBy: req.user?.name || 'User',
+        userId: req.user?._id || null,
+        chatId: String(lead._id),
+        leadId: String(lead._id),
+        customer,
+        phone: lead.phone || '',
+        branch: lead.branch || null,
+      })
+    } catch (logErr) {
+      console.error('ChatDeletionLog (CRM):', logErr)
     }
 
     await Lead.findByIdAndDelete(req.params.id)

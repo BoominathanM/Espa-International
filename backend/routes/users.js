@@ -4,8 +4,9 @@ import {
   getUser,
   createUser,
   updateUser,
-  deleteUser,
   getUnassignedUsers,
+  getDisablePreview,
+  disableUser,
 } from '../controllers/userController.js'
 import { authenticate, isSuperAdmin } from '../middleware/auth.js'
 
@@ -13,9 +14,10 @@ const router = express.Router()
 
 router.get('/unassigned', authenticate, getUnassignedUsers)
 router.get('/', authenticate, getUsers)
+router.get('/:id/disable-preview', authenticate, isSuperAdmin, getDisablePreview)
+router.post('/:id/disable', authenticate, isSuperAdmin, disableUser)
 router.get('/:id', authenticate, getUser)
 router.post('/', authenticate, isSuperAdmin, createUser)
 router.put('/:id', authenticate, isSuperAdmin, updateUser)
-router.delete('/:id', authenticate, isSuperAdmin, deleteUser)
 
 export default router

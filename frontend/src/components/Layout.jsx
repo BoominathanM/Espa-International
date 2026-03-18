@@ -392,131 +392,90 @@ const Layout = ({ children }) => {
             </Tooltip>
             <Popover
               content={
-                <div style={{ width: isMobile ? 280 : 360, maxHeight: 500, overflowY: 'auto' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid #333' }}>
-                    <Typography.Text strong style={{ color: '#D4AF37', fontSize: 16 }}>
-                      Notifications
-                    </Typography.Text>
-                    <Space>
+                <div className="app-notification-popover" style={{ width: isMobile ? 280 : 360 }}>
+                  <div className="app-notification-popover__header">
+                    <span className="app-notification-popover__heading">Notifications</span>
+                    <Space className="app-notification-popover__actions" size={4} wrap>
                       {unreadCount > 0 && (
                         <Button
                           type="text"
                           size="small"
                           icon={<CheckOutlined />}
                           onClick={handleMarkAllAsRead}
-                          style={{ color: '#D4AF37' }}
                         >
                           Mark all read
                         </Button>
                       )}
                       {notifications.length > 0 && (
-                        <Button
-                          type="text"
-                          size="small"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={handleClearAll}
-                        >
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={handleClearAll}>
                           Clear all
                         </Button>
                       )}
                     </Space>
                   </div>
-                  
+
                   {notifications.length === 0 ? (
-                    <Empty
-                      description={<span style={{ color: '#888' }}>No notifications</span>}
-                      style={{ padding: '20px 0' }}
-                    />
+                    <Empty className="app-notification-popover__empty" description="No notifications" style={{ padding: '20px 0' }} />
                   ) : (
                     <div>
-                      {notifications.map((notification) => (
-                        <div
-                          key={notification._id}
-                          style={{
-                            padding: '12px',
-                            marginBottom: 8,
-                            background: notification.isRead ? '#1a1a1a' : '#252525',
-                            borderRadius: 4,
-                            border: `1px solid ${notification.isRead ? '#333' : getNotificationTypeColor(notification.type)}`,
-                            cursor: 'pointer',
-                            position: 'relative',
-                            transition: 'all 0.2s',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = notification.isRead ? '#252525' : '#2a2a2a'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = notification.isRead ? '#1a1a1a' : '#252525'
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                <div
-                                  style={{
-                                    width: 8,
-                                    height: 8,
-                                    borderRadius: '50%',
-                                    background: getNotificationTypeColor(notification.type),
-                                    flexShrink: 0,
-                                  }}
-                                />
+                      {notifications.map((notification) => {
+                        const typeColor = getNotificationTypeColor(notification.type)
+                        const isRead = notification.isRead
+                        return (
+                          <div
+                            key={notification._id}
+                            className={`app-notification-popover__item ${isRead ? 'app-notification-popover__item--read' : 'app-notification-popover__item--unread'}`}
+                            style={
+                              !isRead
+                                ? { border: `1px solid ${typeColor}` }
+                                : undefined
+                            }
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                  <div
+                                    style={{
+                                      width: 8,
+                                      height: 8,
+                                      borderRadius: '50%',
+                                      background: typeColor,
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <Typography.Text
+                                    strong
+                                    className={`app-notification-popover__item-title ${isRead ? 'app-notification-popover__item-title--read' : 'app-notification-popover__item-title--unread'}`}
+                                  >
+                                    {notification.title}
+                                  </Typography.Text>
+                                </div>
                                 <Typography.Text
-                                  strong
-                                  style={{
-                                    color: notification.isRead ? '#888' : '#ffffff',
-                                    fontSize: 13,
-                                  }}
+                                  className={`app-notification-popover__item-msg ${isRead ? 'app-notification-popover__item-msg--read' : 'app-notification-popover__item-msg--unread'}`}
                                 >
-                                  {notification.title}
+                                  {notification.message}
+                                </Typography.Text>
+                                <Typography.Text className="app-notification-popover__item-time">
+                                  {dayjs(notification.createdAt).format('MMM DD, YYYY HH:mm')}
                                 </Typography.Text>
                               </div>
-                              <Typography.Text
-                                style={{
-                                  color: notification.isRead ? '#666' : '#aaa',
-                                  fontSize: 12,
-                                  display: 'block',
-                                  marginBottom: 4,
-                                }}
-                              >
-                                {notification.message}
-                              </Typography.Text>
-                              <Typography.Text
-                                style={{
-                                  color: '#666',
-                                  fontSize: 11,
-                                }}
-                              >
-                                {dayjs(notification.createdAt).format('MMM DD, YYYY HH:mm')}
-                              </Typography.Text>
+                              {!isRead && (
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<CheckOutlined />}
+                                  className="app-notification-popover__mark-read"
+                                  onClick={(e) => handleMarkAsRead(notification._id, e)}
+                                  title="Mark as read"
+                                />
+                              )}
                             </div>
-                            {!notification.isRead && (
-                              <Button
-                                type="text"
-                                size="small"
-                                icon={<CheckOutlined />}
-                                onClick={(e) => handleMarkAsRead(notification._id, e)}
-                                style={{
-                                  color: '#D4AF37',
-                                  padding: '0 4px',
-                                  minWidth: 'auto',
-                                  height: 'auto',
-                                }}
-                                title="Mark as read"
-                              />
-                            )}
                           </div>
-                        </div>
-                      ))}
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #333', textAlign: 'center' }}>
+                        )
+                      })}
+                      <div className="app-notification-popover__footer">
                         {isSuperAdmin() && (
-                          <Button
-                            type="link"
-                            icon={<EyeOutlined />}
-                            onClick={handleViewAll}
-                            style={{ color: '#D4AF37' }}
-                          >
+                          <Button type="link" icon={<EyeOutlined />} className="app-notification-popover__view-all" onClick={handleViewAll}>
                             View All
                           </Button>
                         )}
@@ -531,6 +490,7 @@ const Layout = ({ children }) => {
               open={notificationVisible}
               onOpenChange={setNotificationVisible}
               overlayStyle={{ padding: 0 }}
+              overlayClassName="app-notification-popover-wrap"
             >
               <Badge count={unreadCount} offset={[-5, 5]}>
                 <BellOutlined className="app-header-icon" style={{ fontSize: isMobile ? 18 : 20, cursor: 'pointer' }} />

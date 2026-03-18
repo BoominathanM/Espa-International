@@ -54,7 +54,8 @@ Backend API server for ESPA International CRM system.
 - `GET /api/users/:id` - Get single user (requires auth)
 - `POST /api/users` - Create user (requires superadmin)
 - `PUT /api/users/:id` - Update user (requires superadmin)
-- `DELETE /api/users/:id` - Delete user (requires superadmin)
+- `GET /api/users/:id/disable-preview` - Preview leads/reminders before disable (superadmin)
+- `POST /api/users/:id/disable` - Disable user; body `{ reassignToUserId }` when reassignment required (superadmin)
 
 ### Branches
 - `GET /api/branches` - Get all branches (requires auth)

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Table, Tag, Card, Tabs, Button, Space, message, Typography, Tooltip } from 'antd'
+import { Table, Tag, Tabs, Button, Space, message, Typography, Tooltip, Empty, Spin } from 'antd'
 import { CheckOutlined, DeleteOutlined, GlobalOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { 
@@ -9,6 +9,7 @@ import {
   useClearAllNotificationsMutation 
 } from '../../store/api/notificationApi'
 import { useGetLoginHistoryQuery } from '../../store/api/loginHistoryApi'
+import { useGetChatDeletionLogsQuery, useGetLeadActivityLogsQuery } from '../../store/api/systemLogsApi'
 import { PageLayout, PageHeader } from '../../components/ds-layout'
 
 const Logs = ({ defaultActiveTab }) => {
@@ -16,6 +17,9 @@ const Logs = ({ defaultActiveTab }) => {
   const [notificationLimit] = useState(50)
   const [loginHistoryPage, setLoginHistoryPage] = useState(1)
   const [loginHistoryLimit] = useState(50)
+  const [chatLogPage, setChatLogPage] = useState(1)
+  const [activityLogPage, setActivityLogPage] = useState(1)
+  const [logPageSize] = useState(50)
   const [activeTab, setActiveTab] = useState(defaultActiveTab || 'chat')
   
   // Notification API hooks
@@ -38,113 +42,131 @@ const Logs = ({ defaultActiveTab }) => {
   
   const loginHistory = loginHistoryData?.loginHistory || []
   const loginHistoryPagination = loginHistoryData?.pagination || { total: 0, page: 1, limit: 50, pages: 1 }
-  
-  const chatLogs = [
-    {
-      key: '1',
-      action: 'Chat Deleted',
-      user: 'Agent A',
-      chatId: 'CHAT-001',
-      customer: 'John Doe',
-      timestamp: '2024-01-15 10:30:00',
-    },
-    {
-      key: '2',
-      action: 'Chat Deleted',
-      user: 'Agent B',
-      chatId: 'CHAT-002',
-      customer: 'Jane Smith',
-      timestamp: '2024-01-15 11:20:00',
-    },
-  ]
 
-  const activityLogs = [
-    {
-      key: '1',
-      action: 'Lead Created',
-      user: 'Agent A',
-      details: 'Created lead for John Doe',
-      timestamp: '2024-01-15 10:30:00',
-    },
-    {
-      key: '2',
-      action: 'Lead Updated',
-      user: 'Admin User',
-      details: 'Updated lead status to Converted',
-      timestamp: '2024-01-15 11:15:00',
-    },
-    {
-      key: '3',
-      action: 'User Created',
-      user: 'Super Admin',
-      details: 'Created new user: Staff Agent',
-      timestamp: '2024-01-15 09:00:00',
-    },
-  ]
+  const { data: chatDeletionData, isLoading: chatDeletionLoading } = useGetChatDeletionLogsQuery(
+    { page: chatLogPage, limit: logPageSize },
+    { skip: activeTab !== 'chat' }
+  )
+  const chatLogs = chatDeletionData?.logs || []
+  const chatPagination = chatDeletionData?.pagination || { total: 0, page: 1, limit: logPageSize, pages: 0 }
 
+  const { data: activityData, isLoading: activityLoading } = useGetLeadActivityLogsQuery(
+    { page: activityLogPage, limit: logPageSize },
+    { skip: activeTab !== 'activity' }
+  )
+  const activityLogs = activityData?.logs || []
+  const activityPagination = activityData?.pagination || { total: 0, page: 1, limit: logPageSize, pages: 0 }
 
   const chatColumns = [
     {
       title: 'Action',
       dataIndex: 'action',
       key: 'action',
+      width: 140,
       render: (action) => <Tag color="red">{action}</Tag>,
     },
     {
-      title: 'User',
-      dataIndex: 'user',
-      key: 'user',
+      title: 'Source',
+      dataIndex: 'source',
+      key: 'source',
+      width: 130,
+      render: (source) => (
+        <Tag color={source === 'whatsapp_webhook' ? 'green' : 'blue'}>
+          {source === 'whatsapp_webhook' ? 'WhatsApp' : 'CRM'}
+        </Tag>
+      ),
     },
     {
-      title: 'Chat ID',
+      title: 'User / Actor',
+      dataIndex: 'user',
+      key: 'user',
+      ellipsis: true,
+    },
+    {
+      title: 'Chat / Lead ID',
       dataIndex: 'chatId',
       key: 'chatId',
+      ellipsis: true,
     },
     {
       title: 'Customer',
       dataIndex: 'customer',
       key: 'customer',
+      ellipsis: true,
+    },
+    {
+      title: 'Phone',
+      dataIndex: 'phone',
+      key: 'phone',
+      width: 120,
+      render: (p) => p || '-',
+    },
+    {
+      title: 'Branch',
+      dataIndex: 'branch',
+      key: 'branch',
+      width: 120,
     },
     {
       title: 'Timestamp',
       dataIndex: 'timestamp',
       key: 'timestamp',
-      render: (timestamp) => dayjs(timestamp).format('MMM DD, YYYY HH:mm:ss'),
-      sorter: (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+      width: 170,
+      render: (timestamp) => (timestamp ? dayjs(timestamp).format('MMM DD, YYYY HH:mm:ss') : '-'),
     },
   ]
+
+  const activityActionColor = (action) => {
+    const a = (action || '').toLowerCase()
+    if (a.includes('convert')) return 'green'
+    if (a.includes('delete') || a.includes('lost')) return 'red'
+    if (a.includes('created') || a.includes('add')) return 'cyan'
+    if (a.includes('update') || a.includes('chang')) return 'blue'
+    if (a.includes('reminder') || a.includes('follow')) return 'orange'
+    if (a.includes('call')) return 'purple'
+    return 'default'
+  }
 
   const activityColumns = [
     {
       title: 'Action',
       dataIndex: 'action',
       key: 'action',
-      render: (action) => {
-        const colors = {
-          'Lead Created': 'green',
-          'Lead Updated': 'blue',
-          'User Created': 'orange',
-          'User Updated': 'purple',
-        }
-        return <Tag color={colors[action] || 'default'}>{action}</Tag>
-      },
+      width: 160,
+      render: (action) => <Tag color={activityActionColor(action)}>{action}</Tag>,
     },
     {
       title: 'User',
       dataIndex: 'user',
       key: 'user',
+      width: 120,
+      ellipsis: true,
     },
     {
       title: 'Details',
       dataIndex: 'details',
       key: 'details',
+      ellipsis: true,
+    },
+    {
+      title: 'Lead',
+      key: 'lead',
+      width: 140,
+      ellipsis: true,
+      render: (_, row) => row.leadName || '-',
+    },
+    {
+      title: 'Branch',
+      dataIndex: 'branch',
+      key: 'branch',
+      width: 120,
     },
     {
       title: 'Timestamp',
       dataIndex: 'timestamp',
       key: 'timestamp',
-      render: (timestamp) => dayjs(timestamp).format('MMM DD, YYYY HH:mm:ss'),
-      sorter: (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
+      width: 170,
+      render: (timestamp) => (timestamp ? dayjs(timestamp).format('MMM DD, YYYY HH:mm:ss') : '-'),
     },
   ]
 
@@ -418,10 +440,25 @@ const Logs = ({ defaultActiveTab }) => {
       label: 'Chat Deletion Logs',
       children: (
         <div className="table-responsive-wrapper">
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            Records when a lead is removed from the CRM or via WhatsApp (ASK EVA) sync. New entries appear after
+            deletions occur.
+          </Typography.Paragraph>
           <Table
             columns={chatColumns}
-            dataSource={chatLogs}
-            pagination={{ pageSize: 10 }}
+            dataSource={chatLogs.map((r) => ({ ...r, key: r._id }))}
+            loading={chatDeletionLoading}
+            locale={{
+              emptyText: chatDeletionLoading ? <Spin /> : <Empty description="No chat/lead deletion logs yet" />,
+            }}
+            pagination={{
+              current: chatPagination.page,
+              pageSize: chatPagination.limit,
+              total: chatPagination.total,
+              showSizeChanger: false,
+              showTotal: (total) => `Total ${total} entries`,
+            }}
+            onChange={(p) => setChatLogPage(p.current)}
             scroll={{ x: 'max-content' }}
           />
         </div>
@@ -432,10 +469,24 @@ const Logs = ({ defaultActiveTab }) => {
       label: 'Activity Logs',
       children: (
         <div className="table-responsive-wrapper">
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            Lead activity from follow-ups, edits, calls, reminders, and conversions (same timeline as on each lead).
+          </Typography.Paragraph>
           <Table
             columns={activityColumns}
-            dataSource={activityLogs}
-            pagination={{ pageSize: 10 }}
+            dataSource={activityLogs.map((r) => ({ ...r, key: r._id }))}
+            loading={activityLoading}
+            locale={{
+              emptyText: activityLoading ? <Spin /> : <Empty description="No lead activity yet" />,
+            }}
+            pagination={{
+              current: activityPagination.page,
+              pageSize: activityPagination.limit,
+              total: activityPagination.total,
+              showSizeChanger: false,
+              showTotal: (total) => `Total ${total} events`,
+            }}
+            onChange={(p) => setActivityLogPage(p.current)}
             scroll={{ x: 'max-content' }}
           />
         </div>
