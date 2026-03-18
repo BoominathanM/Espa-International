@@ -196,9 +196,9 @@ const Calls = () => {
             >
               {showFilters ? 'Hide Filters' : 'Show Filters'}
             </Button>
-            <MotionButton type="primary" icon={<PhoneOutlined />} size={isMobile ? 'small' : 'middle'} onClick={() => navigate('/leads')}>
+            {/* <MotionButton type="primary" icon={<PhoneOutlined />} size={isMobile ? 'small' : 'middle'} onClick={() => navigate('/leads')}>
               {isMobile ? 'Call' : 'Make Call (from Leads)'}
-            </MotionButton>
+            </MotionButton> */}
           </Space>
         }
       />

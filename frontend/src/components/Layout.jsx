@@ -120,7 +120,7 @@ const Layout = ({ children }) => {
     {
       key: '/calls',
       icon: <PhoneOutlined />,
-      label: 'Call Management',
+      label: 'Call Records',
       permission: 'calls:read',
     },
     {

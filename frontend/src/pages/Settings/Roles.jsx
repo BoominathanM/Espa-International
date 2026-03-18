@@ -29,7 +29,7 @@ const Roles = () => {
   const modules = [
     { key: 'dashboard', name: 'Dashboard' },
     { key: 'leads', name: 'Lead Management' },
-    { key: 'calls', name: 'Call Management' },
+    { key: 'calls', name: 'Call Records' },
     { key: 'customers', name: 'Customer Management' },
     { key: 'reports', name: 'Reports & Analytics' },
     { key: 'settings', name: 'System Settings' },
