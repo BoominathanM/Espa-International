@@ -17,6 +17,7 @@ import {
   App,
   Upload,
   Alert,
+  Empty,
 } from 'antd'
 import {
   PlusOutlined,
@@ -32,18 +33,26 @@ import {
   DownOutlined,
   UploadOutlined,
   DownloadOutlined,
+  BellOutlined,
+  HistoryOutlined,
+  CloseOutlined,
+  CheckOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { canCreate, canEdit, canDelete } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
   useGetLeadsQuery,
+  useGetLeadQuery,
   useCreateLeadMutation,
   useUpdateLeadMutation,
   useDeleteLeadMutation,
   useLazyExportLeadsQuery,
   useImportLeadsMutation,
   useSyncAskEvaLeadsMutation,
+  useAddReminderMutation,
+  useUpdateReminderMutation,
+  useDeleteReminderMutation,
 } from '../../store/api/leadApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
@@ -89,6 +98,12 @@ const Leads = () => {
   const [callCampaign, setCallCampaign] = useState('')
   const [selectedLead, setSelectedLead] = useState(null)
   const [showFilters, setShowFilters] = useState(false)
+  const [isFollowUpVisible, setIsFollowUpVisible] = useState(false)
+  const [followUpLead, setFollowUpLead] = useState(null)
+  const [followUpTab, setFollowUpTab] = useState('reminders')
+  const [reminderDesc, setReminderDesc] = useState('')
+  const [reminderDate, setReminderDate] = useState(null)
+  const [reminderAssignee, setReminderAssignee] = useState('')
 
   // Filter states
   const [searchText, setSearchText] = useState('')
@@ -140,6 +155,15 @@ const Leads = () => {
   const [exportLeads] = useLazyExportLeadsQuery()
   const [importLeads, { isLoading: importLoading }] = useImportLeadsMutation()
   const [syncAskEvaLeads, { isLoading: syncAskEvaLoading }] = useSyncAskEvaLeadsMutation()
+  const [addReminder, { isLoading: addReminderLoading }] = useAddReminderMutation()
+  const [updateReminderApi] = useUpdateReminderMutation()
+  const [deleteReminderApi] = useDeleteReminderMutation()
+
+  const followUpLeadId = followUpLead?._id || followUpLead?.key
+  const { data: leadDetailData, refetch: refetchLeadDetail } = useGetLeadQuery(followUpLeadId, {
+    skip: !followUpLeadId || !isFollowUpVisible,
+  })
+  const leadDetail = leadDetailData?.lead
 
   const leads = leadsData?.leads || []
   const branches = branchesData?.branches || []
@@ -472,35 +496,6 @@ const Leads = () => {
     setFilterBranch(null)
     setCurrentPage(1)
   }
-
-  const timelineData = selectedLead
-    ? [
-      {
-        color: 'blue',
-        children: `Lead created - ${selectedLead.createdAt || 'N/A'}`,
-      },
-      selectedLead.appointment_date && {
-        color: 'gold',
-        children: `Appointment scheduled - ${dayjs(selectedLead.appointment_date).format('MMMM DD, YYYY')}${selectedLead.slot_time ? ` at ${selectedLead.slot_time}` : ''}${selectedLead.spa_package ? ` (${selectedLead.spa_package})` : ''}`,
-      },
-      selectedLead.assignedTo && selectedLead.assignedTo !== 'Unassigned' && {
-        color: 'orange',
-        children: `Assigned to ${selectedLead.assignedTo}`,
-      },
-      {
-        color: 'green',
-        children: `Last interaction - ${selectedLead.lastInteraction || 'N/A'}`,
-      },
-      selectedLead.notes && {
-        color: 'purple',
-        children: `Notes: ${selectedLead.notes}`,
-      },
-      selectedLead.source === 'Website' && selectedLead.websiteUrl && {
-        color: 'cyan',
-        children: `Source: ${selectedLead.websiteUrl}`,
-      },
-    ].filter(Boolean)
-    : []
 
   // CSV Parser function - handles quoted fields with commas
   const parseCSV = (csvText) => {
@@ -872,6 +867,15 @@ const Leads = () => {
             style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
+            onRow={(record) => ({
+              onClick: (e) => {
+                if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.ant-popconfirm')) return
+                setFollowUpLead(record)
+                setFollowUpTab('reminders')
+                setIsFollowUpVisible(true)
+              },
+              style: { cursor: 'pointer' },
+            })}
           />
         )}
       </div>
@@ -1083,6 +1087,7 @@ const Leads = () => {
         </Form>
       </Modal>
 
+      {/* Old View Modal - Lead Details (read-only) */}
       <Modal
         title="Lead Details"
         open={isTimelineVisible}
@@ -1093,10 +1098,12 @@ const Leads = () => {
         footer={null}
         width={isMobile ? '95%' : 700}
         style={{ top: 20 }}
-        bodyStyle={{
-          maxHeight: 'calc(100vh - 120px)',
-          overflowY: 'auto',
-          padding: '16px',
+        styles={{
+          body: {
+            maxHeight: 'calc(100vh - 120px)',
+            overflowY: 'auto',
+            padding: '16px',
+          },
         }}
       >
         {selectedLead && (
@@ -1104,7 +1111,7 @@ const Leads = () => {
             <Card
               title="Personal Information"
               style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
-              headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+              styles={{ header: { color: '#D4AF37', borderColor: '#303030' } }}
             >
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
                 <div>
@@ -1113,9 +1120,6 @@ const Leads = () => {
                   </p>
                   <p style={{ margin: '8px 0', color: '#fff' }}>
                     <strong style={{ color: '#D4AF37' }}>Last Name:</strong> {selectedLead.last_name || selectedLead.name?.split(' ').slice(1).join(' ') || 'N/A'}
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Full Name:</strong> {selectedLead.name || `${selectedLead.first_name || ''} ${selectedLead.last_name || ''}`.trim() || 'N/A'}
                   </p>
                   <p style={{ margin: '8px 0', color: '#fff' }}>
                     <strong style={{ color: '#D4AF37' }}>Email:</strong> {selectedLead.email || 'N/A'}
@@ -1159,7 +1163,7 @@ const Leads = () => {
             <Card
               title="Appointment Details"
               style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
-              headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+              styles={{ header: { color: '#D4AF37', borderColor: '#303030' } }}
             >
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
                 <div>
@@ -1186,7 +1190,7 @@ const Leads = () => {
               <Card
                 title="Additional Information"
                 style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
-                headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+                styles={{ header: { color: '#D4AF37', borderColor: '#303030' } }}
               >
                 {selectedLead.subject && (
                   <p style={{ margin: '8px 0', color: '#fff' }}>
@@ -1211,16 +1215,347 @@ const Leads = () => {
                 )}
               </Card>
             )}
+          </div>
+        )}
+      </Modal>
 
-            {timelineData && timelineData.length > 0 && (
-              <Card
-                title="Timeline"
-                style={{ background: '#1a1a1a', borderColor: '#303030' }}
-                headStyle={{ color: '#D4AF37', borderColor: '#303030' }}
+      {/* Follow-Up Modal - Reminders & Activity Logs */}
+      <Modal
+        open={isFollowUpVisible}
+        onCancel={() => {
+          setIsFollowUpVisible(false)
+          setFollowUpLead(null)
+          setFollowUpTab('reminders')
+          setReminderDesc('')
+          setReminderDate(null)
+          setReminderAssignee('')
+        }}
+        footer={null}
+        width={isMobile ? '98%' : 900}
+        style={{ top: 20 }}
+        closable={false}
+        styles={{
+          body: { padding: 0 },
+          content: { background: '#141414', borderRadius: 8, overflow: 'hidden' },
+        }}
+      >
+        {followUpLead && (
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: isMobile ? 'auto' : 520 }}>
+            {/* Header */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '14px 20px', borderBottom: '1px solid #333', background: '#1a1a1a',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: '#fff', fontSize: 16, fontWeight: 500 }}>Lead Details –</span>
+                <span style={{ color: '#D4AF37', fontSize: 16, fontWeight: 600 }}>
+                  {followUpLead.name || `${followUpLead.first_name || ''} ${followUpLead.last_name || ''}`.trim()}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <span style={{ color: '#888', fontSize: 13 }}>
+                  Company: <strong style={{ color: '#D4AF37' }}>{followUpLead.branch || 'N/A'}</strong>
+                </span>
+                <Button
+                  type="text"
+                  icon={<CloseOutlined />}
+                  onClick={() => {
+                    setIsFollowUpVisible(false)
+                    setFollowUpLead(null)
+                    setFollowUpTab('reminders')
+                  }}
+                  style={{ color: '#888' }}
+                />
+              </div>
+            </div>
+
+            {/* Body: Sidebar + Content */}
+            <div style={{ display: 'flex', flex: 1, flexDirection: isMobile ? 'column' : 'row' }}>
+              {/* Left Sidebar */}
+              <div style={{
+                width: isMobile ? '100%' : 170,
+                borderRight: isMobile ? 'none' : '1px solid #333',
+                borderBottom: isMobile ? '1px solid #333' : 'none',
+                display: 'flex',
+                flexDirection: isMobile ? 'row' : 'column',
+                padding: isMobile ? '0' : '12px 0',
+                background: '#141414',
+              }}>
+                {[
+                  { key: 'reminders', icon: <BellOutlined />, label: 'Reminders' },
+                  { key: 'activityLogs', icon: <HistoryOutlined />, label: 'Activity Logs' },
+                ].map((tab) => (
+                  <div
+                    key={tab.key}
+                    onClick={() => setFollowUpTab(tab.key)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: isMobile ? '12px 16px' : '10px 16px',
+                      cursor: 'pointer',
+                      color: followUpTab === tab.key ? '#D4AF37' : '#aaa',
+                      fontWeight: followUpTab === tab.key ? 600 : 400,
+                      fontSize: 14,
+                      borderLeft: !isMobile && followUpTab === tab.key ? '3px solid #D4AF37' : !isMobile ? '3px solid transparent' : 'none',
+                      borderBottom: isMobile && followUpTab === tab.key ? '2px solid #D4AF37' : isMobile ? '2px solid transparent' : 'none',
+                      background: followUpTab === tab.key ? 'rgba(212,175,55,0.08)' : 'transparent',
+                      flex: isMobile ? 1 : 'none',
+                      justifyContent: isMobile ? 'center' : 'flex-start',
+                    }}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Right Content */}
+              <div style={{ flex: 1, padding: 20, overflowY: 'auto', maxHeight: isMobile ? 'none' : 420 }}>
+
+                {/* ===== REMINDERS TAB ===== */}
+                {followUpTab === 'reminders' && (
+                  <div>
+                    <h3 style={{ color: '#fff', marginBottom: 16, fontSize: 16, fontWeight: 600 }}>Set New Reminder</h3>
+
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ color: '#D4AF37', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                        <span style={{ color: '#ff4d4f' }}>*</span> Description
+                      </label>
+                      <Input.TextArea
+                        rows={3}
+                        value={reminderDesc}
+                        onChange={(e) => setReminderDesc(e.target.value)}
+                        placeholder="Enter reminder description or select from quick replies below"
+                        style={{ borderRadius: 6 }}
+                      />
+                    </div>
+
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ color: '#888', fontSize: 12, display: 'block', marginBottom: 4 }}>Quick Replies</label>
+                      <Select
+                        placeholder="Select a quick reply to insert in description"
+                        style={{ width: '100%', borderRadius: 6 }}
+                        allowClear
+                        onChange={(val) => { if (val) setReminderDesc(val) }}
+                        options={[
+                          { value: 'Follow up on appointment booking', label: 'Follow up on appointment booking' },
+                          { value: 'Reminder for spa package inquiry', label: 'Reminder for spa package inquiry' },
+                          { value: 'Call back regarding pricing', label: 'Call back regarding pricing' },
+                          { value: 'Send promotional offer details', label: 'Send promotional offer details' },
+                          { value: 'Confirm appointment schedule', label: 'Confirm appointment schedule' },
+                        ]}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                      <div>
+                        <label style={{ color: '#D4AF37', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                          <span style={{ color: '#ff4d4f' }}>*</span> Date & Time to be notified
+                        </label>
+                        <DatePicker
+                          showTime
+                          format="YYYY-MM-DD HH:mm"
+                          value={reminderDate}
+                          onChange={setReminderDate}
+                          placeholder="Select date"
+                          style={{ width: '100%', borderRadius: 6 }}
+                          disabledDate={(current) => current && current < dayjs().startOf('day')}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ color: '#888', fontSize: 12, display: 'block', marginBottom: 4 }}>Set reminder to</label>
+                        <Select
+                          value={reminderAssignee || (followUpLead.branch || undefined)}
+                          onChange={setReminderAssignee}
+                          placeholder="Select assignee"
+                          style={{ width: '100%', borderRadius: 6 }}
+                          allowClear
+                        >
+                          <Option value={followUpLead.branch || 'Company'}>{followUpLead.branch || 'Company'}</Option>
+                          {users.map((u) => (
+                            <Option key={u._id || u.id} value={u.name}>{u.name}</Option>
+                          ))}
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+                      <Button
+                        type="primary"
+                        loading={addReminderLoading}
+                        onClick={async () => {
+                          if (!reminderDesc.trim()) { messageApi.warning('Please enter a description'); return }
+                          if (!reminderDate) { messageApi.warning('Please select date & time'); return }
+                          try {
+                            await addReminder({
+                              leadId: followUpLead._id || followUpLead.key,
+                              description: reminderDesc.trim(),
+                              remindAt: reminderDate.toISOString(),
+                              assignedTo: reminderAssignee || followUpLead.branch || '',
+                            }).unwrap()
+                            messageApi.success('Reminder added')
+                            setReminderDesc('')
+                            setReminderDate(null)
+                            setReminderAssignee('')
+                            refetchLeadDetail()
+                          } catch (err) {
+                            messageApi.error(err?.data?.message || 'Failed to add reminder')
+                          }
+                        }}
+                        style={{ borderRadius: 6, fontWeight: 600 }}
+                      >
+                        Add Reminder
+                      </Button>
+                    </div>
+
+                    {/* Reminders Table */}
+                    <Table
+                      size="small"
+                      dataSource={(leadDetail?.reminders || []).map((r, i) => ({ ...r, key: r._id || i, sno: i + 1 }))}
+                      pagination={false}
+                      locale={{ emptyText: <Empty description="No reminders found" /> }}
+                      columns={[
+                        { title: 'S.No', dataIndex: 'sno', key: 'sno', width: 50 },
+                        {
+                          title: 'Date', key: 'date', width: 120,
+                          render: (_, r) => r.createdAt ? dayjs(r.createdAt).format('MMM DD, YYYY') : '-',
+                        },
+                        { title: 'Description', dataIndex: 'description', key: 'desc', ellipsis: true },
+                        {
+                          title: 'Remind', key: 'remind', width: 140,
+                          render: (_, r) => r.remindAt ? dayjs(r.remindAt).format('MMM DD, YYYY HH:mm') : '-',
+                        },
+                        {
+                          title: 'Status', key: 'status', width: 100,
+                          render: (_, r) => (
+                            <Tag color={r.status === 'Completed' ? 'green' : r.status === 'Cancelled' ? 'red' : 'gold'}>
+                              {r.status}
+                            </Tag>
+                          ),
+                        },
+                        {
+                          title: 'Action', key: 'action', width: 90,
+                          render: (_, r) => (
+                            <Space size="small">
+                              {r.status === 'Pending' && (
+                                <Button
+                                  type="link" size="small"
+                                  icon={<CheckOutlined style={{ color: '#52c41a' }} />}
+                                  title="Mark Complete"
+                                  onClick={async () => {
+                                    try {
+                                      await updateReminderApi({
+                                        leadId: followUpLead._id || followUpLead.key,
+                                        reminderId: r._id,
+                                        status: 'Completed',
+                                      }).unwrap()
+                                      messageApi.success('Reminder completed')
+                                      refetchLeadDetail()
+                                    } catch (err) {
+                                      messageApi.error('Failed to update')
+                                    }
+                                  }}
+                                />
+                              )}
+                              <Button
+                                type="link" size="small" danger
+                                icon={<DeleteOutlined />}
+                                title="Delete"
+                                onClick={async () => {
+                                  try {
+                                    await deleteReminderApi({
+                                      leadId: followUpLead._id || followUpLead.key,
+                                      reminderId: r._id,
+                                    }).unwrap()
+                                    messageApi.success('Reminder deleted')
+                                    refetchLeadDetail()
+                                  } catch (err) {
+                                    messageApi.error('Failed to delete')
+                                  }
+                                }}
+                              />
+                            </Space>
+                          ),
+                        },
+                      ]}
+                    />
+                  </div>
+                )}
+
+                {/* ===== ACTIVITY LOGS TAB ===== */}
+                {followUpTab === 'activityLogs' && (
+                  <div>
+                    <h3 style={{ color: '#fff', marginBottom: 4, fontSize: 16, fontWeight: 600 }}>
+                      Lead Activity History ({leadDetail?.activityLogs?.length || 0})
+                    </h3>
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '4px 12px', borderRadius: 4, marginBottom: 20,
+                      color: '#D4AF37', fontSize: 13, fontWeight: 500,
+                      borderBottom: '2px solid #D4AF37',
+                    }}>
+                      <HistoryOutlined /> Timeline View
+                    </div>
+
+                    {(leadDetail?.activityLogs?.length || 0) === 0 ? (
+                      <Empty description="No activity logs yet" />
+                    ) : (
+                      <div style={{
+                        border: '1px solid #333', borderRadius: 8, padding: 20,
+                        background: '#1a1a1a',
+                      }}>
+                        {[...(leadDetail?.activityLogs || [])].reverse().map((log, idx) => (
+                          <div key={log._id || idx} style={{
+                            display: 'flex', alignItems: 'flex-start', gap: 12,
+                            paddingBottom: idx < (leadDetail.activityLogs.length - 1) ? 20 : 0,
+                            position: 'relative',
+                          }}>
+                            <div style={{
+                              width: 10, height: 10, borderRadius: '50%',
+                              background: '#D4AF37', marginTop: 5, flexShrink: 0,
+                              boxShadow: '0 0 0 3px rgba(212,175,55,0.2)',
+                            }} />
+                            {idx < (leadDetail.activityLogs.length - 1) && (
+                              <div style={{
+                                position: 'absolute', left: 4, top: 18, width: 2,
+                                height: 'calc(100% - 8px)', background: '#333',
+                              }} />
+                            )}
+                            <div style={{ flex: 1 }}>
+                              <div style={{ color: '#fff', fontSize: 14 }}>
+                                {log.action}{log.details ? ` – ${log.details}` : ''}
+                              </div>
+                              <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
+                                {log.createdAt ? dayjs(log.createdAt).format('M/D/YYYY, h:mm:ss A') : ''}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer: Convert to Customer */}
+            <div style={{
+              display: 'flex', justifyContent: 'flex-end',
+              padding: '12px 20px', borderTop: '1px solid #333', background: '#1a1a1a',
+            }}>
+              <Button
+                type="primary"
+                style={{ borderRadius: 6, fontWeight: 600 }}
+                onClick={() => {
+                  if (followUpLead) {
+                    handleEdit({ ...followUpLead, status: 'Converted' })
+                    setIsFollowUpVisible(false)
+                    setFollowUpLead(null)
+                  }
+                }}
               >
-                <Timeline items={timelineData} />
-              </Card>
-            )}
+                Convert to Customer
+              </Button>
+            </div>
           </div>
         )}
       </Modal>

@@ -20,6 +20,7 @@ import {
   CheckOutlined,
   DeleteOutlined,
   EyeOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -118,9 +119,15 @@ const Layout = ({ children }) => {
       permission: 'calls:read',
     },
     {
+      key: '/appointment-bookings',
+      icon: <CalendarOutlined />,
+      label: 'Appointment Bookings',
+      permission: 'leads:read',
+    },
+    {
       key: '/chats',
       icon: <MessageOutlined />,
-      label: 'Appoinment Booking',
+      label: 'Chats',
       permission: 'chats:read',
     },
     {

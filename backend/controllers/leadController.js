@@ -225,7 +225,6 @@ export const createLead = async (req, res) => {
       }
     }
 
-    // Create new lead
     const lead = new Lead({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
@@ -243,6 +242,11 @@ export const createLead = async (req, res) => {
       assignedTo: finalAssignedTo,
       notes: notes ? notes.trim() : '',
       lastInteraction: new Date(),
+      activityLogs: [{
+        action: 'Lead Created',
+        details: `Lead "${firstName.trim()}" was created`,
+        performedBy: req.user?.name || 'System',
+      }],
     })
 
     await lead.save()
@@ -396,7 +400,7 @@ export const syncAskEvaLeads = async (req, res) => {
 // @access  Private
 export const getLeads = async (req, res) => {
   try {
-    const { status, source, branch, assignedTo, search, page = 1, limit = 50 } = req.query
+    const { status, source, branch, assignedTo, search, appointmentDate, page = 1, limit = 50 } = req.query
 
     // Build query
     const query = {}
@@ -415,6 +419,23 @@ export const getLeads = async (req, res) => {
 
     if (assignedTo) {
       query.assignedTo = assignedTo
+    }
+
+    // Filter by appointment date for appointment bookings view
+    const appointmentDateFrom = req.query.appointmentDateFrom
+    const appointmentDateTo = req.query.appointmentDateTo
+    if (appointmentDateFrom && appointmentDateTo) {
+      const from = new Date(appointmentDateFrom)
+      from.setUTCHours(0, 0, 0, 0)
+      const to = new Date(appointmentDateTo)
+      to.setUTCHours(23, 59, 59, 999)
+      query.appointment_date = { $gte: from, $lte: to }
+    } else if (appointmentDate) {
+      const start = new Date(appointmentDate)
+      start.setUTCHours(0, 0, 0, 0)
+      const end = new Date(appointmentDate)
+      end.setUTCHours(23, 59, 59, 999)
+      query.appointment_date = { $gte: start, $lte: end }
     }
 
     // Search in first_name, last_name, email, phone
@@ -667,6 +688,18 @@ export const updateLead = async (req, res) => {
         }
       }
     }
+
+    const changes = []
+    if (status !== undefined && status !== lead.status) changes.push(`Status → ${status}`)
+    if (first_name !== undefined || last_name !== undefined) changes.push('Profile updated')
+    if (appointment_date !== undefined) changes.push('Appointment date updated')
+    if (assignedTo !== undefined) changes.push('Assignment changed')
+
+    lead.activityLogs.push({
+      action: 'Lead Updated',
+      details: changes.length > 0 ? changes.join(', ') : 'Lead details updated',
+      performedBy: req.user?.name || 'User',
+    })
 
     lead.lastInteraction = new Date()
     await lead.save()
@@ -950,6 +983,111 @@ export const getSampleCSV = (req, res) => {
   res.setHeader('Content-Type', 'text/csv')
   res.setHeader('Content-Disposition', 'attachment; filename=sample_leads.csv')
   res.send(csvContent)
+}
+
+// @desc    Add a reminder to a lead
+// @route   POST /api/leads/:id/reminders
+// @access  Private
+export const addReminder = async (req, res) => {
+  try {
+    const { description, remindAt, assignedTo } = req.body
+    if (!description || !remindAt) {
+      return res.status(400).json({ success: false, message: 'Description and reminder date are required' })
+    }
+    const lead = await Lead.findById(req.params.id)
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+
+    lead.reminders.push({ description, remindAt: new Date(remindAt), assignedTo: assignedTo || '' })
+    lead.activityLogs.push({
+      action: 'Reminder Added',
+      details: `Reminder set for ${new Date(remindAt).toLocaleString()}: "${description}"`,
+      performedBy: req.user?.name || 'User',
+    })
+    lead.lastInteraction = new Date()
+    await lead.save()
+
+    const updatedLead = await Lead.findById(lead._id)
+      .populate('branch', 'name')
+      .populate('assignedTo', 'name email')
+
+    res.json({ success: true, message: 'Reminder added', lead: updatedLead })
+  } catch (error) {
+    console.error('Add reminder error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
+// @desc    Update a reminder status
+// @route   PUT /api/leads/:id/reminders/:reminderId
+// @access  Private
+export const updateReminder = async (req, res) => {
+  try {
+    const { status } = req.body
+    const lead = await Lead.findById(req.params.id)
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+
+    const reminder = lead.reminders.id(req.params.reminderId)
+    if (!reminder) {
+      return res.status(404).json({ success: false, message: 'Reminder not found' })
+    }
+
+    if (status) reminder.status = status
+    lead.activityLogs.push({
+      action: 'Reminder Updated',
+      details: `Reminder status changed to "${status}"`,
+      performedBy: req.user?.name || 'User',
+    })
+    lead.lastInteraction = new Date()
+    await lead.save()
+
+    const updatedLead = await Lead.findById(lead._id)
+      .populate('branch', 'name')
+      .populate('assignedTo', 'name email')
+
+    res.json({ success: true, message: 'Reminder updated', lead: updatedLead })
+  } catch (error) {
+    console.error('Update reminder error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
+// @desc    Delete a reminder
+// @route   DELETE /api/leads/:id/reminders/:reminderId
+// @access  Private
+export const deleteReminder = async (req, res) => {
+  try {
+    const lead = await Lead.findById(req.params.id)
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+
+    const reminder = lead.reminders.id(req.params.reminderId)
+    if (!reminder) {
+      return res.status(404).json({ success: false, message: 'Reminder not found' })
+    }
+
+    lead.reminders.pull(req.params.reminderId)
+    lead.activityLogs.push({
+      action: 'Reminder Deleted',
+      details: `Reminder "${reminder.description}" was deleted`,
+      performedBy: req.user?.name || 'User',
+    })
+    lead.lastInteraction = new Date()
+    await lead.save()
+
+    const updatedLead = await Lead.findById(lead._id)
+      .populate('branch', 'name')
+      .populate('assignedTo', 'name email')
+
+    res.json({ success: true, message: 'Reminder deleted', lead: updatedLead })
+  } catch (error) {
+    console.error('Delete reminder error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
 }
 
 // @desc    Auto-assign unassigned leads to branch users

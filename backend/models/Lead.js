@@ -1,5 +1,24 @@
 import mongoose from 'mongoose'
 
+const reminderSchema = new mongoose.Schema(
+  {
+    description: { type: String, required: true, trim: true },
+    remindAt: { type: Date, required: true },
+    assignedTo: { type: String, default: '' },
+    status: { type: String, enum: ['Pending', 'Completed', 'Cancelled'], default: 'Pending' },
+  },
+  { timestamps: true }
+)
+
+const activityLogSchema = new mongoose.Schema(
+  {
+    action: { type: String, required: true },
+    details: { type: String, default: '' },
+    performedBy: { type: String, default: 'System' },
+  },
+  { timestamps: true }
+)
+
 const leadSchema = new mongoose.Schema(
   {
     first_name: {
@@ -98,6 +117,8 @@ const leadSchema = new mongoose.Schema(
       trim: true,
       sparse: true,
     },
+    reminders: [reminderSchema],
+    activityLogs: [activityLogSchema],
   },
   {
     timestamps: true,

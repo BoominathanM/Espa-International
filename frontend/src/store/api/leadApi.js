@@ -4,7 +4,7 @@ export const leadApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     getLeads: builder.query({
       query: (params = {}) => {
-        const { status, source, branch, assignedTo, search, page = 1, limit = 50 } = params
+        const { status, source, branch, assignedTo, search, appointmentDate, appointmentDateFrom, appointmentDateTo, page = 1, limit = 50 } = params
         const queryParams = new URLSearchParams()
         
         if (status) queryParams.append('status', status)
@@ -12,6 +12,9 @@ export const leadApi = apiSlice.injectEndpoints({
         if (branch) queryParams.append('branch', branch)
         if (assignedTo) queryParams.append('assignedTo', assignedTo)
         if (search) queryParams.append('search', search)
+        if (appointmentDate) queryParams.append('appointmentDate', appointmentDate)
+        if (appointmentDateFrom) queryParams.append('appointmentDateFrom', appointmentDateFrom)
+        if (appointmentDateTo) queryParams.append('appointmentDateTo', appointmentDateTo)
         if (page) queryParams.append('page', page)
         if (limit) queryParams.append('limit', limit)
         
@@ -91,6 +94,29 @@ export const leadApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['Lead'],
     }),
+    addReminder: builder.mutation({
+      query: ({ leadId, ...data }) => ({
+        url: `/leads/${leadId}/reminders`,
+        method: 'POST',
+        body: data,
+      }),
+      invalidatesTags: (result, error, { leadId }) => [{ type: 'Lead', id: leadId }, 'Lead'],
+    }),
+    updateReminder: builder.mutation({
+      query: ({ leadId, reminderId, ...data }) => ({
+        url: `/leads/${leadId}/reminders/${reminderId}`,
+        method: 'PUT',
+        body: data,
+      }),
+      invalidatesTags: (result, error, { leadId }) => [{ type: 'Lead', id: leadId }, 'Lead'],
+    }),
+    deleteReminder: builder.mutation({
+      query: ({ leadId, reminderId }) => ({
+        url: `/leads/${leadId}/reminders/${reminderId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: (result, error, { leadId }) => [{ type: 'Lead', id: leadId }, 'Lead'],
+    }),
   }),
 })
 
@@ -103,4 +129,7 @@ export const {
   useLazyExportLeadsQuery,
   useImportLeadsMutation,
   useSyncAskEvaLeadsMutation,
+  useAddReminderMutation,
+  useUpdateReminderMutation,
+  useDeleteReminderMutation,
 } = leadApi

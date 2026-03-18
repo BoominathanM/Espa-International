@@ -5,6 +5,7 @@ import Layout from '../components/Layout'
 import Login from '../pages/Login'
 import Dashboard from '../pages/Dashboard/DashboardPage'
 import Leads from '../pages/Leads/LeadsPage'
+import AppointmentBookings from '../pages/AppointmentBookings/AppointmentBookingsPage'
 import Calls from '../pages/Calls/CallsPage'
 import Chats from '../pages/Chats/ChatsPage'
 import Customers from '../pages/Customers/CustomersPage'
@@ -41,6 +42,16 @@ const AppRouter = () => {
           <ProtectedRoute requiredPermission="leads:read">
             <Layout>
               <Leads />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/appointment-bookings"
+        element={
+          <ProtectedRoute requiredPermission="leads:read">
+            <Layout>
+              <AppointmentBookings />
             </Layout>
           </ProtectedRoute>
         }

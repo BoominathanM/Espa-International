@@ -12,6 +12,9 @@ import {
   autoAssignUnassignedLeads,
   getLeadsDiagnostics,
   syncAskEvaLeads,
+  addReminder,
+  updateReminder,
+  deleteReminder,
 } from '../controllers/leadController.js'
 import { authenticate, isSuperAdmin, authenticateApiKey, authenticateWhatsAppApiKey } from '../middleware/auth.js'
 
@@ -35,5 +38,8 @@ router.post('/import', authenticate, importLeads)
 router.get('/:id', authenticate, getLead)
 router.put('/:id', authenticate, updateLead)
 router.delete('/:id', authenticate, isSuperAdmin, deleteLead)
+router.post('/:id/reminders', authenticate, addReminder)
+router.put('/:id/reminders/:reminderId', authenticate, updateReminder)
+router.delete('/:id/reminders/:reminderId', authenticate, deleteReminder)
 
 export default router
