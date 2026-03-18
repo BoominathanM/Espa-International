@@ -1,0 +1,99 @@
+/* Shell layout — uses CSS variables only */
+.app-layout-header {
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 99;
+}
+
+@media (max-width: 576px) {
+  .app-layout-header {
+    padding: 0 12px;
+  }
+}
+
+.app-main-content {
+  margin: 16px;
+  padding: 16px 24px;
+  min-height: calc(100vh - 64px - 32px);
+  background: var(--bg-color);
+  overflow-x: hidden;
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+@media (max-width: 576px) {
+  .app-main-content {
+    margin: 8px;
+    padding: 12px;
+    border-radius: 6px;
+  }
+}
+
+.app-page-inner {
+  width: 100%;
+  max-width: 100%;
+}
+
+.app-theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--primary-color);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.app-breadcrumb-link {
+  color: var(--primary-color);
+}
+
+.app-breadcrumb-current {
+  color: var(--text-color);
+}
+
+.app-trigger-icon {
+  color: var(--primary-color);
+  cursor: pointer;
+}
+
+.app-header-icon {
+  color: var(--text-color);
+}
+
+.app-header-user-name {
+  color: var(--text-color);
+  font-size: 14px;
+}
+
+.app-sidebar-logo {
+  height: 64px;
+  margin: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-gold);
+}
+
+[data-theme='light'] .app-sidebar-menu.ant-menu-light {
+  background: transparent;
+}
+
+[data-theme='light'] .app-sidebar-menu.ant-menu-light .ant-menu-item-selected {
+  background-color: var(--primary-color) !important;
+  color: var(--bg-color) !important;
+}
+
+[data-theme='dark'] .app-sidebar-menu .ant-menu-item-selected {
+  background-color: color-mix(in srgb, var(--primary-color) 22%, transparent) !important;
+}

@@ -1,6 +1,8 @@
 import React from 'react'
 import { Form, Input, Button, Card, App, Tooltip } from 'antd'
-import { MailOutlined, LockOutlined } from '@ant-design/icons'
+import { MailOutlined, LockOutlined, SunOutlined, MoonOutlined } from '@ant-design/icons'
+import { motion } from 'framer-motion'
+import { useThemeMode } from '../hooks/useThemeMode'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useLoginMutation } from '../store/api/authApi'
@@ -9,6 +11,7 @@ import { getApiBaseUrl } from '../utils/apiConfig'
 
 const Login = () => {
   const { message } = App.useApp()
+  const { isDark, toggleTheme } = useThemeMode()
   const navigate = useNavigate()
   const { login } = useAuth()
   const [loginMutation, { isLoading: loginLoading }] = useLoginMutation()
@@ -75,9 +78,38 @@ const Login = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%)',
+        background: `linear-gradient(135deg, var(--bg-color) 0%, var(--card-bg) 100%)`,
+        position: 'relative',
       }}
     >
+      <Tooltip title={isDark ? 'Light mode' : 'Dark mode'}>
+        <motion.button
+          type="button"
+          onClick={toggleTheme}
+          whileHover={{ scale: 1.06 }}
+          whileTap={{ scale: 0.94 }}
+          aria-label="Toggle theme"
+          style={{
+            position: 'fixed',
+            top: 16,
+            right: 16,
+            width: 44,
+            height: 44,
+            borderRadius: 10,
+            border: '1px solid var(--border-color)',
+            background: 'var(--card-bg)',
+            color: 'var(--primary-color)',
+            cursor: 'pointer',
+            fontSize: 18,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10,
+          }}
+        >
+          {isDark ? <SunOutlined /> : <MoonOutlined />}
+        </motion.button>
+      </Tooltip>
       <Card
         style={{
           width: '100%',

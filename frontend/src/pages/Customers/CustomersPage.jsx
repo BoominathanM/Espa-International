@@ -219,7 +219,6 @@ const Customers = () => {
             columns={columns}
             dataSource={customers}
             pagination={{ pageSize: 10 }}
-            style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
           />
@@ -235,7 +234,6 @@ const Customers = () => {
             columns={columns}
             dataSource={customers.filter((c) => c.tags.includes('New Customer'))}
             pagination={{ pageSize: 10 }}
-            style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
           />
@@ -251,7 +249,6 @@ const Customers = () => {
             columns={columns}
             dataSource={customers.filter((c) => c.tags.includes('Repeat Customer'))}
             pagination={{ pageSize: 10 }}
-            style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
           />
@@ -261,7 +258,7 @@ const Customers = () => {
   ]
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
+    <div className="mgmt-page">
       <div style={{ 
         display: 'flex', 
         flexDirection: isMobile ? 'column' : 'row',
@@ -270,7 +267,7 @@ const Customers = () => {
         marginBottom: 16,
         gap: 12,
       }}>
-        <h1 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '20px' : '24px' }}>Customer Management</h1>
+        <h1 className="mgmt-page-title">Customer Management</h1>
         <Space wrap style={{ width: isMobile ? '100%' : 'auto' }}>
           <Button
             icon={showFilters ? <UpOutlined /> : <DownOutlined />}
@@ -297,7 +294,7 @@ const Customers = () => {
       </div>
 
       {showFilters && (
-        <Card style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}>
+        <Card className="mgmt-filters-card">
           <div style={{ 
             display: 'flex', 
             flexDirection: isMobile ? 'column' : 'row',
@@ -324,7 +321,7 @@ const Customers = () => {
         </Card>
       )}
 
-      <Tabs items={tabItems} style={{ color: '#ffffff' }} />
+      <Tabs items={tabItems} className="mgmt-tabs" />
 
       <Modal
         title={selectedCustomer ? 'Edit Customer' : 'Add New Customer'}
@@ -402,12 +399,10 @@ const Customers = () => {
       >
         {selectedCustomer && (
           <div>
-            <h3 style={{ color: '#D4AF37', marginBottom: 16 }}>
-              {selectedCustomer.name}
-            </h3>
+            <h3 className="mgmt-section-heading">{selectedCustomer.name}</h3>
             <Timeline items={timelineData} />
             <div style={{ marginTop: 24 }}>
-              <h4 style={{ color: '#ffffff' }}>Add Note</h4>
+              <h4 className="mgmt-subheading">Add Note</h4>
               <TextArea rows={4} placeholder="Enter note..." />
               <Button type="primary" style={{ marginTop: 8, width: isMobile ? '100%' : 'auto' }}>
                 Add Note

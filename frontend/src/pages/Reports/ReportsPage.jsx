@@ -17,7 +17,6 @@ import {
   FilePdfOutlined,
   UpOutlined,
   DownOutlined,
-  CloseCircleOutlined,
 } from '@ant-design/icons'
 import {
   LineChart,
@@ -35,6 +34,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { useResponsive } from '../../hooks/useResponsive'
+import { useChartThemeTokens } from '../../hooks/useChartThemeTokens'
 import { getBranchOptions } from '../../utils/branches'
 import { isSuperAdmin, isAdmin, isSupervisor } from '../../utils/permissions'
 import dayjs from 'dayjs'
@@ -59,6 +59,7 @@ const Reports = () => {
   
   const chartHeight = getChartHeight()
   const [showFilters, setShowFilters] = useState(false)
+  const chartT = useChartThemeTokens()
 
   // Mock data
   const leadPerformanceData = [
@@ -150,68 +151,62 @@ const Reports = () => {
           <>
             <Row gutter={16} style={{ marginBottom: 24 }}>
               <Col xs={24} sm={12} lg={6}>
-                <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
+                <Card className="mgmt-card">
                   <Statistic
-                    title={<span style={{ color: '#ffffff' }}>Total Leads</span>}
+                    title={<span className="mgmt-stat-title">Total Leads</span>}
                     value={970}
-                    valueStyle={{ color: '#D4AF37' }}
+                    valueStyle={{ color: 'var(--primary-color)' }}
                   />
                 </Card>
               </Col>
               <Col xs={24} sm={12} lg={6}>
-                <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
+                <Card className="mgmt-card">
                   <Statistic
-                    title={<span style={{ color: '#ffffff' }}>Converted</span>}
+                    title={<span className="mgmt-stat-title">Converted</span>}
                     value={357}
-                    valueStyle={{ color: '#52c41a' }}
+                    valueStyle={{ color: 'var(--color-success)' }}
                   />
                 </Card>
               </Col>
               <Col xs={24} sm={12} lg={6}>
-                <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
+                <Card className="mgmt-card">
                   <Statistic
-                    title={<span style={{ color: '#ffffff' }}>Lost</span>}
+                    title={<span className="mgmt-stat-title">Lost</span>}
                     value={117}
-                    valueStyle={{ color: '#ff4d4f' }}
+                    valueStyle={{ color: 'var(--color-danger)' }}
                   />
                 </Card>
               </Col>
               <Col xs={24} sm={12} lg={6}>
-                <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
+                <Card className="mgmt-card">
                   <Statistic
-                    title={<span style={{ color: '#ffffff' }}>Conversion Rate</span>}
+                    title={<span className="mgmt-stat-title">Conversion Rate</span>}
                     value={36.8}
                     suffix="%"
-                    valueStyle={{ color: '#D4AF37' }}
+                    valueStyle={{ color: 'var(--primary-color)' }}
                   />
                 </Card>
               </Col>
             </Row>
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
               <Col xs={24} sm={24} md={24} lg={12} xl={12}>
-                <Card
-                  title={<span style={{ color: '#D4AF37' }}>Lead Performance Trend</span>}
-                  style={{ background: '#1a1a1a', border: '1px solid #333' }}
-                >
+                <Card className="mgmt-card" title={<span className="mgmt-card-title-text">Lead Performance Trend</span>}>
                   <ResponsiveContainer width="100%" height={chartHeight}>
                     <LineChart data={leadPerformanceData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                      <XAxis dataKey="name" stroke="#ffffff" />
-                      <YAxis stroke="#ffffff" />
-                      <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', color: '#ffffff' }} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartT.grid} />
+                      <XAxis dataKey="name" stroke={chartT.axis} tick={{ fill: chartT.axis }} />
+                      <YAxis stroke={chartT.axis} tick={{ fill: chartT.axis }} />
+                      <Tooltip contentStyle={chartT.tooltipContent} />
                       <Legend />
-                      <Line type="monotone" dataKey="leads" stroke="#D4AF37" strokeWidth={2} name="Leads" />
-                      <Line type="monotone" dataKey="converted" stroke="#52c41a" strokeWidth={2} name="Converted" />
-                      <Line type="monotone" dataKey="lost" stroke="#ff4d4f" strokeWidth={2} name="Lost" />
+                      <Line type="monotone" dataKey="leads" stroke={chartT.primary} strokeWidth={2} name="Leads" />
+                      <Line type="monotone" dataKey="converted" stroke="var(--color-success)" strokeWidth={2} name="Converted" />
+                      <Line type="monotone" dataKey="lost" stroke="var(--color-danger)" strokeWidth={2} name="Lost" />
                     </LineChart>
                   </ResponsiveContainer>
                 </Card>
               </Col>
               <Col xs={24} sm={24} md={24} lg={12} xl={12}>
-                <Card
-                  title={<span style={{ color: '#D4AF37' }}>Lead Source Distribution</span>}
-                  style={{ background: '#1a1a1a', border: '1px solid #333' }}
-                >
+                <Card className="mgmt-card" title={<span className="mgmt-card-title-text">Lead Source Distribution</span>}>
                   <ResponsiveContainer width="100%" height={chartHeight}>
                     <PieChart>
                       <Pie
@@ -228,29 +223,17 @@ const Reports = () => {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip 
-                        contentStyle={{ 
-                          background: '#1a1a1a', 
-                          border: '2px solid #D4AF37', 
-                          color: '#ffffff',
-                          borderRadius: '6px',
-                          padding: '10px 14px',
-                          boxShadow: '0 4px 16px rgba(212, 175, 55, 0.3)',
-                          fontSize: '14px',
-                          fontWeight: '500'
-                        }}
-                        itemStyle={{ color: '#ffffff', padding: '6px 0', fontSize: '13px' }}
-                        labelStyle={{ color: '#D4AF37', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}
+                      <Tooltip
+                        contentStyle={chartT.tooltipContentPrimaryBorder}
+                        itemStyle={chartT.pieItemStyle}
+                        labelStyle={chartT.pieLabelStyle}
                       />
                     </PieChart>
                   </ResponsiveContainer>
                 </Card>
               </Col>
             </Row>
-            <Card
-              title={<span style={{ color: '#D4AF37' }}>Lead Report Details</span>}
-              style={{ background: '#1a1a1a', border: '1px solid #333' }}
-            >
+            <Card className="mgmt-card" title={<span className="mgmt-card-title-text">Lead Report Details</span>}>
               <Table
                 columns={leadReportColumns}
                 dataSource={leadReportData}
@@ -263,21 +246,18 @@ const Reports = () => {
       case 'agent':
         return (
           <>
-            <Card
-              title={<span style={{ color: '#D4AF37' }}>Agent Performance</span>}
-              style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 24 }}
-            >
+            <Card className="mgmt-card" style={{ marginBottom: 24 }} title={<span className="mgmt-card-title-text">Agent Performance</span>}>
               <ResponsiveContainer width="100%" height={chartHeight}>
                 <BarChart data={agentPerformanceData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis dataKey="name" stroke="#ffffff" />
-                  <YAxis stroke="#ffffff" />
-                  <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', color: '#ffffff' }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartT.grid} />
+                  <XAxis dataKey="name" stroke={chartT.axis} tick={{ fill: chartT.axis }} />
+                  <YAxis stroke={chartT.axis} tick={{ fill: chartT.axis }} />
+                  <Tooltip contentStyle={chartT.tooltipContent} />
                   <Legend />
-                  <Bar dataKey="leads" fill="#D4AF37" name="Leads" />
+                  <Bar dataKey="leads" fill={chartT.primary} name="Leads" />
                   <Bar dataKey="calls" fill="#25D366" name="Calls" />
                   <Bar dataKey="chats" fill="#4A90E2" name="Chats" />
-                  <Bar dataKey="converted" fill="#52c41a" name="Converted" />
+                  <Bar dataKey="converted" fill="var(--color-success)" name="Converted" />
                 </BarChart>
               </ResponsiveContainer>
             </Card>
@@ -289,10 +269,7 @@ const Reports = () => {
           <>
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
               <Col xs={24} sm={24} md={24} lg={12} xl={12}>
-                <Card
-                  title={<span style={{ color: '#D4AF37' }}>Call Summary</span>}
-                  style={{ background: '#1a1a1a', border: '1px solid #333' }}
-                >
+                <Card className="mgmt-card" title={<span className="mgmt-card-title-text">Call Summary</span>}>
                   <ResponsiveContainer width="100%" height={chartHeight}>
                     <PieChart>
                       <Pie
@@ -309,30 +286,30 @@ const Reports = () => {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', color: '#ffffff' }} />
+                      <Tooltip contentStyle={chartT.tooltipContent} />
                     </PieChart>
                   </ResponsiveContainer>
                 </Card>
               </Col>
               <Col xs={24} lg={12}>
-                <Card style={{ background: '#1a1a1a', border: '1px solid #333', height: '100%' }}>
+                <Card className="mgmt-card" style={{ height: '100%' }}>
                   <Statistic
-                    title={<span style={{ color: '#ffffff' }}>Total Calls</span>}
+                    title={<span className="mgmt-stat-title">Total Calls</span>}
                     value={575}
-                    valueStyle={{ color: '#D4AF37' }}
+                    valueStyle={{ color: 'var(--primary-color)' }}
                   />
                   <div style={{ marginTop: 24 }}>
                     <Statistic
-                      title={<span style={{ color: '#ffffff' }}>Answered</span>}
+                      title={<span className="mgmt-stat-title">Answered</span>}
                       value={530}
-                      valueStyle={{ color: '#52c41a' }}
+                      valueStyle={{ color: 'var(--color-success)' }}
                     />
                   </div>
                   <div style={{ marginTop: 24 }}>
                     <Statistic
-                      title={<span style={{ color: '#ffffff' }}>Missed</span>}
+                      title={<span className="mgmt-stat-title">Missed</span>}
                       value={45}
-                      valueStyle={{ color: '#ff4d4f' }}
+                      valueStyle={{ color: 'var(--color-danger)' }}
                     />
                   </div>
                 </Card>
@@ -344,19 +321,16 @@ const Reports = () => {
       case 'branch':
         return (
           <>
-            <Card
-              title={<span style={{ color: '#D4AF37' }}>Branch Performance</span>}
-              style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 24 }}
-            >
+            <Card className="mgmt-card" style={{ marginBottom: 24 }} title={<span className="mgmt-card-title-text">Branch Performance</span>}>
               <ResponsiveContainer width="100%" height={chartHeight}>
                 <BarChart data={branchPerformanceData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis dataKey="name" stroke="#ffffff" />
-                  <YAxis stroke="#ffffff" />
-                  <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', color: '#ffffff' }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartT.grid} />
+                  <XAxis dataKey="name" stroke={chartT.axis} tick={{ fill: chartT.axis }} />
+                  <YAxis stroke={chartT.axis} tick={{ fill: chartT.axis }} />
+                  <Tooltip contentStyle={chartT.tooltipContent} />
                   <Legend />
-                  <Bar dataKey="leads" fill="#D4AF37" name="Leads" />
-                  <Bar dataKey="revenue" fill="#52c41a" name="Revenue (₹)" />
+                  <Bar dataKey="leads" fill={chartT.primary} name="Leads" />
+                  <Bar dataKey="revenue" fill="var(--color-success)" name="Revenue (₹)" />
                 </BarChart>
               </ResponsiveContainer>
             </Card>
@@ -368,10 +342,7 @@ const Reports = () => {
           <>
             <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
               <Col xs={24} sm={24} md={24} lg={12} xl={12}>
-                <Card
-                  title={<span style={{ color: '#D4AF37' }}>Customer Distribution</span>}
-                  style={{ background: '#1a1a1a', border: '1px solid #333' }}
-                >
+                <Card className="mgmt-card" title={<span className="mgmt-card-title-text">Customer Distribution</span>}>
                   <ResponsiveContainer width="100%" height={chartHeight}>
                     <PieChart>
                       <Pie
@@ -388,30 +359,30 @@ const Reports = () => {
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', color: '#ffffff' }} />
+                      <Tooltip contentStyle={chartT.tooltipContent} />
                     </PieChart>
                   </ResponsiveContainer>
                 </Card>
               </Col>
               <Col xs={24} lg={12}>
-                <Card style={{ background: '#1a1a1a', border: '1px solid #333', height: '100%' }}>
+                <Card className="mgmt-card" style={{ height: '100%' }}>
                   <Statistic
-                    title={<span style={{ color: '#ffffff' }}>Total Customers</span>}
+                    title={<span className="mgmt-stat-title">Total Customers</span>}
                     value={430}
-                    valueStyle={{ color: '#D4AF37' }}
+                    valueStyle={{ color: 'var(--primary-color)' }}
                   />
                   <div style={{ marginTop: 24 }}>
                     <Statistic
-                      title={<span style={{ color: '#ffffff' }}>New Customers</span>}
+                      title={<span className="mgmt-stat-title">New Customers</span>}
                       value={250}
-                      valueStyle={{ color: '#D4AF37' }}
+                      valueStyle={{ color: 'var(--primary-color)' }}
                     />
                   </div>
                   <div style={{ marginTop: 24 }}>
                     <Statistic
-                      title={<span style={{ color: '#ffffff' }}>Repeat Customers</span>}
+                      title={<span className="mgmt-stat-title">Repeat Customers</span>}
                       value={180}
-                      valueStyle={{ color: '#52c41a' }}
+                      valueStyle={{ color: 'var(--color-success)' }}
                     />
                   </div>
                 </Card>
@@ -426,7 +397,7 @@ const Reports = () => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
+    <div className="mgmt-page reports-page">
       <div style={{ 
         display: 'flex', 
         flexDirection: isMobile ? 'column' : 'row',
@@ -435,14 +406,13 @@ const Reports = () => {
         marginBottom: 16,
         gap: 12,
       }}>
-        <h1 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '20px' : '24px' }}>Reports & Analytics</h1>
+        <h1 className="mgmt-page-title">Reports & Analytics</h1>
         <Space wrap style={{ width: isMobile ? '100%' : 'auto' }}>
           {showBranchDropdown && (
             <Select
               value={selectedBranch}
               onChange={(value) => setSelectedBranch(value || 'all')}
               allowClear={selectedBranch !== 'all'}
-              clearIcon={<CloseCircleOutlined style={{ color: '#ffffff' }} />}
               style={{ width: isMobile ? '100%' : 200 }}
               size={isMobile ? 'small' : 'middle'}
               placeholder="Select Branch"
@@ -491,7 +461,7 @@ const Reports = () => {
       </div>
 
       {showFilters && (
-        <Card style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}>
+        <Card className="mgmt-filters-card">
           <div style={{ 
             display: 'flex', 
             flexDirection: isMobile ? 'column' : 'row',

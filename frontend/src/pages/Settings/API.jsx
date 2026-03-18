@@ -110,11 +110,11 @@ const API = () => {
       key: 'ozonetel',
       label: 'Ozonetel Integration',
       children: (
-        <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
+        <Card className="mgmt-settings-card">
           {isLoadingOzonetel ? (
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
               <Spin size="large" />
-              <p style={{ color: '#fff', marginTop: 16 }}>Loading settings...</p>
+              <p className="mgmt-loading-text">Loading settings...</p>
             </div>
           ) : ozonetelError ? (
             <Alert
@@ -122,10 +122,10 @@ const API = () => {
               description={ozonetelError?.status === 403 ? 'Only Super Admin can view and edit Ozonetel integration settings.' : (ozonetelError?.data?.message || 'Failed to load Ozonetel integration settings. Please try again.')}
               type="warning"
               showIcon
-              style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}
+              style={{ marginBottom: 16 }}
             />
           ) : !isSuperAdminUser ? (
-            <p style={{ color: '#888' }}>Only Super Admin can configure Ozonetel integration.</p>
+            <p className="mgmt-modal-hint">Only Super Admin can configure Ozonetel integration.</p>
           ) : (
             <>
               <Form
@@ -207,7 +207,7 @@ const API = () => {
                       </Button>
                     )}
                     {!isSuperAdmin() && (
-                      <p style={{ color: '#ffffff', margin: 0 }}>
+                      <p className="mgmt-body-text">
                         Only Super Admin can configure API settings.
                       </p>
                     )}
@@ -222,7 +222,7 @@ const API = () => {
                 borderRadius: 4,
                 border: '1px solid #444',
               }}>
-                <h4 style={{ color: '#D4AF37', marginBottom: 8 }}>Integration Information</h4>
+                <h4 className="mgmt-card-title-text" style={{ marginBottom: 8 }}>Integration Information</h4>
                 <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
                   <strong>Click-to-Call:</strong> <code style={{ color: '#4CAF50' }}>POST /api/cloudagent/make-call</code> (body: phoneNumber, agentId, optional campaignName)
                 </p>
@@ -242,11 +242,11 @@ const API = () => {
       key: 'whatsapp',
       label: 'WhatsApp API',
       children: (
-        <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
+        <Card className="mgmt-settings-card">
           {isLoadingWhatsApp ? (
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
               <Spin size="large" />
-              <p style={{ color: '#fff', marginTop: 16 }}>Loading settings...</p>
+              <p className="mgmt-loading-text">Loading settings...</p>
             </div>
           ) : (
             <>
@@ -256,7 +256,7 @@ const API = () => {
                   description={whatsappError?.data?.message || 'Failed to load WhatsApp API settings. You can still enter and save new settings.'}
                   type="warning"
                   showIcon
-                  style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}
+                  style={{ marginBottom: 16 }}
                 />
               )}
               <Form
@@ -309,7 +309,7 @@ const API = () => {
                       </Button>
                     )}
                     {!isSuperAdmin() && (
-                      <p style={{ color: '#ffffff', margin: 0 }}>
+                      <p className="mgmt-body-text">
                         Only Super Admin can configure API settings.
                       </p>
                     )}
@@ -324,7 +324,7 @@ const API = () => {
                 borderRadius: 4,
                 border: '1px solid #444'
               }}>
-                <h4 style={{ color: '#D4AF37', marginBottom: 8 }}>Integration Information</h4>
+                <h4 className="mgmt-card-title-text" style={{ marginBottom: 8 }}>Integration Information</h4>
                 <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
                   <strong>Backend URL:</strong> Used for WhatsApp API webhook configuration
                 </p>
@@ -344,7 +344,7 @@ const API = () => {
       key: 'facebook',
       label: 'Facebook/Meta Integration',
       children: (
-        <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
+        <Card className="mgmt-settings-card">
           <Form
             form={facebookForm}
             layout="vertical"
@@ -415,7 +415,7 @@ const API = () => {
                   </Button>
                 )}
                 {!isSuperAdmin() && (
-                  <p style={{ color: '#ffffff', margin: 0 }}>
+                  <p className="mgmt-body-text">
                     Only Super Admin can configure API settings.
                   </p>
                 )}
@@ -429,11 +429,11 @@ const API = () => {
       key: 'website',
       label: 'Website Integration',
       children: (
-        <Card style={{ background: '#1a1a1a', border: '1px solid #333' }}>
+        <Card className="mgmt-settings-card">
           {isLoadingSettings ? (
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
               <Spin size="large" />
-              <p style={{ color: '#fff', marginTop: 16 }}>Loading settings...</p>
+              <p className="mgmt-loading-text">Loading settings...</p>
             </div>
           ) : settingsError ? (
             <Alert
@@ -441,7 +441,7 @@ const API = () => {
               description={settingsError?.data?.message || 'Failed to load website integration settings. Please try again.'}
               type="error"
               showIcon
-              style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}
+              style={{ marginBottom: 16 }}
             />
           ) : (
             <>
@@ -507,7 +507,7 @@ const API = () => {
                       </Button>
                     )}
                     {!isSuperAdmin() && (
-                      <p style={{ color: '#ffffff', margin: 0 }}>
+                      <p className="mgmt-body-text">
                         Only Super Admin can configure API settings.
                       </p>
                     )}
@@ -522,7 +522,7 @@ const API = () => {
                 borderRadius: 4,
                 border: '1px solid #444'
               }}>
-                <h4 style={{ color: '#D4AF37', marginBottom: 8 }}>Integration Information</h4>
+                <h4 className="mgmt-card-title-text" style={{ marginBottom: 8 }}>Integration Information</h4>
                 <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
                   <strong>Endpoint:</strong> <code style={{ color: '#4CAF50' }}>POST /api/leads/website</code>
                 </p>
@@ -542,7 +542,7 @@ const API = () => {
 
   return (
     <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <h2 style={{ color: '#D4AF37', marginBottom: 16, fontSize: isMobile ? '18px' : '20px' }}>API & Integrations</h2>
+      <h2 className="mgmt-settings-section-title" style={{ marginBottom: 16 }}>API & Integrations</h2>
       <Tabs 
         items={tabItems} 
         type={isMobile ? 'card' : 'line'}

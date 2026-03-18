@@ -1,0 +1,482 @@
+/**
+ * Appointment Bookings – calendar, list, modals, detail panel.
+ * Theme via CSS variables; light theme gets stronger contrast on labels and borders.
+ */
+
+.appointment-bookings-page {
+  padding: 0;
+}
+
+.appointment-bookings-page .appt-table-action-icon {
+  color: var(--primary-color);
+}
+
+/* View switcher – same pattern as Leads (Segmented + subtitle) */
+.appointment-bookings-page .appt-view-subtitle {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.appointment-bookings-page .appt-view-segmented.ant-segmented {
+  background: var(--table-header-bg);
+}
+
+.appointment-bookings-page .appt-view-segmented .ant-segmented-thumb {
+  background: var(--primary-color) !important;
+}
+
+.appointment-bookings-page .appt-view-segmented .ant-segmented-item-label {
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-view-segmented .ant-segmented-item-selected .ant-segmented-item-label,
+.appointment-bookings-page .appt-view-segmented .ant-segmented-item-selected .anticon {
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.appointment-bookings-page .appt-view-segmented .ant-segmented-item:not(.ant-segmented-item-selected):hover .ant-segmented-item-label,
+.appointment-bookings-page .appt-view-segmented .ant-segmented-item:not(.ant-segmented-item-selected):hover .anticon {
+  color: var(--primary-color);
+}
+
+.appointment-bookings-page .appt-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.appointment-bookings-page .appt-btn-primary.ant-btn-primary {
+  background: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+  color: #fff !important;
+}
+
+.appointment-bookings-page .appt-btn-text-gold {
+  color: var(--primary-color) !important;
+}
+
+/* Tabs: replace Ant Design blue with primary gold */
+.appointment-bookings-page .ant-tabs .ant-tabs-ink-bar {
+  background: var(--primary-color) !important;
+}
+
+.appointment-bookings-page .ant-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--primary-color) !important;
+  text-shadow: none;
+}
+
+.appointment-bookings-page .ant-tabs .ant-tabs-tab.ant-tabs-tab-active .anticon {
+  color: var(--primary-color) !important;
+}
+
+.appointment-bookings-page .ant-tabs .ant-tabs-tab:hover .ant-tabs-tab-btn {
+  color: var(--primary-color);
+}
+
+/* Mini calendar: selected date + today ring = primary (not blue) */
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-cell-selected .ant-picker-cell-inner,
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-cell-selected:hover .ant-picker-cell-inner {
+  background: var(--primary-color) !important;
+  color: #fff !important;
+}
+
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-cell-selected.ant-picker-cell-today .ant-picker-cell-inner::before {
+  border-color: var(--primary-color) !important;
+}
+
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-cell-today:not(.ant-picker-cell-selected) .ant-picker-cell-inner::before {
+  border-color: var(--primary-color) !important;
+}
+
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-cell-today .ant-picker-cell-inner {
+  color: var(--primary-color);
+}
+
+/* Mini calendar: weekday row + dates readable in light theme */
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-calendar,
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-panel {
+  background: transparent;
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-content th,
+.appointment-bookings-page .appt-calendar-wrap table thead th {
+  color: var(--text-color) !important;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-cell {
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-cell-in-view .ant-picker-cell-inner {
+  color: var(--text-color) !important;
+}
+
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-cell:not(.ant-picker-cell-in-view) .ant-picker-cell-inner {
+  color: var(--text-secondary) !important;
+}
+
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-cell:hover .ant-picker-cell-inner {
+  background: var(--table-row-hover) !important;
+}
+
+/* rc-picker / table-based mini calendar – weekday + date contrast */
+.appointment-bookings-page .appt-calendar-wrap .ant-picker-content td,
+.appointment-bookings-page .appt-calendar-wrap table tbody td {
+  color: var(--text-color);
+}
+
+[data-theme='light'] .appointment-bookings-page .appt-calendar-wrap .ant-picker-cell:not(.ant-picker-cell-in-view),
+[data-theme='light'] .appointment-bookings-page .appt-calendar-wrap .ant-picker-cell:not(.ant-picker-cell-in-view) .ant-picker-cell-inner {
+  color: var(--text-secondary) !important;
+}
+
+.appointment-bookings-page .appt-calendar-header-month {
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.appointment-bookings-page .appt-legend {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.appointment-bookings-page .appt-legend-swatch-selected {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--primary-color);
+  vertical-align: middle;
+}
+
+.appointment-bookings-page .appt-legend-swatch-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--text-secondary);
+  vertical-align: middle;
+}
+
+/* Week strip (calendar + list) */
+.appointment-bookings-page .appt-week-strip-day {
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: center;
+  width: 100%;
+  border: 1px solid var(--border-color);
+  background: var(--table-header-bg);
+  color: var(--text-color);
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.appointment-bookings-page .appt-week-strip-day--sel {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff !important;
+}
+
+.appointment-bookings-page .appt-week-strip-day--sel .appt-week-strip-sub,
+.appointment-bookings-page .appt-week-strip-day--sel .appt-week-strip-num {
+  color: #fff !important;
+}
+
+.appointment-bookings-page .appt-week-strip-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.appointment-bookings-page .appt-week-strip-num {
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-week-strip-day--large {
+  padding: 12px 16px;
+}
+
+.appointment-bookings-page .appt-week-strip-day--large .appt-week-strip-num {
+  font-size: 18px;
+}
+
+.appointment-bookings-page .appt-week-strip-month {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+[data-theme='dark'] .appointment-bookings-page .appt-week-strip-day:not(.appt-week-strip-day--sel) {
+  background: transparent;
+  /* border-color: transparent; */
+  color: #ccc;
+}
+
+[data-theme='dark'] .appointment-bookings-page .appt-week-strip-day:not(.appt-week-strip-day--sel) .appt-week-strip-sub,
+[data-theme='dark'] .appointment-bookings-page .appt-week-strip-day:not(.appt-week-strip-day--sel) .appt-week-strip-num {
+  color: #ccc;
+}
+
+[data-theme='dark'] .appointment-bookings-page .appt-week-strip-day:not(.appt-week-strip-day--sel) .appt-week-strip-month {
+  color: #888;
+}
+
+/* Schedule column */
+.appointment-bookings-page .appt-time-rail {
+  width: 60px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.appointment-bookings-page .appt-section-title {
+  color: var(--text-color);
+  margin-bottom: 12px;
+}
+
+.appointment-bookings-page .appt-date-title {
+  color: var(--text-color);
+  min-width: 180px;
+}
+
+.appointment-bookings-page .appt-slot-card.ant-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.appointment-bookings-page .appt-slot-card .ant-card-head {
+  border-bottom-color: var(--border-color);
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-slot-row {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.appointment-bookings-page .appt-slot-row:last-child {
+  border-bottom: none;
+}
+
+.appointment-bookings-page .appt-muted {
+  color: var(--text-muted);
+  padding: 24px;
+}
+
+.appointment-bookings-page .appt-list-tabs.ant-tabs {
+  /* border-bottom: 1px solid var(--border-color); */
+  margin-bottom: 16px;
+}
+
+.appointment-bookings-page .appt-table-wrap .ant-table-wrapper {
+  background: var(--card-bg);
+}
+
+/* Stat pills – primary gold (no blue); Closed uses accent for contrast vs Total */
+.appointment-bookings-page .appt-stat-total {
+  flex: 1;
+  min-width: 70px;
+  text-align: center;
+  background: var(--primary-color);
+  border: none;
+}
+
+.appointment-bookings-page .appt-stat-closed {
+  flex: 1;
+  min-width: 70px;
+  text-align: center;
+  background: var(--accent-gold, var(--primary-color));
+  border: none;
+}
+
+.appointment-bookings-page .appt-stat-current {
+  flex: 1;
+  min-width: 70px;
+  text-align: center;
+  background: #fa8c16;
+  border: none;
+}
+
+.appointment-bookings-page .appt-stat-card .ant-card-body {
+  padding: 12px 8px;
+}
+
+.appointment-bookings-page .appt-stat-val {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.appointment-bookings-page .appt-stat-label {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+}
+
+/* Detail panel (full page card) */
+.appointment-bookings-page .appt-detail-card.ant-card {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+.appointment-bookings-page .appt-detail-card .ant-card-head-title {
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-detail-back {
+  color: var(--color-success);
+  padding: 0;
+}
+
+.appointment-bookings-page .appt-detail-summary {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: var(--table-header-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.appointment-bookings-page .appt-detail-summary-title {
+  color: var(--color-success);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.appointment-bookings-page .appt-detail-summary-meta {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.appointment-bookings-page .appt-detail-tabs.ant-tabs {
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-detail-body {
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-detail-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.appointment-bookings-page .appt-detail-h4 {
+  color: var(--text-color);
+  margin-top: 24px;
+}
+
+.appointment-bookings-page .appt-detail-stat-card.ant-card {
+  min-width: 120px;
+  background: var(--table-header-bg);
+  border-color: var(--border-color);
+}
+
+.appointment-bookings-page .appt-detail-stat-card .ant-card-body {
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-detail-stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.appointment-bookings-page .appt-btn-success {
+  background: var(--color-success) !important;
+  border-color: var(--color-success) !important;
+}
+
+.appointment-bookings-page .appt-feedback-outer {
+  padding: 24px;
+  background: var(--table-header-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  min-height: 120px;
+}
+
+.appointment-bookings-page .appt-feedback-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: var(--card-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.appointment-bookings-page .appt-feedback-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-info);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.appointment-bookings-page .appt-feedback-text {
+  flex: 1;
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-feedback-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-feedback-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.appointment-bookings-page .appt-feedback-footnote {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Modal mounts on body – no .appointment-bookings-page ancestor */
+.appt-form-modal .ant-modal-header {
+  border-bottom-color: var(--border-color);
+}
+
+.appointment-bookings-page .appt-activity-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.appointment-bookings-page .appt-activity-detail {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* Scrollbar in schedule panel – theme aware */
+.appointment-bookings-page .appt-schedule-scroll {
+  scrollbar-color: var(--primary-color) var(--scrollbar-track);
+}
+
+.appointment-bookings-page .appt-schedule-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.appointment-bookings-page .appt-schedule-scroll::-webkit-scrollbar-thumb {
+  background: var(--primary-color);
+  border-radius: 4px;
+}
+
+.appointment-bookings-page .appt-schedule-scroll::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}

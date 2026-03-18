@@ -285,7 +285,7 @@ const Logs = ({ defaultActiveTab }) => {
       key: 'title',
       render: (text, record) => (
         <div>
-          <div style={{ fontWeight: record.isRead ? 'normal' : 'bold', color: record.isRead ? '#888' : '#ffffff' }}>
+          <div className={record.isRead ? 'logs-notification-read' : 'logs-notification-unread'}>
             {text}
           </div>
         </div>
@@ -421,7 +421,6 @@ const Logs = ({ defaultActiveTab }) => {
             columns={chatColumns}
             dataSource={chatLogs}
             pagination={{ pageSize: 10 }}
-            style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
           />
         </div>
@@ -436,7 +435,6 @@ const Logs = ({ defaultActiveTab }) => {
             columns={activityColumns}
             dataSource={activityLogs}
             pagination={{ pageSize: 10 }}
-            style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
           />
         </div>
@@ -461,7 +459,6 @@ const Logs = ({ defaultActiveTab }) => {
             onChange={(pagination) => {
               setLoginHistoryPage(pagination.current)
             }}
-            style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
           />
         </div>
@@ -482,7 +479,7 @@ const Logs = ({ defaultActiveTab }) => {
               <Button
                 icon={<CheckOutlined />}
                 onClick={handleMarkAllAsRead}
-                style={{ color: '#D4AF37', borderColor: '#D4AF37' }}
+                style={{ borderColor: 'var(--primary-color)', color: 'var(--primary-color)' }}
               >
                 Mark All as Read
               </Button>
@@ -509,7 +506,6 @@ const Logs = ({ defaultActiveTab }) => {
             onChange={(pagination) => {
               setNotificationPage(pagination.current)
             }}
-            style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
           />
         </div>
@@ -518,9 +514,9 @@ const Logs = ({ defaultActiveTab }) => {
   ]
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <h2 style={{ color: '#D4AF37', marginBottom: 16 }}>System Logs</h2>
-      <Tabs items={tabItems} activeKey={activeTab} onChange={setActiveTab} />
+    <div className="mgmt-page">
+      <h2 className="mgmt-settings-section-title" style={{ marginBottom: 16 }}>System Logs</h2>
+      <Tabs className="mgmt-tabs" items={tabItems} activeKey={activeTab} onChange={setActiveTab} />
     </div>
   )
 }

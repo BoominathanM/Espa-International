@@ -1,8 +1,16 @@
 /**
  * AskEva CRM Lead Sync Service
- * Fetches all leads from AskEva API (apiv2.askeva.io) and syncs to local leads collection.
- * Uses no-cache headers to avoid 304 Not Modified responses.
+ * Primary: GET backend.askeva.net/v1/leads?token=... (same as Postman; response { success, data }).
+ * Deduplicates by askevaLeadId / phone; updates existing leads, creates new ones.
+ * Fallback: legacy GET .../lead-configuration/leads on apiv2 with header auth.
  */
+
+/** Base URL for AskEva leads API (v1/leads with ?token=). */
+function getAskevaLeadsBase() {
+  const base = process.env.ASKEVA_SYNC_API_URL != null ? String(process.env.ASKEVA_SYNC_API_URL).trim() : ''
+  if (base.length > 0) return base.replace(/\/$/, '')
+  return 'https://backend.askeva.net'
+}
 
 function getAskevaApiBase() {
   const base = process.env.ASKEVA_API_URL != null ? String(process.env.ASKEVA_API_URL).trim() : ''
@@ -51,7 +59,27 @@ function mapAskEvaSource(source) {
 }
 
 /**
- * Fetch all leads from AskEva API
+ * Fetch leads from AskEva v1/leads API (backend.askeva.net) with ?token= and optional Bearer.
+ * Response: { success: true, data: [ { id, name, fullMobile, mobile, source, status, ... } ] }
+ */
+async function fetchAskEvaViaV1Leads(token, cacheHeaders) {
+  const base = getAskevaLeadsBase()
+  const path = 'v1/leads'
+  const cacheBust = `_t=${Date.now()}`
+  const url = `${base}/${path}?token=${encodeURIComponent(token)}&${cacheBust}`
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      ...cacheHeaders,
+      Authorization: `Bearer ${token}`,
+    },
+    cache: 'no-store',
+  })
+  return { res, url: url.replace(/token=[^&]+/, 'token=***') }
+}
+
+/**
+ * Fetch all leads from AskEva API (v1/leads first, then legacy lead-configuration/leads).
  * @returns {Promise<{ success: boolean, data?: Array, error?: string }>}
  */
 export async function fetchAskEvaLeads() {
@@ -59,29 +87,56 @@ export async function fetchAskEvaLeads() {
   if (!token) {
     return {
       success: false,
-      error: 'Add WHATSAPP_API_KEY (or ASKEVA_API_TOKEN) in backend/.env and restart the server.',
+      error: 'Add WHATSAPP_API_KEY (or ASKEVA_API_TOKEN) in backend/.env — same token as in Postman (v1/leads?token=).',
+    }
+  }
+
+  const cacheHeaders = {
+    Accept: 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  }
+
+  const useV1LeadsOnly = process.env.ASKEVA_SYNC_USE_LEADS_API_ONLY !== 'true'
+  if (useV1LeadsOnly) {
+    try {
+      const { res, url } = await fetchAskEvaViaV1Leads(token, cacheHeaders)
+      if (res.ok) {
+        const json = await res.json()
+        const data = json.data != null && Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : [])
+        return { success: true, data }
+      }
+      if (res.status === 404 || res.status === 405) {
+        console.warn('[AskEva Sync] v1/leads not available, falling back to lead-configuration/leads:', url)
+      } else {
+        const text = await res.text().catch(() => '')
+        const hint = res.status === 401 || res.status === 403
+          ? ' Check token in .env matches the one used in Postman (v1/leads?token= or Bearer).'
+          : ''
+        return {
+          success: false,
+          error: `AskEva v1/leads ${res.status}: ${text || res.statusText || 'Unknown'}${hint}`,
+        }
+      }
+    } catch (err) {
+      console.warn('[AskEva Sync] v1/leads request failed, trying legacy API:', err.message)
     }
   }
 
   const base = getAskevaApiBase().replace(/\/$/, '')
   const userId = process.env.ASKEVA_USER_ID != null ? String(process.env.ASKEVA_USER_ID).trim() : ''
 
-  const cacheHeaders = {
-    'Accept': 'application/json',
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
-    'Pragma': 'no-cache',
-    'Expires': '0',
-  }
-
   const basesToTry = [base]
   if (base === 'https://apiv2.askeva.io') {
-    basesToTry.push('https://api.askeva.io', 'https://apiv2.askeva.net')
+    basesToTry.push('https://api.askeva.io', 'https://apiv2.askeva.net', 'https://backend.askeva.net')
   }
-  const pathVariants = ['v1/lead-configuration/leads', 'api/v1/lead-configuration/leads', 'v2/lead-configuration/leads']
+  const pathVariants = ['v1/leads', 'v1/lead-configuration/leads', 'api/v1/lead-configuration/leads', 'v2/lead-configuration/leads']
   const urlVariants = []
   for (const b of basesToTry) {
+    const bClean = b.replace(/\/$/, '')
     for (const p of pathVariants) {
-      urlVariants.push(`${b.replace(/\/$/, '')}/${p}`)
+      urlVariants.push(`${bClean}/${p}`)
     }
   }
   if (userId.length > 0) {
@@ -92,8 +147,8 @@ export async function fetchAskEvaLeads() {
     }
   }
 
-  // AskEva returns 500 "Malformed UTF-8 data" when Authorization: Bearer is sent - use API-key headers first
   const authStrategies = [
+    (url) => ({ url: `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`, headers: {} }),
     { headers: { 'X-API-Key': token } },
     { headers: { 'X-WhatsApp-API-Key': token } },
   ]
@@ -101,19 +156,23 @@ export async function fetchAskEvaLeads() {
     authStrategies.push({ headers: { 'X-API-Key': token, 'X-User-Id': userId } })
     authStrategies.push({ headers: { 'X-WhatsApp-API-Key': token, 'X-User-Id': userId } })
   }
-  authStrategies.push({ headers: { 'Authorization': `Bearer ${token}` } })
+  authStrategies.push({ headers: { Authorization: `Bearer ${token}` } })
 
   const cacheBust = () => `_t=${Date.now()}`
-  const tryFetch = async (url, headers) => {
-    const fullUrl = url + (url.includes('?') ? '&' : '?') + cacheBust()
-    return fetch(fullUrl, { method: 'GET', headers: { ...cacheHeaders, ...headers }, cache: 'no-store' })
+  const tryFetch = async (url, opts) => {
+    const baseUrl = typeof opts.url === 'string' ? opts.url : url
+    const sep = baseUrl.includes('?') ? '&' : '?'
+    const fullUrl = `${baseUrl}${sep}${cacheBust()}`
+    const headers = opts.headers ? { ...cacheHeaders, ...opts.headers } : cacheHeaders
+    return fetch(fullUrl, { method: 'GET', headers, cache: 'no-store' })
   }
 
   try {
     let res = null
     outer: for (const url of urlVariants) {
       for (const strategy of authStrategies) {
-        res = await tryFetch(url, strategy.headers)
+        const opts = typeof strategy === 'function' ? strategy(url) : strategy
+        res = await tryFetch(url, opts)
         if (res.ok) break outer
         if (res.status !== 401 && res.status !== 403) break outer
       }
@@ -126,18 +185,18 @@ export async function fetchAskEvaLeads() {
       const is304 = status === 304
       const is404 = status === 404
       let hint = ''
-      if (is403) hint = ' AskEva returned 403: ensure your API key can read leads. Check AskEva dashboard for API token with "read leads" permission.'
-      else if (is304) hint = ' AskEva returned 304 Not Modified. Try Sync AskEva again in a few seconds.'
-      else if (is404) hint = ' AskEva returned 404: API URL/path may differ in production. Set ASKEVA_API_URL in .env to your AskEva API base (e.g. https://apiv2.askeva.io). New leads still sync via webhook.'
+      if (is403) hint = ' Ensure token in .env matches Postman (v1/leads?token= or Bearer).'
+      else if (is304) hint = ' Try Sync AskEva again in a few seconds.'
+      else if (is404) hint = ' Set ASKEVA_SYNC_API_URL in .env (e.g. https://backend.askeva.net).'
       return {
         success: false,
-        error: `AskEva API error ${status || 'unknown'}: ${text || res?.statusText || 'Unknown'}${hint}`,
+        error: `AskEva API ${status || 'unknown'}: ${text || res?.statusText || 'Unknown'}${hint}`,
       }
     }
 
     const json = await res.json()
-    const leads = json.data || json
-    return { success: true, data: Array.isArray(leads) ? leads : [] }
+    const leads = json.data != null && Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : [])
+    return { success: true, data: leads }
   } catch (err) {
     console.error('[AskEva Sync] Fetch error:', err.message)
     return {

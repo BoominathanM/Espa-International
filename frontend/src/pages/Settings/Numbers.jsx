@@ -165,7 +165,7 @@ const Numbers = () => {
         marginBottom: 16,
         gap: 12,
       }}>
-        <h2 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '18px' : '20px' }}>Number Configuration</h2>
+        <h2 className="mgmt-settings-section-title">Number Configuration</h2>
         {isSuperAdmin() && (
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} size={isMobile ? 'small' : 'middle'}>
             {isMobile ? 'Add' : 'Add Number'}
@@ -178,7 +178,6 @@ const Numbers = () => {
           columns={columns}
           dataSource={numbers}
           pagination={{ pageSize: 10 }}
-          style={{ background: '#1a1a1a' }}
           scroll={{ x: 'max-content' }}
         />
       </div>

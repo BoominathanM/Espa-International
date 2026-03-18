@@ -25,8 +25,8 @@ const Settings = () => {
   
   if (!canRead('settings')) {
     return (
-      <div style={{ textAlign: 'center', padding: 50, color: '#888' }}>
-        You don't have permission to access settings.
+      <div className="mgmt-empty-permission">
+        You don&apos;t have permission to access settings.
       </div>
     )
   }
@@ -68,10 +68,11 @@ const Settings = () => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <h1 style={{ color: '#D4AF37', marginBottom: 24, fontSize: isMobile ? '20px' : '24px' }}>System Settings</h1>
-      <Tabs 
-        items={tabItems} 
+    <div className="mgmt-page">
+      <h1 className="settings-page-title">System Settings</h1>
+      <Tabs
+        className="mgmt-tabs"
+        items={tabItems}
         activeKey={activeTab}
         onChange={handleTabChange}
         type={isMobile ? 'card' : 'line'}

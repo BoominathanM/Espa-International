@@ -9,12 +9,14 @@ import {
   Form,
   Card,
   Tabs,
+  Segmented,
   Calendar,
   Space,
   App,
   Empty,
   Tag,
   Timeline,
+  Dropdown,
   Spin,
   Alert,
   Avatar,
@@ -37,6 +39,7 @@ import {
   MessageOutlined,
   ArrowLeftOutlined,
   ScheduleOutlined,
+  MoreOutlined,
 } from '@ant-design/icons'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
@@ -50,6 +53,7 @@ import {
 } from '../../store/api/leadApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import dayjs from 'dayjs'
+import './AppointmentBookingsPage.css'
 
 const { Option } = Select
 
@@ -195,41 +199,41 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
         </span>
       ),
       children: (
-        <div style={{ color: '#fff' }}>
+        <div className="appt-detail-body">
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
             <div>
-              <div style={{ color: '#888', fontSize: 12 }}>Created</div>
+              <div className="appt-detail-label">Created</div>
               <div>{lead.createdAt ? dayjs(lead.createdAt).format('D/M/YYYY h:mm A') : '-'}</div>
             </div>
             <div>
-              <div style={{ color: '#888', fontSize: 12 }}>ID</div>
+              <div className="appt-detail-label">ID</div>
               <div>{appointmentDisplayId(lead)}</div>
             </div>
             <div>
-              <div style={{ color: '#888', fontSize: 12 }}>User</div>
+              <div className="appt-detail-label">User</div>
               <div>{lead.assignedTo?.name || '-'}</div>
             </div>
             <div>
-              <div style={{ color: '#888', fontSize: 12 }}>Department</div>
+              <div className="appt-detail-label">Department</div>
               <div>{lead.branch?.name || '-'}</div>
             </div>
             <div>
-              <div style={{ color: '#888', fontSize: 12 }}>Status</div>
+              <div className="appt-detail-label">Status</div>
               <Tag color={st.color}>{st.label}</Tag>
             </div>
             <div>
-              <div style={{ color: '#888', fontSize: 12 }}>Appointment</div>
+              <div className="appt-detail-label">Appointment</div>
               <div>
                 {lead.appointment_date ? dayjs(lead.appointment_date).format('DD/MM/YYYY') : '-'} · {lead.slot_time || '-'}
               </div>
             </div>
             <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-              <div style={{ color: '#888', fontSize: 12 }}>Description</div>
+              <div className="appt-detail-label">Description</div>
               <div>{lead.message || lead.notes || '-'}</div>
             </div>
             {lead.completion_notes && (
               <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-                <div style={{ color: '#888', fontSize: 12 }}>Completion notes</div>
+                <div className="appt-detail-label">Completion notes</div>
                 <div>{lead.completion_notes}</div>
               </div>
             )}
@@ -245,11 +249,11 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
         </span>
       ),
       children: isDone ? (
-        <div style={{ color: '#fff' }}>
+        <div className="appt-detail-body">
           <Tag color="success" style={{ marginBottom: 12 }}>
             Completed
           </Tag>
-          <div style={{ color: '#888', fontSize: 12 }}>Completion notes</div>
+          <div className="appt-detail-label">Completion notes</div>
           <div>{lead.completion_notes || '-'}</div>
         </div>
       ) : (
@@ -262,7 +266,7 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
             <Input.TextArea rows={5} maxLength={500} showCount placeholder="Enter completion notes and details" />
           </Form.Item>
           <Space>
-            <Button type="primary" icon={<CheckCircleOutlined />} loading={completing} onClick={onComplete} style={{ background: '#52c41a', borderColor: '#52c41a' }}>
+            <Button type="primary" icon={<CheckCircleOutlined />} loading={completing} onClick={onComplete} className="appt-btn-success">
               Mark as Complete
             </Button>
           </Space>
@@ -291,12 +295,12 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
               <Input.TextArea rows={4} maxLength={500} showCount />
             </Form.Item>
             <Space>
-              <Button type="primary" loading={rescheduling} onClick={onReschedule} style={{ background: '#52c41a', borderColor: '#52c41a' }}>
+              <Button type="primary" loading={rescheduling} onClick={onReschedule} className="appt-btn-success">
                 Save Reschedule
               </Button>
             </Space>
           </Form>
-          <h4 style={{ color: '#fff', marginTop: 24 }}>Reschedule History</h4>
+          <h4 className="appt-detail-h4">Reschedule History</h4>
           <Table
             size="small"
             rowKey={(r) => r._id || `${r.newAppointmentDate}-${r.newSlot}`}
@@ -327,7 +331,7 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
         </span>
       ),
       children: (
-        <div style={{ color: '#fff' }}>
+        <div className="appt-detail-body">
           <h4 style={{ marginBottom: 16 }}>Appointment Activity Timeline</h4>
           {logs.length === 0 ? (
             <Empty description="No activity" />
@@ -337,8 +341,8 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
                 children: (
                   <div>
                     <div>{log.action}</div>
-                    <div style={{ color: '#888', fontSize: 12 }}>{log.details}</div>
-                    <div style={{ color: '#666', fontSize: 11 }}>
+                    <div className="appt-activity-detail">{log.details}</div>
+                    <div className="appt-activity-meta">
                       {log.createdAt ? dayjs(log.createdAt).format('DD/MM/YYYY, HH:mm:ss') : ''}
                     </div>
                   </div>
@@ -357,39 +361,39 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
         </span>
       ),
       children: (
-        <div style={{ color: '#fff' }}>
+        <div className="appt-detail-body">
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-            <Avatar size={64} style={{ background: '#52c41a' }}>
+            <Avatar size={64} style={{ background: 'var(--color-success)' }}>
               {(lead.first_name || '?')[0]}
             </Avatar>
             <div>
               <div style={{ fontSize: 18, fontWeight: 600 }}>{name}</div>
-              <div style={{ color: '#888' }}>{lead.phone || '-'}</div>
+              <div className="appt-detail-label">{lead.phone || '-'}</div>
             </div>
           </div>
           <Space wrap style={{ marginBottom: 16 }}>
-            <Card size="small" style={{ minWidth: 120, background: '#252525', borderColor: '#333' }}>
+            <Card size="small" className="appt-detail-stat-card">
               <div style={{ fontSize: 20, fontWeight: 600 }}>1</div>
-              <div style={{ fontSize: 12, color: '#888' }}>Total Visits</div>
+              <div className="appt-detail-stat-label">Total Visits</div>
             </Card>
-            <Card size="small" style={{ minWidth: 120, background: '#252525', borderColor: '#333' }}>
+            <Card size="small" className="appt-detail-stat-card">
               <div style={{ fontSize: 20, fontWeight: 600 }}>{isDone ? 1 : 0}</div>
-              <div style={{ fontSize: 12, color: '#888' }}>Completed</div>
+              <div className="appt-detail-stat-label">Completed</div>
             </Card>
-            <Card size="small" style={{ minWidth: 120, background: '#252525', borderColor: '#333' }}>
+            <Card size="small" className="appt-detail-stat-card">
               <div style={{ fontSize: 20, fontWeight: 600 }}>{history.length}</div>
-              <div style={{ fontSize: 12, color: '#888' }}>Rescheduled</div>
+              <div className="appt-detail-stat-label">Rescheduled</div>
             </Card>
-            <Card size="small" style={{ minWidth: 120, background: '#252525', borderColor: '#333' }}>
+            <Card size="small" className="appt-detail-stat-card">
               <div style={{ fontSize: 20, fontWeight: 600 }}>{notesList.length}</div>
-              <div style={{ fontSize: 12, color: '#888' }}>Total Notes</div>
+              <div className="appt-detail-stat-label">Total Notes</div>
             </Card>
           </Space>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
-            <Card size="small" title="Visit Timeline" style={{ background: '#252525', borderColor: '#333' }}>
+            <Card size="small" title="Visit Timeline" className="appt-detail-stat-card">
               First visit: {lead.appointment_date ? dayjs(lead.appointment_date).format('DD/MM/YYYY') : '-'}
             </Card>
-            <Card size="small" title="Departments Visited" style={{ background: '#252525', borderColor: '#333' }}>
+            <Card size="small" title="Departments Visited" className="appt-detail-stat-card">
               {lead.branch?.name ? <Tag>{lead.branch.name}</Tag> : '-'}
             </Card>
           </div>
@@ -409,19 +413,19 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
             <Form.Item name="note_text" label="Add note" rules={[{ required: true }, { max: 2000 }]}>
               <Input.TextArea rows={4} maxLength={2000} showCount />
             </Form.Item>
-            <Button type="primary" loading={noteSaving} onClick={onAddNote} style={{ background: '#52c41a', borderColor: '#52c41a' }}>
+            <Button type="primary" loading={noteSaving} onClick={onAddNote} className="appt-btn-success">
               Save Note
             </Button>
           </Form>
-          <h4 style={{ color: '#fff', marginTop: 24 }}>Saved notes</h4>
+          <h4 className="appt-detail-h4">Saved notes</h4>
           {notesList.length === 0 ? (
-            <Empty description="No notes yet" style={{ color: '#888' }} />
+            <Empty description="No notes yet" />
           ) : (
-            <ul style={{ color: '#fff', paddingLeft: 20 }}>
+            <ul className="appt-detail-body" style={{ paddingLeft: 20 }}>
               {notesList.map((n) => (
                 <li key={n._id || n.createdAt} style={{ marginBottom: 12 }}>
                   <div>{n.text}</div>
-                  <div style={{ color: '#888', fontSize: 12 }}>
+                  <div className="appt-detail-label">
                     {n.performedBy} · {n.createdAt ? dayjs(n.createdAt).format('DD/MM/YYYY HH:mm') : ''}
                   </div>
                 </li>
@@ -439,50 +443,16 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
         </span>
       ),
       children: (
-        <div
-          style={{
-            padding: 24,
-            background: '#1a1a1a',
-            borderRadius: 8,
-            border: '1px solid #333',
-            minHeight: 120,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 12,
-              padding: 16,
-              background: '#252525',
-              borderRadius: 8,
-              border: '1px solid #404040',
-            }}
-          >
-            <span
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                background: '#1890ff',
-                color: '#fff',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                fontWeight: 600,
-                flexShrink: 0,
-              }}
-            >
-              i
-            </span>
-            <div style={{ flex: 1, color: '#e8e8e8' }}>
-              <div style={{ fontWeight: 600, marginBottom: 8, color: '#fff' }}>No Feedback Found</div>
-              <div style={{ fontSize: 13, lineHeight: 1.5, color: '#ccc' }}>
-                No feedback responses found for appointment <strong style={{ color: '#e8e8e8' }}>{appointmentDisplayId(lead)}</strong>, patient{' '}
-                <strong style={{ color: '#e8e8e8' }}>{name}</strong>, mobile <strong style={{ color: '#e8e8e8' }}>{lead.phone || '—'}</strong>.
+        <div className="appt-feedback-outer">
+          <div className="appt-feedback-inner">
+            <span className="appt-feedback-icon">i</span>
+            <div className="appt-feedback-text">
+              <div className="appt-feedback-title">No Feedback Found</div>
+              <div className="appt-feedback-desc">
+                No feedback responses found for appointment <strong>{appointmentDisplayId(lead)}</strong>, patient{' '}
+                <strong>{name}</strong>, mobile <strong>{lead.phone || '—'}</strong>.
               </div>
-              <div style={{ marginTop: 12, fontSize: 12, color: '#999' }}>
+              <div className="appt-feedback-footnote">
                 Feedback can be linked when your WhatsApp flows store responses by this mobile number.
               </div>
             </div>
@@ -494,20 +464,20 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
 
   return (
     <Card
-      style={{ background: '#1a1a1a', borderColor: '#333' }}
+      className="appt-detail-card"
       title={
         <Space>
-          <Button type="link" icon={<ArrowLeftOutlined />} onClick={onBack} style={{ color: '#52c41a', padding: 0 }}>
+          <Button type="link" icon={<ArrowLeftOutlined />} onClick={onBack} className="appt-detail-back">
             Bookings
           </Button>
-          <span style={{ color: '#fff' }}>Appointment Details — {appointmentDisplayId(lead)}</span>
+          <span className="appt-detail-body">Appointment Details — {appointmentDisplayId(lead)}</span>
           {isFetching && !isLoading && <Spin size="small" />}
         </Space>
       }
     >
-      <div style={{ marginBottom: 20, padding: 16, background: '#252525', borderRadius: 8, border: '1px solid #333' }}>
-        <div style={{ color: '#52c41a', fontWeight: 600, marginBottom: 12 }}>{name}&apos;s Appointment Details</div>
-        <Space wrap size="large" style={{ color: '#ccc', fontSize: 13 }}>
+      <div className="appt-detail-summary">
+        <div className="appt-detail-summary-title">{name}&apos;s Appointment Details</div>
+        <Space wrap size="large" className="appt-detail-summary-meta">
           <span>Created: {lead.createdAt ? dayjs(lead.createdAt).format('D/M/YYYY h:mm A') : '-'}</span>
           <span>ID: {appointmentDisplayId(lead)}</span>
           <span>User: {lead.assignedTo?.name || '-'}</span>
@@ -516,7 +486,7 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
           <span>Desc: {lead.message || lead.notes || '—'}</span>
         </Space>
       </div>
-      <Tabs activeKey={detailTab} onChange={setDetailTab} items={detailTabItems} style={{ color: '#fff' }} />
+      <Tabs activeKey={detailTab} onChange={setDetailTab} items={detailTabItems} className="appt-detail-tabs" />
     </Card>
   )
 }
@@ -655,7 +625,7 @@ const AppointmentBookingsPage = () => {
       width: 140,
       render: (_, r) => `${(r.first_name || '').trim()} ${(r.last_name || '').trim()}`.trim() || '-',
     },
-  
+
     {
       title: 'Appointment Date',
       key: 'appointment_date',
@@ -666,7 +636,7 @@ const AppointmentBookingsPage = () => {
     {
       title: 'User',
       key: 'user',
-      width: 100,
+      width: 90,
       render: (_, r) => (r.assignedTo?.name || r.assignedTo || '-'),
     },
     {
@@ -675,12 +645,12 @@ const AppointmentBookingsPage = () => {
       width: 100,
       render: (_, r) => (r.branch?.name || r.branch || '-'),
     },
-   
+
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 110,
+      width: 90,
       render: (s) => {
         const u = uiAppointmentStatus(s)
         return <Tag color={u.color}>{u.label}</Tag>
@@ -689,13 +659,34 @@ const AppointmentBookingsPage = () => {
     {
       title: 'Action',
       key: 'action',
-      width: 90,
+      width: 56,
+      align: 'center',
       fixed: 'right',
       render: (_, record) => (
-        <Space>
-          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleView(record)} title="View" />
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} title="Edit" />
-        </Space>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'view', label: 'View details', icon: <EyeOutlined /> },
+              { key: 'edit', label: 'Edit appointment', icon: <EditOutlined /> },
+            ],
+            onClick: ({ key, domEvent }) => {
+              domEvent?.stopPropagation()
+              if (key === 'view') handleView(record)
+              else if (key === 'edit') handleEdit(record)
+            },
+          }}
+          trigger={['click']}
+          placement="bottomRight"
+          overlayClassName="appt-actions-dropdown"
+        >
+          <Button
+            type="text"
+            size="small"
+            icon={<MoreOutlined className="appt-table-action-icon" style={{ fontSize: 18 }} />}
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Appointment actions"
+          />
+        </Dropdown>
       ),
     },
   ]
@@ -717,7 +708,7 @@ const AppointmentBookingsPage = () => {
 
   if (detailLeadId) {
     return (
-      <div style={{ padding: isMobile ? 8 : 0 }}>
+      <div className="appointment-bookings-page" style={{ padding: isMobile ? 8 : 0 }}>
         <AppointmentDetailPanel
           leadId={detailLeadId}
           onBack={() => {
@@ -732,7 +723,7 @@ const AppointmentBookingsPage = () => {
   }
 
   return (
-    <div style={{ padding: isMobile ? 8 : 0 }}>
+    <div className="appointment-bookings-page" style={{ padding: isMobile ? 8 : 0 }}>
       <div
         style={{
           display: 'flex',
@@ -743,119 +734,146 @@ const AppointmentBookingsPage = () => {
           gap: 12,
         }}
       >
-         <Tabs
-            activeKey={activeView}
-            onChange={setActiveView}
-            items={[
-              {
-                key: 'calendar',
-                label: (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <CalendarOutlined /> Calendar View
-                  </span>
-                ),
-              },
-              {
-                key: 'list',
-                label: (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <UnorderedListOutlined /> Appointments
-                  </span>
-                ),
-              },
-            ]}
-            style={{ marginBottom: 0 }}
-          />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleNewAppointment} style={{ background: '#D4AF37', borderColor: '#D4AF37' }}>
+        <div style={{ width: isMobile ? '100%' : 'auto', flex: isMobile ? 'none' : '1 1 auto', minWidth: 0 }}>
+          <h1 className="leads-page-title">Appointment-bookings</h1>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleNewAppointment} className="appt-btn-primary">
             New Appointment
           </Button>
         </div>
       </div>
 
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between',
+          alignItems: isMobile ? 'stretch' : 'center',
+          marginBottom: 16,
+          gap: 12,
+        }}
+      >
+        <div style={{ width: isMobile ? '100%' : 'auto', flex: isMobile ? 'none' : '1 1 auto', minWidth: 0 }}>
+          <Segmented
+            block={isMobile}
+            value={activeView}
+            onChange={setActiveView}
+            options={[
+              {
+                value: 'calendar',
+                label: (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <CalendarOutlined />
+                    Calendar View
+                  </span>
+                ),
+              },
+              {
+                value: 'list',
+                label: (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <UnorderedListOutlined />
+                    Appointments
+                  </span>
+                ),
+              },
+            ]}
+            size={isMobile ? 'small' : 'middle'}
+            className="appt-view-segmented"
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+{activeView === 'list' && (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16, alignItems: 'center' }}>
+            <Input
+              placeholder="Search..."
+              prefix={<SearchOutlined />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{ width: 200 }}
+              allowClear
+            />
+            <Button type="primary" icon={<FilterOutlined />} className="appt-btn-primary">
+              Filter
+            </Button>
+            <Button icon={<PrinterOutlined />} />
+
+            {(searchText || filterOpen) && (
+              <Button type="text" onClick={() => { setSearchText(''); setFilterOpen(false); }}>
+                Clear
+              </Button>
+            )}
+          </div>
+          </>
+          )}
+
+        </div>
+      </div>
+      <p className="appt-view-subtitle">
+        {activeView === 'calendar'
+          ? 'Choose a date on the calendar, then review time slots and open an appointment.'
+          : 'Search and filter appointments. Click a row or use the menu to view or edit.'}
+      </p>
+
       {activeView === 'calendar' && (
         <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 24, flex: 1 }}>
-          <Card
-            style={{
-              width: isMobile ? '100%' : 320,
-              background: '#1a1a1a',
-              border: '1px solid #333',
-            }}
-            bodyStyle={{ padding: 16 }}
-          >
-            <Calendar
-              fullscreen={false}
-              value={calendarMonth}
-              onSelect={(d) => {
-                setSelectedDate(d)
-              }}
-              onChange={(d) => setCalendarMonth(d)}
-              headerRender={({ value, onChange }) => (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <Button type="text" icon={<LeftOutlined />} onClick={() => onChange(value.subtract(1, 'month'))} style={{ color: '#D4AF37' }} />
-                  <span style={{ color: '#fff', fontWeight: 600 }}>{value.format('MMMM YYYY')}</span>
-                  <Button type="text" icon={<RightOutlined />} onClick={() => onChange(value.add(1, 'month'))} style={{ color: '#D4AF37' }} />
-                </div>
-              )}
-            />
-            <div style={{ marginTop: 12, fontSize: 12, color: '#888' }}>
+          <Card className="appt-card" style={{ width: isMobile ? '100%' : 320 }} bodyStyle={{ padding: 16 }}>
+            <div className="appt-calendar-wrap">
+              <Calendar
+                fullscreen={false}
+                value={calendarMonth}
+                onSelect={(d) => {
+                  setSelectedDate(d)
+                }}
+                onChange={(d) => setCalendarMonth(d)}
+                headerRender={({ value, onChange }) => (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <Button type="text" icon={<LeftOutlined />} onClick={() => onChange(value.subtract(1, 'month'))} className="appt-btn-text-gold" />
+                    <span className="appt-calendar-header-month">{value.format('MMMM YYYY')}</span>
+                    <Button type="text" icon={<RightOutlined />} onClick={() => onChange(value.add(1, 'month'))} className="appt-btn-text-gold" />
+                  </div>
+                )}
+              />
+            </div>
+            <div className="appt-legend">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 2, background: '#D4AF37' }} /> Selected date
+                <span className="appt-legend-swatch-selected" /> Selected date
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', border: '1px solid #888' }} /> Has appointments
+                <span className="appt-legend-swatch-dot" /> Has appointments
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-              <Card size="small" style={{ flex: 1, minWidth: 70, background: '#1890ff', border: 'none', textAlign: 'center' }}>
-                <div style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{summaryCounts.total}</div>
-                <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>Total</div>
+              <Card size="small" className="appt-stat-total appt-stat-card">
+                <div className="appt-stat-val">{summaryCounts.total}</div>
+                <div className="appt-stat-label">Total</div>
               </Card>
-              <Card size="small" style={{ flex: 1, minWidth: 70, background: '#D4AF37', border: 'none', textAlign: 'center' }}>
-                <div style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{summaryCounts.closed}</div>
-                <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>Closed</div>
+              <Card size="small" className="appt-stat-closed appt-stat-card">
+                <div className="appt-stat-val">{summaryCounts.closed}</div>
+                <div className="appt-stat-label">Closed</div>
               </Card>
-              <Card size="small" style={{ flex: 1, minWidth: 70, background: '#fa8c16', border: 'none', textAlign: 'center' }}>
-                <div style={{ color: '#fff', fontSize: 18, fontWeight: 600 }}>{summaryCounts.current}</div>
-                <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>Current</div>
+              <Card size="small" className="appt-stat-current appt-stat-card">
+                <div className="appt-stat-val">{summaryCounts.current}</div>
+                <div className="appt-stat-label">Current</div>
               </Card>
             </div>
           </Card>
 
           <Card
-            style={{
-              flex: 1,
-              minWidth: 0,
-              background: '#1a1a1a',
-              border: '1px solid #333',
-            }}
+            className="appt-card appt-schedule-scroll"
+            style={{ flex: 1, minWidth: 0 }}
             bodyStyle={{ padding: 16, maxHeight: 'calc(100vh - 280px)', overflow: 'auto' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-              <Button
-                type="primary"
-                size="small"
-                style={{ background: '#D4AF37', borderColor: '#D4AF37' }}
-                onClick={() => setSelectedDate(dayjs())}
-              >
+              <Button type="primary" size="small" className="appt-btn-primary" onClick={() => setSelectedDate(dayjs())}>
                 Today
               </Button>
-              <Button
-                type="text"
-                icon={<LeftOutlined />}
-                onClick={() => setSelectedDate(selectedDate.subtract(1, 'day'))}
-                style={{ color: '#D4AF37' }}
-              />
-              <span style={{ color: '#fff', minWidth: 180 }}>
-                {selectedDate.format('dddd, MMMM D')}
-              </span>
-              <Button
-                type="text"
-                icon={<RightOutlined />}
-                onClick={() => setSelectedDate(selectedDate.add(1, 'day'))}
-                style={{ color: '#D4AF37' }}
-              />
+              <Button type="text" icon={<LeftOutlined />} onClick={() => setSelectedDate(selectedDate.subtract(1, 'day'))} className="appt-btn-text-gold" />
+              <span className="appt-date-title">{selectedDate.format('dddd, MMMM D')}</span>
+              <Button type="text" icon={<RightOutlined />} onClick={() => setSelectedDate(selectedDate.add(1, 'day'))} className="appt-btn-text-gold" />
             </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
               {[-3, -2, -1, 0, 1, 2, 3].map((d) => {
@@ -866,28 +884,19 @@ const AppointmentBookingsPage = () => {
                   <div
                     key={str}
                     onClick={() => setSelectedDate(day)}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 6,
-                      background: isSel ? '#D4AF37' : 'transparent',
-                      color: isSel ? '#fff' : '#ccc',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      textAlign: 'center',
-                      width: "100%",
-                    }}
+                    className={`appt-week-strip-day ${isSel ? 'appt-week-strip-day--sel' : ''}`}
                   >
-                    <div style={{ fontSize: 11 }}>{day.format('ddd')}</div>
-                    <div style={{ fontWeight: 600 }}>{day.date()}</div>
+                    <div className="appt-week-strip-sub">{day.format('ddd')}</div>
+                    <div className="appt-week-strip-num">{day.date()}</div>
                   </div>
                 )
               })}
             </div>
-            <h3 style={{ color: '#fff', marginBottom: 12 }}>
+            <h3 className="appt-section-title">
               Appointments for {selectedDate.format('dddd, MMMM D')}
             </h3>
             <div style={{ display: 'flex', minHeight: 400 }}>
-              <div style={{ width: 60, flexShrink: 0, color: '#888', fontSize: 12 }}>
+              <div className="appt-time-rail">
                 {hourSlots.map((h) => (
                   <div key={h} style={{ height: 40 }}>
                     {h === 0 ? '12 AM' : h === 12 ? '12 PM' : h < 12 ? `${h} AM` : `${h - 12} PM`}
@@ -896,30 +905,15 @@ const AppointmentBookingsPage = () => {
               </div>
               <div style={{ flex: 1, position: 'relative' }}>
                 {leadsLoading ? (
-                  <div style={{ color: '#888', padding: 24 }}>Loading...</div>
+                  <div className="appt-muted">Loading...</div>
                 ) : leads.length === 0 ? (
-                  <Empty description="No appointments" style={{ color: '#888', marginTop: 24 }} />
+                  <Empty description="No appointments" style={{ marginTop: 24 }} />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {Object.entries(appointmentsBySlot).map(([slot, list]) => (
-                      <Card
-                        size="small"
-                        key={slot}
-                        style={{ background: '#252525', border: '1px solid #333' }}
-                        title={slot}
-                      >
+                      <Card size="small" key={slot} className="appt-slot-card" title={slot}>
                         {list.map((l) => (
-                          <div
-                            key={l._id}
-                            style={{
-                              padding: '6px 0',
-                              borderBottom: '1px solid #333',
-                              color: '#fff',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                            }}
-                          >
+                          <div key={l._id} className="appt-slot-row">
                             <span>
                               {(l.first_name || '')} {(l.last_name || '').trim()}
                               {l.spa_package && ` · ${l.spa_package}`}
@@ -939,26 +933,7 @@ const AppointmentBookingsPage = () => {
 
       {activeView === 'list' && (
         <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16, alignItems: 'center' }}>
-            <Input
-              placeholder="Search..."
-              prefix={<SearchOutlined />}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              style={{ width: 200 }}
-              allowClear
-            />
-            <Button icon={<FilterOutlined />} style={{ background: '#D4AF37', borderColor: '#D4AF37', color: '#fff' }}>
-              Filter
-            </Button>
-            <Button icon={<PrinterOutlined />} />
-          
-            {(searchText || filterOpen) && (
-              <Button type="text" onClick={() => { setSearchText(''); setFilterOpen(false); }}>
-                Clear
-              </Button>
-            )}
-          </div>
+     
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
             {[-3, -2, -1, 0, 1, 2, 3].map((d) => {
               const day = selectedDate.add(d, 'day')
@@ -968,21 +943,11 @@ const AppointmentBookingsPage = () => {
                 <div
                   key={str}
                   onClick={() => setSelectedDate(day)}
-                  style={{
-                    padding: '12px 16px',
-                    borderRadius: 6,
-                    background: isSel ? '#D4AF37' : '#1a1a1a',
-                    border: `1px solid ${isSel ? '#D4AF37' : '#333'}`,
-                    color: isSel ? '#fff' : '#ccc',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    textAlign: 'center',
-                    width:" 100%",
-                  }}
+                  className={`appt-week-strip-day appt-week-strip-day--large ${isSel ? 'appt-week-strip-day--sel' : ''}`}
                 >
-                  <div style={{ fontSize: 11 }}>{day.format('ddd')}</div>
-                  <div style={{ fontWeight: 600, fontSize: 18 }}>{day.date()}</div>
-                  <div style={{ fontSize: 10 }}>{day.format('MMM')}</div>
+                  <div className="appt-week-strip-sub">{day.format('ddd')}</div>
+                  <div className="appt-week-strip-num">{day.date()}</div>
+                  <div className="appt-week-strip-month">{day.format('MMM')}</div>
                 </div>
               )
             })}
@@ -996,22 +961,39 @@ const AppointmentBookingsPage = () => {
               { key: 'completed', label: 'Completed' },
               { key: 'feedbacks', label: 'Feedbacks' },
             ]}
-            style={{ borderBottom: '1px solid #333', marginBottom: 16 }}
+            className="appt-list-tabs"
           />
-          <Table
-            columns={listColumns}
-            dataSource={searchFiltered}
-            rowKey="_id"
-            loading={leadsLoading}
-            pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} appointments` }}
-            scroll={{ x: 1200 }}
-            locale={{ emptyText: 'No data' }}
-            style={{ background: '#1a1a1a' }}
-          />
+          <div className="appt-table-wrap">
+            <Table
+              columns={listColumns}
+              dataSource={searchFiltered}
+              rowKey="_id"
+              loading={leadsLoading}
+              pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} appointments` }}
+              scroll={{ x: 1200 }}
+              locale={{ emptyText: 'No data' }}
+              onRow={(record) => ({
+                onClick: (e) => {
+                  if (
+                    e.target.closest('button') ||
+                    e.target.closest('a') ||
+                    e.target.closest('.ant-dropdown') ||
+                    e.target.closest('.ant-popconfirm') ||
+                    e.target.closest('.ant-select')
+                  ) {
+                    return
+                  }
+                  handleView(record)
+                },
+                style: { cursor: 'pointer' },
+              })}
+            />
+          </div>
         </>
       )}
 
       <Modal
+        className="appt-form-modal"
         title={editingLead ? 'Edit Appointment' : 'New Appointment'}
         open={newAppointmentOpen}
         onCancel={() => {
@@ -1021,7 +1003,7 @@ const AppointmentBookingsPage = () => {
         }}
         footer={null}
         width={640}
-        styles={{ body: {  padding: 24 } }}
+        styles={{ body: { padding: 24 } }}
       >
         <Form
           form={form}
@@ -1101,25 +1083,25 @@ const AppointmentBookingsPage = () => {
               disabledDate={(current) => current && current < dayjs().startOf('day')}
             />
           </Form.Item>
-            <Form.Item
-              name="preferredSlotTime"
-              label="PREFERRED SLOT TIME"
-              rules={[{ required: true, message: 'Required' }]}
-            >
-              <Select placeholder="PREFERRED SLOT TIME *" allowClear style={{ borderRadius: 6 }}>
-                {SLOT_TIMES.map((t) => (
-                  <Option key={t} value={t}>
-                    {t}
-                  </Option>
-                ))}
-              </Select>
-            </Form.Item>
-            <Form.Item name="description" label="DESCRIPTION / NOTES">
-              <Input.TextArea rows={2} placeholder="Short description for appointment card" />
-            </Form.Item>
+          <Form.Item
+            name="preferredSlotTime"
+            label="PREFERRED SLOT TIME"
+            rules={[{ required: true, message: 'Required' }]}
+          >
+            <Select placeholder="PREFERRED SLOT TIME *" allowClear style={{ borderRadius: 6 }}>
+              {SLOT_TIMES.map((t) => (
+                <Option key={t} value={t}>
+                  {t}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item name="description" label="DESCRIPTION / NOTES">
+            <Input.TextArea rows={2} placeholder="Short description for appointment card" />
+          </Form.Item>
           <Form.Item style={{ marginBottom: 0, marginTop: 16 }}>
             <Space>
-              <Button type="primary" htmlType="submit" loading={createLoading || updateLoading} style={{ background: '#D4AF37', borderColor: '#D4AF37' }}>
+              <Button type="primary" htmlType="submit" loading={createLoading || updateLoading} className="appt-btn-primary">
                 {editingLead ? 'Update' : 'Create'}
               </Button>
               <Button

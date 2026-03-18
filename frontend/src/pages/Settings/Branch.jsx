@@ -280,7 +280,7 @@ const Branch = () => {
           gap: 12,
         }}
       >
-        <h2 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '18px' : '20px' }}>
+        <h2 className="mgmt-settings-section-title" style={{ margin: 0 }}>
           Branch Configuration
         </h2>
         {isSuperAdmin() && (
@@ -302,7 +302,6 @@ const Branch = () => {
           loading={branchesLoading}
           rowKey={(record) => record._id || record.id}
           pagination={{ pageSize: 10 }}
-          style={{ background: '#1a1a1a' }}
           scroll={{ x: 'max-content' }}
         />
       </div>
@@ -484,7 +483,7 @@ const Branch = () => {
         {branchToDelete && (
           <div>
             <div style={{ marginBottom: 16 }}>
-              <p style={{ color: '#fff', marginBottom: 8 }}>
+              <p className="mgmt-body-text" style={{ marginBottom: 8 }}>
                 <strong>{branchToDelete.name}</strong> has{' '}
                 <strong style={{ color: '#ff4d4f' }}>
                   {branchToDelete.assignedUsers?.length || 0} user(s)
@@ -498,7 +497,7 @@ const Branch = () => {
 
             {branchToDelete.assignedUsers && branchToDelete.assignedUsers.length > 0 && (
               <div style={{ marginBottom: 16, padding: 12, background: '#2a2a2a', borderRadius: 4 }}>
-                <p style={{ color: '#fff', marginBottom: 8, fontWeight: 'bold' }}>
+                <p className="mgmt-body-text" style={{ marginBottom: 8, fontWeight: 'bold' }}>
                   Users to be moved:
                 </p>
                 <Space wrap>

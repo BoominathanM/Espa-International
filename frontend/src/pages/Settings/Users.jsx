@@ -221,7 +221,7 @@ const Users = () => {
           gap: 12,
         }}
       >
-        <h2 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '18px' : '20px' }}>
+        <h2 className="mgmt-settings-section-title">
           User Management
         </h2>
         {isSuperAdmin() && (
@@ -243,7 +243,6 @@ const Users = () => {
           loading={usersLoading}
           rowKey={(record) => record._id || record.id}
           pagination={{ pageSize: 10 }}
-          style={{ background: '#1a1a1a' }}
           scroll={{ x: 'max-content' }}
         />
       </div>

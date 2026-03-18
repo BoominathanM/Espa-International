@@ -451,6 +451,15 @@ export const getLeads = async (req, res) => {
       ]
     }
 
+    // Remainder / reminder leads: only leads with at least one reminder entry
+    const hasReminders =
+      req.query.hasReminders === 'true' ||
+      req.query.hasReminders === '1' ||
+      req.query.remainderLeads === 'true'
+    if (hasReminders) {
+      query['reminders.0'] = { $exists: true }
+    }
+
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit)
 

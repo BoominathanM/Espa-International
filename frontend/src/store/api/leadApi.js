@@ -4,7 +4,7 @@ export const leadApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
     getLeads: builder.query({
       query: (params = {}) => {
-        const { status, source, branch, assignedTo, search, appointmentDate, appointmentDateFrom, appointmentDateTo, page = 1, limit = 50 } = params
+        const { status, source, branch, assignedTo, search, appointmentDate, appointmentDateFrom, appointmentDateTo, hasReminders, page = 1, limit = 50 } = params
         const queryParams = new URLSearchParams()
         
         if (status) queryParams.append('status', status)
@@ -12,6 +12,7 @@ export const leadApi = apiSlice.injectEndpoints({
         if (branch) queryParams.append('branch', branch)
         if (assignedTo) queryParams.append('assignedTo', assignedTo)
         if (search) queryParams.append('search', search)
+        if (hasReminders) queryParams.append('hasReminders', 'true')
         if (appointmentDate) queryParams.append('appointmentDate', appointmentDate)
         if (appointmentDateFrom) queryParams.append('appointmentDateFrom', appointmentDateFrom)
         if (appointmentDateTo) queryParams.append('appointmentDateTo', appointmentDateTo)

@@ -181,7 +181,7 @@ const Calls = () => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
+    <div className="mgmt-page">
       <div style={{ 
         display: 'flex', 
         flexDirection: isMobile ? 'column' : 'row',
@@ -190,7 +190,7 @@ const Calls = () => {
         marginBottom: 16,
         gap: 12,
       }}>
-        <h1 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '20px' : '24px' }}>Call Management</h1>
+        <h1 className="mgmt-page-title">Call Management</h1>
         <Space wrap style={{ width: isMobile ? '100%' : 'auto' }}>
           <Button
             icon={showFilters ? <UpOutlined /> : <DownOutlined />}
@@ -237,7 +237,7 @@ const Calls = () => {
         {callsLoading ? (
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
             <Spin size="large" />
-            <p style={{ color: '#fff', marginTop: 16 }}>Loading call logs...</p>
+            <p className="mgmt-loading-text">Loading call logs...</p>
           </div>
         ) : (
           <Table
@@ -255,7 +255,6 @@ const Calls = () => {
                 setCallPageSize(size)
               },
             }}
-            style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
           />
@@ -308,7 +307,7 @@ const Calls = () => {
                 </p>
               </div>
             ) : (
-              <p style={{ marginTop: 16, color: '#888', fontSize: 12 }}>No recording URL available for this call.</p>
+              <p className="mgmt-muted" style={{ marginTop: 16 }}>No recording URL available for this call.</p>
             )}
           </div>
         )}

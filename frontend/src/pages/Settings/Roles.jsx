@@ -119,19 +119,19 @@ const Roles = () => {
 
   if (!isSuperAdmin()) {
     return (
-      <div style={{ textAlign: 'center', padding: 50, color: '#ffffff' }}>
-        <p>Only Super Admin can manage role permissions.</p>
+      <div className="mgmt-empty-permission">
+        <p className="mgmt-body-text">Only Super Admin can manage role permissions.</p>
       </div>
     )
   }
 
   if (isLoading) {
-    return <div style={{ textAlign: 'center', padding: 50, color: '#ffffff' }}>Loading...</div>
+    return <div className="mgmt-empty-permission">Loading...</div>
   }
 
   if (localRoles.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: 50, color: '#ffffff' }}>
+      <div className="mgmt-empty-permission">
         <p>No roles found. Please initialize roles first.</p>
         <Button type="primary" onClick={handleInitialize} loading={initLoading}>
           Initialize Roles
@@ -151,9 +151,7 @@ const Roles = () => {
           gap: 12,
         }}
       >
-        <h2 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '18px' : '20px' }}>
-          Role Management
-        </h2>
+        <h2 className="mgmt-settings-section-title">Role Management</h2>
         <Space>
           <Button
             type="default"
@@ -186,7 +184,6 @@ const Roles = () => {
           columns={columns}
           dataSource={modules}
           pagination={false}
-          style={{ background: '#1a1a1a' }}
           scroll={{ x: 'max-content' }}
           size={isMobile ? 'small' : 'middle'}
         />

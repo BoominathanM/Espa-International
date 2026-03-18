@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { Layout as AntLayout, Menu, Avatar, Dropdown, Badge, Breadcrumb, Drawer, Form, Input, Button, message, Space, Divider, Empty, Typography, Popover } from 'antd'
+import { Layout as AntLayout, Menu, Avatar, Dropdown, Badge, Breadcrumb, Drawer, Form, Input, Button, message, Space, Divider, Empty, Typography, Popover, Tooltip } from 'antd'
 import {
   DashboardOutlined,
   UserOutlined,
   PhoneOutlined,
-  MessageOutlined,
   TeamOutlined,
   BarChartOutlined,
   SettingOutlined,
@@ -21,7 +20,10 @@ import {
   DeleteOutlined,
   EyeOutlined,
   CalendarOutlined,
+  SunOutlined,
+  MoonOutlined,
 } from '@ant-design/icons'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { hasPermission, isSuperAdmin } from '../utils/permissions'
@@ -34,10 +36,13 @@ import {
   useClearAllNotificationsMutation 
 } from '../store/api/notificationApi'
 import dayjs from 'dayjs'
+import { useThemeMode } from '../hooks/useThemeMode'
+import AnimatedWrapper from './AnimatedWrapper'
 
 const { Header, Sider, Content } = AntLayout
 
 const Layout = ({ children }) => {
+  const { isDark, toggleTheme } = useThemeMode()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false)
   const { isMobile, isTablet, isSmallLaptop } = useResponsive()
@@ -259,17 +264,24 @@ const Layout = ({ children }) => {
   const pathSnippets = location.pathname.split('/').filter((i) => i)
   const breadcrumbItems = [
     {
-      title: <Link to="/dashboard" style={{ color: '#D4AF37' }}>Home</Link>,
+      title: (
+        <Link to="/dashboard" className="app-breadcrumb-link">
+          Home
+        </Link>
+      ),
     },
     ...pathSnippets.map((_, index) => {
       const url = `/${pathSnippets.slice(0, index + 1).join('/')}`
       const title = pathSnippets[index].charAt(0).toUpperCase() + pathSnippets[index].slice(1)
       return {
-        title: index === pathSnippets.length - 1 ? (
-          <span style={{ color: '#ffffff' }}>{title}</span>
-        ) : (
-          <Link to={url} style={{ color: '#D4AF37' }}>{title}</Link>
-        ),
+        title:
+          index === pathSnippets.length - 1 ? (
+            <span className="app-breadcrumb-current">{title}</span>
+          ) : (
+            <Link to={url} className="app-breadcrumb-link">
+              {title}
+            </Link>
+          ),
       }
     }),
   ]
@@ -278,16 +290,7 @@ const Layout = ({ children }) => {
     <>
       {/* Only show logo in sidebar when NOT using drawer (desktop fixed sidebar) */}
       {!useDrawer && (
-        <div
-          style={{
-            height: 64,
-            margin: 16,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#D4AF37',
-          }}
-        >
+        <div className="app-sidebar-logo">
           {collapsed ? (
             <span style={{ fontSize: 24, fontWeight: 'bold' }}>E</span>
           ) : (
@@ -312,11 +315,12 @@ const Layout = ({ children }) => {
         </div>
       )}
       <Menu
-        theme="dark"
+        theme={isDark ? 'dark' : 'light'}
         mode="inline"
         selectedKeys={[location.pathname]}
         items={menuItems}
         onClick={handleMenuClick}
+        className="app-sidebar-menu"
       />
     </>
   )
@@ -338,7 +342,7 @@ const Layout = ({ children }) => {
           placement="left"
           onClose={() => setMobileMenuVisible(false)}
           open={mobileMenuVisible}
-          bodyStyle={{ padding: 0, background: '#1a1a1a' }}
+          bodyStyle={{ padding: 0, background: 'var(--sidebar-bg)' }}
           width={250}
         >
           {sidebarContent}
@@ -349,6 +353,7 @@ const Layout = ({ children }) => {
           collapsible
           collapsed={collapsed}
           width={250}
+          className="app-layout-sider"
           style={{
             overflow: 'auto',
             height: '100vh',
@@ -357,6 +362,8 @@ const Layout = ({ children }) => {
             top: 0,
             bottom: 0,
             zIndex: 100,
+            background: 'var(--sidebar-bg)',
+            borderRight: '1px solid var(--border-color)',
           }}
           breakpoint="lg"
           collapsedWidth={80}
@@ -375,34 +382,31 @@ const Layout = ({ children }) => {
           overflowX: 'hidden',
         }}
       >
-        <Header
-          style={{
-            padding: isMobile ? '0 12px' : '0 24px',
-            background: '#1a1a1a',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: '1px solid #333',
-            position: 'sticky',
-            top: 0,
-            zIndex: 99,
-          }}
-        >
+        <Header className="app-layout-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             {useDrawer ? (
-              <MenuUnfoldOutlined
-                onClick={() => setMobileMenuVisible(true)}
-                style={{ fontSize: 18, color: '#D4AF37', cursor: 'pointer' }}
-              />
+              <MenuUnfoldOutlined onClick={() => setMobileMenuVisible(true)} className="app-trigger-icon" style={{ fontSize: 18 }} />
             ) : (
               React.createElement(collapsed ? MenuUnfoldOutlined : MenuFoldOutlined, {
-                className: 'trigger',
+                className: 'trigger app-trigger-icon',
                 onClick: () => setCollapsed(!collapsed),
-                style: { fontSize: 18, color: '#D4AF37', cursor: 'pointer' },
+                style: { fontSize: 18 },
               })
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 12 : 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 16 }}>
+            <Tooltip title={isDark ? 'Light mode' : 'Dark mode'}>
+              <motion.button
+                type="button"
+                className="app-theme-toggle"
+                onClick={toggleTheme}
+                whileHover={{ scale: 1.06 }}
+                whileTap={{ scale: 0.94 }}
+                aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
+              >
+                {isDark ? <SunOutlined /> : <MoonOutlined />}
+              </motion.button>
+            </Tooltip>
             <Popover
               content={
                 <div style={{ width: isMobile ? 280 : 360, maxHeight: 500, overflowY: 'auto' }}>
@@ -546,9 +550,7 @@ const Layout = ({ children }) => {
               overlayStyle={{ padding: 0 }}
             >
               <Badge count={unreadCount} offset={[-5, 5]}>
-                <BellOutlined 
-                  style={{ fontSize: isMobile ? 18 : 20, color: '#ffffff', cursor: 'pointer' }} 
-                />
+                <BellOutlined className="app-header-icon" style={{ fontSize: isMobile ? 18 : 20, cursor: 'pointer' }} />
               </Badge>
             </Popover>
             <Dropdown
@@ -565,30 +567,18 @@ const Layout = ({ children }) => {
                   icon={<UserOutlined />}
                   onError={() => true}
                 />
-                {!isMobile && (
-                  <span style={{ color: '#ffffff', fontSize: isMobile ? 12 : 14 }}>
-                    {user?.name || 'User'}
-                  </span>
-                )}
+                {!isMobile && <span className="app-header-user-name">{user?.name || 'User'}</span>}
               </div>
             </Dropdown>
           </div>
         </Header>
-        <Content
-          style={{
-            margin: isMobile ? '12px 8px' : '24px 16px',
-            padding: isMobile ? '12px 32px 12px 16px' : '24px 48px 24px 32px',
-            minHeight: 280,
-            background: '#0a0a0a',
-            overflowX: 'hidden',
-            maxWidth: '100%',
-          }}
-        >
-          <Breadcrumb
-            items={breadcrumbItems}
-            style={{ marginBottom: isMobile ? 12 : 16 }}
-          />
-          {children}
+        <Content className="app-main-content">
+          <Breadcrumb items={breadcrumbItems} className="app-breadcrumb" style={{ marginBottom: isMobile ? 12 : 16 }} />
+          <AnimatePresence mode="wait">
+            <AnimatedWrapper key={location.pathname} variant="page" className="app-page-inner">
+              {children}
+            </AnimatedWrapper>
+          </AnimatePresence>
         </Content>
       </AntLayout>
 

@@ -1,6 +1,6 @@
 # AskEva CRM Lead Sync
 
-Sync all leads from AskEva CRM (`apiv2.askeva.io`) into your local leads collection.
+**Sync AskEva** calls `GET backend.askeva.net/v1/leads?token=...` (same as Postman), then compares with your local leads: **updates existing** (by AskEva `id` or phone) and **creates new** ones — no duplicate leads.
 
 ## Setup
 
@@ -9,16 +9,22 @@ Sync all leads from AskEva CRM (`apiv2.askeva.io`) into your local leads collect
 Add to `backend/.env`:
 
 ```env
-# AskEva API (optional - defaults to WHATSAPP_API_KEY if not set)
-ASKEVA_API_URL=https://apiv2.askeva.io
-ASKEVA_API_TOKEN=your_askeva_api_token
+# Token for v1/leads (same value as in Postman: ?token=... or Bearer)
+WHATSAPP_API_KEY=your_token_here
+# Or: ASKEVA_API_TOKEN=your_token_here
 
-# If AskEva returns 403, the API may require a user-scoped URL. Set this to your AskEva user ID
-# (you can find it in the leads API response as "userId" on each lead, e.g. 699c27f2400f94f14670dd7f).
+# Optional: override leads API base (default https://backend.askeva.net)
+# ASKEVA_SYNC_API_URL=https://backend.askeva.net
+
+# Fallback / legacy: only if v1/leads returns 404
+# ASKEVA_API_URL=https://apiv2.askeva.io
 # ASKEVA_USER_ID=699c27f2400f94f14670dd7f
+
+# Use only legacy lead-configuration/leads (skip v1/leads)
+# ASKEVA_SYNC_USE_LEADS_API_ONLY=true
 ```
 
-If `ASKEVA_API_TOKEN` is not set, the sync uses `WHATSAPP_API_KEY` (same key as your webhook).
+If `ASKEVA_API_TOKEN` is not set, the sync uses `WHATSAPP_API_KEY`.
 
 ### 2. API Token and 403 Forbidden
 
@@ -50,15 +56,11 @@ curl -X POST https://e-spa.askeva.net/api/leads/sync-askeva \
 
 ## How It Works
 
-1. Fetches all leads from `GET https://apiv2.askeva.io/v1/lead-configuration/leads`
-2. Maps AskEva fields to your Lead model:
-   - `name` → `first_name`, `last_name`
-   - `fullMobile` / `mobile` → `phone`, `whatsapp`
-   - `status` → mapped to your status enum
-   - `source` → mapped to your source enum
-   - `id` → stored in `askevaLeadId` for deduplication
-3. Creates new leads or updates existing (matched by `askevaLeadId` or phone)
-4. Auto-assigns new leads to branch users (default branch: Anna Nagar)
+1. **Primary:** `GET {ASKEVA_SYNC_API_URL}/v1/leads?token=TOKEN` (default base: `https://backend.askeva.net`). Same request as in Postman; response `{ success: true, data: [ ... ] }`.
+2. **Deduplication:** For each AskEva lead, finds an existing local lead by `askevaLeadId` (AskEva `id`) or by `phone`/`whatsapp`. If found → **update**; otherwise → **create** (no duplicates).
+3. **Field mapping:** `id` → `askevaLeadId`, `name` → `first_name`/`last_name`, `fullMobile`/`mobile` → `phone`/`whatsapp`, `source`/`status` → your enums, `description` → message/notes.
+4. **Fallback:** If v1/leads returns 404, sync tries legacy `.../lead-configuration/leads` with header auth.
+5. Auto-assigns **new** leads to branch users (default branch: Anna Nagar).
 
 ## Webhook + Sync
 

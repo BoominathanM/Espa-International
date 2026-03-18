@@ -1,0 +1,155 @@
+/**
+ * Call Management, Customer Management, Reports, System Settings — light/dark via CSS variables.
+ */
+
+.mgmt-page {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  position: relative;
+}
+
+.mgmt-page-title,
+.settings-page-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.settings-page-title {
+  margin-bottom: 24px;
+}
+
+@media (max-width: 767px) {
+  .mgmt-page-title,
+  .settings-page-title {
+    font-size: 20px;
+  }
+}
+
+.mgmt-filters-card.ant-card {
+  margin-bottom: 16px;
+  background: var(--card-bg) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.mgmt-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mgmt-modal-hint {
+  color: var(--text-muted);
+}
+
+.mgmt-loading-text {
+  margin-top: 16px;
+  color: var(--text-color);
+}
+
+.mgmt-empty-permission {
+  text-align: center;
+  padding: 50px;
+  color: var(--text-muted);
+}
+
+/* Tabs (Customers, Settings) */
+.mgmt-tabs.ant-tabs .ant-tabs-ink-bar {
+  background: var(--primary-color) !important;
+}
+
+.mgmt-tabs.ant-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--primary-color) !important;
+}
+
+.mgmt-tabs.ant-tabs .ant-tabs-tab.ant-tabs-tab-active .anticon {
+  color: var(--primary-color) !important;
+}
+
+.mgmt-tabs.ant-tabs .ant-tabs-tab:hover .ant-tabs-tab-btn {
+  color: var(--primary-color);
+}
+
+/* Reports & shared stat cards */
+.mgmt-card.ant-card {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.mgmt-card .ant-card-head {
+  border-bottom-color: var(--border-color);
+  color: var(--primary-color);
+}
+
+.mgmt-card-title-text {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.mgmt-stat-title {
+  color: var(--text-secondary);
+}
+
+/* Recharts inside Reports */
+.reports-page .recharts-cartesian-grid-horizontal line,
+.reports-page .recharts-cartesian-grid-vertical line {
+  stroke: var(--chart-grid) !important;
+}
+
+.reports-page .recharts-cartesian-axis-tick text {
+  fill: var(--chart-axis) !important;
+}
+
+.reports-page .recharts-legend-item-text {
+  fill: var(--text-color) !important;
+  color: var(--text-color) !important;
+}
+
+.reports-page .recharts-pie .recharts-layer text {
+  fill: var(--chart-label-fill) !important;
+}
+
+/* Settings sub-pages (Users, API, etc.) */
+.mgmt-settings-card.ant-card {
+  background: var(--card-bg) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.mgmt-settings-section-title {
+  color: var(--primary-color);
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+@media (max-width: 767px) {
+  .mgmt-settings-section-title {
+    font-size: 18px;
+  }
+}
+
+.mgmt-body-text {
+  color: var(--text-color);
+  margin: 0;
+}
+
+/* Customer timeline modal */
+.mgmt-section-heading {
+  color: var(--primary-color);
+  margin-bottom: 16px;
+}
+
+.mgmt-subheading {
+  color: var(--text-color);
+}
+
+.logs-notification-read {
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+.logs-notification-unread {
+  font-weight: bold;
+  color: var(--text-color);
+}

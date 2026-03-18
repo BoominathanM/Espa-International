@@ -1,0 +1,445 @@
+/**
+ * Lead Management page – theme-aware styles.
+ * Use CSS variables only; no hardcoded colors for light/dark.
+ */
+
+/* ----- Page header ----- */
+.leads-page-header {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: stretch;
+  margin-bottom: 16px;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+
+@media (min-width: 768px) {
+  .leads-page-header {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.leads-page-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+@media (max-width: 767px) {
+  .leads-page-title {
+    font-size: 20px;
+  }
+}
+
+.leads-page-subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ----- Filters card ----- */
+.leads-filters-card {
+  margin-bottom: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.leads-filters-row {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 12px;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .leads-filters-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+/* ----- Status column (pending/total) ----- */
+.leads-reminder-tag-wrap {
+  font-size: 12px;
+}
+
+.leads-reminder-stats {
+  line-height: 1.35;
+}
+
+.leads-reminder-pending {
+  color: var(--primary-color);
+}
+
+.leads-reminder-pending-muted {
+  color: var(--text-muted);
+}
+
+.leads-reminder-total {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+/* ----- View modal – Lead Details ----- */
+.leads-view-modal .ant-modal-body {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.leads-detail-card {
+  margin-bottom: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.leads-detail-card .ant-card-head {
+  color: var(--primary-color);
+  border-bottom-color: var(--border-color);
+}
+
+.leads-detail-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .leads-detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.leads-detail-row {
+  margin: 8px 0;
+  color: var(--text-color);
+}
+
+.leads-detail-label {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.leads-detail-block {
+  margin: 8px 0;
+}
+
+.leads-detail-block-content {
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--table-header-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+}
+
+/* ----- Follow-up modal ----- */
+.leads-followup-modal .ant-modal-content {
+  background: var(--card-bg);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.leads-followup-modal .ant-modal-body {
+  padding: 0;
+}
+
+.leads-followup-wrap {
+  display: flex;
+  flex-direction: column;
+  min-height: 520px;
+}
+
+@media (max-width: 767px) {
+  .leads-followup-wrap {
+    min-height: auto;
+  }
+}
+
+.leads-followup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--table-header-bg);
+}
+
+.leads-followup-header-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.leads-followup-header-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.leads-followup-header-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.leads-followup-header-meta strong {
+  color: var(--primary-color);
+}
+
+.leads-followup-close {
+  color: var(--text-muted);
+}
+
+.leads-followup-body {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+}
+
+@media (max-width: 767px) {
+  .leads-followup-body {
+    flex-direction: column;
+  }
+}
+
+.leads-followup-sidebar {
+  width: 170px;
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+  background: var(--bg-color);
+}
+
+@media (max-width: 767px) {
+  .leads-followup-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    flex-direction: row;
+    padding: 0;
+  }
+}
+
+.leads-followup-tab {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 14px;
+  border-left: 3px solid transparent;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  flex: none;
+  justify-content: flex-start;
+}
+
+@media (max-width: 767px) {
+  .leads-followup-tab {
+    padding: 12px 16px;
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+.leads-followup-tab.active {
+  color: var(--primary-color);
+  font-weight: 600;
+  border-left-color: var(--primary-color);
+  background: rgba(212, 175, 55, 0.08);
+}
+
+@media (max-width: 767px) {
+  .leads-followup-tab.active {
+    border-left: none;
+    border-bottom-color: var(--primary-color);
+  }
+}
+
+.leads-followup-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  max-height: 420px;
+}
+
+@media (max-width: 767px) {
+  .leads-followup-content {
+    max-height: none;
+  }
+}
+
+.leads-followup-section-title {
+  color: var(--text-color);
+  margin-bottom: 16px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.leads-followup-section-title-sm {
+  margin-bottom: 4px;
+}
+
+.leads-followup-label {
+  font-size: 12px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4px;
+  color: var(--primary-color);
+}
+
+.leads-followup-label-optional {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 12px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.leads-followup-required {
+  color: var(--color-danger);
+}
+
+.leads-followup-timeline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary-color);
+  border-bottom: 2px solid var(--primary-color);
+}
+
+.leads-followup-timeline-box {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  background: var(--table-header-bg);
+}
+
+.leads-followup-timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+}
+
+.leads-followup-timeline-item:not(:last-child) {
+  padding-bottom: 20px;
+}
+
+.leads-followup-timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex-shrink: 0;
+  background: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.2);
+}
+
+.leads-followup-timeline-line {
+  position: absolute;
+  left: 4px;
+  top: 18px;
+  width: 2px;
+  height: calc(100% - 8px);
+  background: var(--border-color);
+}
+
+.leads-followup-timeline-text {
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.leads-followup-timeline-meta {
+  font-size: 12px;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.leads-followup-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--table-header-bg);
+}
+
+.leads-followup-footer .ant-btn-primary {
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+/* ----- Call modal ----- */
+.leads-call-modal .leads-call-row {
+  margin-bottom: 8px;
+  color: var(--text-color);
+}
+
+.leads-call-modal .leads-call-row:last-of-type {
+  margin-bottom: 16px;
+}
+
+.leads-call-warning {
+  color: var(--color-warning);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* ----- Import modal ----- */
+.leads-import-modal .ant-modal-body {
+  color: var(--text-color);
+}
+
+.leads-import-modal .leads-import-strong {
+  color: var(--text-color);
+}
+
+.leads-import-modal .leads-import-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.leads-import-modal .leads-import-code {
+  font-size: 11px;
+  font-family: monospace;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--table-header-bg);
+  border: 1px solid var(--border-color);
+}
+
+.leads-import-error-pre {
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  max-height: 200px;
+  overflow: auto;
+  margin-top: 8px;
+  background: var(--table-header-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+}
+
+/* ----- Form modal (Add/Edit) ----- */
+.leads-form-modal .ant-modal-body {
+  padding: 20px 24px;
+}
+
+@media (max-width: 767px) {
+  .leads-form-modal .ant-modal-body {
+    padding: 12px 16px;
+  }
+}

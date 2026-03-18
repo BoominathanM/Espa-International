@@ -12,12 +12,15 @@ import {
   Card,
   Timeline,
   message,
-  Popconfirm,
   Spin,
   App,
   Upload,
   Alert,
   Empty,
+  Dropdown,
+  Row,
+  Col,
+  Segmented,
 } from 'antd'
 import {
   PlusOutlined,
@@ -37,9 +40,11 @@ import {
   HistoryOutlined,
   CloseOutlined,
   CheckOutlined,
+  MoreOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { canCreate, canEdit, canDelete } from '../../utils/permissions'
+import './LeadsPage.css'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
   useGetLeadsQuery,
@@ -112,6 +117,8 @@ const Leads = () => {
   const [filterBranch, setFilterBranch] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  /** 'all' = every lead; 'remainder' = leads that have at least one reminder */
+  const [leadsListTab, setLeadsListTab] = useState('all')
 
   const navigate = useNavigate()
   const location = useLocation()
@@ -139,6 +146,7 @@ const Leads = () => {
     branch: filterBranch || undefined,
     page: currentPage,
     limit: pageSize,
+    hasReminders: leadsListTab === 'remainder' ? true : undefined,
   })
 
   const { data: branchesData } = useGetBranchesQuery()
@@ -215,6 +223,8 @@ const Leads = () => {
       createdAt: lead.createdAt ? dayjs(lead.createdAt).format('YYYY-MM-DD') : '',
       websiteUrl: lead.websiteUrl,
       ipAddress: lead.ipAddress,
+      reminders: lead.reminders || [],
+      pendingReminderCount: (lead.reminders || []).filter((r) => r.status === 'Pending').length,
     }))
   }, [leads])
 
@@ -223,12 +233,14 @@ const Leads = () => {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
+      ellipsis: true,
       sorter: (a, b) => a.name.localeCompare(b.name),
     },
     {
       title: 'Mobile',
       dataIndex: 'mobile',
       key: 'mobile',
+      width: 118,
     },
     {
       title: 'Email',
@@ -293,9 +305,10 @@ const Leads = () => {
       onFilter: (value, record) => record.status === value,
     },
     {
-      title: 'Assigned Agent',
+      title: 'Assigned',
       dataIndex: 'assignedTo',
       key: 'assignedTo',
+      ellipsis: true,
       render: (assignedTo) => {
         if (!assignedTo || assignedTo === 'undefined' || assignedTo === 'null' || assignedTo === 'Unassigned') {
           return 'Unassigned'
@@ -311,59 +324,110 @@ const Leads = () => {
       render: (text) => text || '-',
     },
     {
-      title: 'Actions',
+      title: 'Action',
       key: 'actions',
       fixed: 'right',
-      width: 200,
-      render: (_, record) => (
-        <Space size="small">
-          {canCreate('calls') && record.mobile && (
-            <Button
-              type="link"
-              size="small"
-              icon={<PhoneOutlined />}
-              onClick={() => openCallModal(record)}
-            >
-              Call
-            </Button>
-          )}
-          <Button
-            type="link"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => {
-              setSelectedLead(record)
-              setIsTimelineVisible(true)
+      width: 50,
+      align: 'center',
+      render: (_, record) => {
+        const items = []
+        // if (canCreate('calls') && record.mobile) {
+        //   items.push({ key: 'call', label: 'Call', icon: <PhoneOutlined /> })
+        // }
+        items.push({ key: 'view', label: 'View details', icon: <EyeOutlined /> })
+        if (canEdit('leads')) {
+          items.push({ key: 'edit', label: 'Edit lead', icon: <EditOutlined /> })
+        }
+        if (canDelete('leads')) {
+          items.push({ type: 'divider' })
+          items.push({
+            key: 'delete',
+            label: 'Delete',
+            icon: <DeleteOutlined />,
+            danger: true,
+          })
+        }
+        return (
+          <Dropdown
+            menu={{
+              items,
+              style: { maxHeight: 280, overflowY: 'auto' },
+              onClick: ({ key, domEvent }) => {
+                domEvent?.stopPropagation()
+                if (key === 'call') openCallModal(record)
+                else if (key === 'view') {
+                  setSelectedLead(record)
+                  setIsTimelineVisible(true)
+                } else if (key === 'edit') handleEdit(record)
+                else if (key === 'delete') {
+                  Modal.confirm({
+                    title: 'Delete this lead?',
+                    content: 'This action cannot be undone.',
+                    okText: 'Delete',
+                    okType: 'danger',
+                    cancelText: 'Cancel',
+                    onOk: () => handleDelete(record._id),
+                  })
+                }
+              },
             }}
+            trigger={['click']}
+            placement="bottomRight"
+            overlayClassName="leads-actions-dropdown"
           >
-            View
-          </Button>
-          {canEdit('leads') && (
             <Button
-              type="link"
+              type="text"
               size="small"
-              icon={<EditOutlined />}
-              onClick={() => handleEdit(record)}
-            >
-              Edit
-            </Button>
-          )}
-          {canDelete('leads') && (
-            <Popconfirm
-              title="Delete this lead?"
-              onConfirm={() => handleDelete(record._id)}
-              okText="Yes"
-              cancelText="No"
-            >
-              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-                Delete
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+              icon={<MoreOutlined className="leads-table-action-icon" style={{ fontSize: 18 }} />}
+              onClick={(e) => e.stopPropagation()}
+              aria-label="Lead actions"
+            />
+          </Dropdown>
+        )
+      },
     },
   ]
+
+  const reminderSummaryColumn = {
+    title: 'Reminders',
+    key: 'reminderSummary',
+    width: isMobile ? 88 : 132,
+    render: (_, r) => {
+      const list = r.reminders || []
+      const pending = list.filter((x) => x.status === 'Pending').length
+      const total = list.length
+      if (isMobile) {
+        return (
+          <span className="leads-reminder-tag-wrap">
+            <Tag color={pending > 0 ? 'gold' : 'default'} style={{ margin: 0 }}>
+              {pending}/{total}
+            </Tag>
+          </span>
+        )
+      }
+      return (
+        <div className="leads-reminder-stats">
+          <div className={pending > 0 ? 'leads-reminder-pending' : 'leads-reminder-pending-muted'}>{pending} pending</div>
+          <div className="leads-reminder-total">{total} total</div>
+        </div>
+      )
+    },
+  }
+
+  const tableColumns = (() => {
+    let cols = isMobile
+      ? columns.filter((c) => ['name', 'mobile', 'status', 'actions'].includes(c.key))
+      : columns
+    if (leadsListTab === 'remainder') {
+      const actionIdx = cols.findIndex((c) => c.key === 'actions')
+      if (actionIdx >= 0) {
+        cols = [...cols.slice(0, actionIdx), reminderSummaryColumn, ...cols.slice(actionIdx)]
+      } else {
+        cols = [...cols, reminderSummaryColumn]
+      }
+    }
+    return cols
+  })()
 
   const handleAdd = () => {
     setSelectedLead(null)
@@ -658,19 +722,11 @@ const Leads = () => {
             <div>
               <p>{summary}</p>
               {result.results.errors.length > 10 && (
-                <p style={{ fontSize: '12px', color: '#888' }}>
+                <p className="leads-import-note">
                   Showing first 10 errors. Total errors: {result.results.errors.length}
                 </p>
               )}
-              <pre style={{
-                background: '#2a2a2a',
-                padding: 8,
-                borderRadius: 4,
-                fontSize: '11px',
-                maxHeight: '200px',
-                overflow: 'auto',
-                marginTop: 8
-              }}>
+              <pre className="leads-import-error-pre">
                 {errorDetails}
               </pre>
             </div>
@@ -740,17 +796,13 @@ const Leads = () => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <div style={{
-        display: 'flex',
-        flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between',
-        alignItems: isMobile ? 'stretch' : 'center',
-        marginBottom: 16,
-        gap: 12,
-      }}>
-        <h1 style={{ color: '#D4AF37', margin: 0, fontSize: isMobile ? '20px' : '24px' }}>Lead Management</h1>
-        <Space wrap style={{ width: isMobile ? '100%' : 'auto' }}>
+    <div className="leads-management-page" style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
+      <div className="leads-page-header">
+        <div>
+          <h1 className="leads-page-title">Lead Management</h1>
+          <p className="leads-page-subtitle">View, filter, and manage leads. Row click opens follow-up.</p>
+        </div>
+        <Space wrap style={{ width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'stretch' : 'flex-end' }}>
           <Button icon={<SyncOutlined />} onClick={handleSyncAskEva} loading={syncAskEvaLoading} size={isMobile ? 'small' : 'middle'}>
             {isMobile ? 'Sync AskEva' : 'Sync AskEva'}
           </Button>
@@ -776,14 +828,8 @@ const Leads = () => {
       </div>
 
       {showFilters && (
-        <Card style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}>
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            flexWrap: isMobile ? 'nowrap' : 'wrap',
-            gap: 12,
-            width: '100%'
-          }}>
+        <Card className="leads-filters-card">
+          <div className="leads-filters-row">
             <Input
               placeholder="Search by name, email or phone"
               prefix={<SearchOutlined />}
@@ -843,28 +889,54 @@ const Leads = () => {
         </Card>
       )}
 
-      <div className="table-responsive-wrapper">
+      <Card
+        className="leads-table-card"
+        styles={{ body: { padding: isMobile ? 8 : 16 } }}
+      >
+      <div style={{ marginBottom: 12 }}>
+        <Segmented
+          block={isMobile}
+          value={leadsListTab}
+          onChange={(key) => {
+            setLeadsListTab(key)
+            setCurrentPage(1)
+          }}
+          options={[
+            { label: 'All leads', value: 'all' },
+            { label: 'Remainder leads', value: 'remainder' },
+          ]}
+          size={isMobile ? 'small' : 'middle'}
+        />
+      </div>
+      <p className="leads-table-subtitle">
+        {leadsListTab === 'all'
+          ? 'Every lead in your CRM.'
+          : 'Only leads with at least one reminder. Open a lead row → Follow-up → Reminders to add or manage.'}
+      </p>
+      <div className="table-responsive-wrapper leads-table-scroll">
         {leadsLoading ? (
           <div style={{ textAlign: 'center', padding: '40px 0' }}>
             <Spin size="large" />
-            <p style={{ color: '#fff', marginTop: 16 }}>Loading leads...</p>
+            <p className="leads-loading-text">Loading leads...</p>
           </div>
         ) : (
           <Table
-            columns={columns}
+            columns={tableColumns}
             dataSource={transformedLeads}
             pagination={{
               current: currentPage,
               pageSize: pageSize,
               total: pagination.total,
               showSizeChanger: true,
-              showTotal: (total) => `Total ${total} leads`,
+              showTotal: (total) =>
+                leadsListTab === 'remainder'
+                  ? `Total ${total} leads with reminders`
+                  : `Total ${total} leads`,
               onChange: (page, size) => {
                 setCurrentPage(page)
                 setPageSize(size)
               },
             }}
-            style={{ background: '#1a1a1a' }}
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
             onRow={(record) => ({
@@ -879,9 +951,10 @@ const Leads = () => {
           />
         )}
       </div>
+      </Card>
 
       <Modal
-        title={selectedLead ? 'Edit Lead' : 'Add New Lead'}
+        title={selectedLead ? 'Edit lead' : 'Add new lead'}
         open={isModalVisible}
         onCancel={() => {
           setIsModalVisible(false)
@@ -889,7 +962,16 @@ const Leads = () => {
           setSelectedLead(null)
         }}
         footer={null}
-        width={isMobile ? '95%' : 600}
+        width={isMobile ? '100%' : 820}
+        style={{ top: isMobile ? 0 : 24 }}
+        styles={{
+          body: {
+            maxHeight: 'calc(100vh - 140px)',
+            overflowY: 'auto',
+            padding: isMobile ? '12px 16px' : '20px 24px',
+          },
+        }}
+        className="leads-form-modal"
       >
         <Form
           form={form}
@@ -900,195 +982,198 @@ const Leads = () => {
             status: 'New',
           }}
         >
-          <Form.Item
-            name="first_name"
-            label="First Name"
-            rules={[{ required: true, message: 'Please enter first name' }]}
-          >
-            <Input placeholder="Enter first name" />
-          </Form.Item>
-
-          <Form.Item
-            name="last_name"
-            label="Last Name"
-            rules={[{ required: true, message: 'Please enter last name' }]}
-          >
-            <Input placeholder="Enter last name (optional)" />
-          </Form.Item>
-
-          <Form.Item
-            name="email"
-            label="Email"
-            rules={[
-              { required: true, message: 'Please enter email' },
-              { type: 'email', message: 'Please enter a valid email' },
-            ]}
-          >
-            <Input placeholder="Enter email" />
-          </Form.Item>
-
-          <Form.Item
-            name="phone"
-            label="Mobile"
-            rules={[{ required: true, message: 'Please enter mobile number' }]}
-          >
-            <Input placeholder="Enter mobile number" />
-          </Form.Item>
-
-          <Form.Item name="whatsapp" label="WhatsApp Number">
-            <Input placeholder="Enter WhatsApp number (optional)" />
-          </Form.Item>
-
-          <Form.Item name="subject" label="Subject">
-            <Input placeholder="Enter subject (optional)" />
-          </Form.Item>
-
-          <Form.Item name="message" label="Message">
-            <Input.TextArea rows={3} placeholder="Enter message (optional)" />
-          </Form.Item>
-
-          <Form.Item
-            name="branch"
-            label="Branch"
-            rules={[{ required: true, message: 'Please select branch' }]}
-          >
-            <Select placeholder="Select branch (optional)" allowClear>
-              {branches.map((branch) => (
-                <Option key={branch._id || branch.id} value={branch._id || branch.id}>
-                  {branch.name}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="appointment_date"
-            label="Appointment Date"
-            rules={[
-              { required: true, message: 'Please select appointment date' },
-              {
-                validator: (_, value) => {
-                  if (!value) return Promise.resolve()
-
-                  const nowPlus24 = dayjs().add(24, 'hour')
-                  if (value.isBefore(nowPlus24, 'day')) {
-                    return Promise.reject(
-                      new Error('Appointment must be booked at least 24 hours in advance')
-                    )
-                  }
-                  return Promise.resolve()
-                },
-              },
-            ]}
-          >
-            <DatePicker
-              style={{ width: '100%' }}
-              format="YYYY-MM-DD"
-              disabledDate={(current) =>
-                current && current < dayjs().startOf('day')
-              }
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="slot_time"
-            label="Slot Time"
-            rules={[{ required: true, message: 'Please select slot time' }]}
-          >
-            <Select placeholder="Select slot time">
-              {SLOT_TIMES.map((time) => (
-                <Option key={time} value={time}>
-                  {time}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="spa_package"
-            label="Spa Package"
-            rules={[{ required: true, message: 'Please select spa package' }]}
-          >
-            <Select placeholder="Select spa package">
-              {SPA_PACKAGES.map((pkg) => (
-                <Option key={pkg} value={pkg}>
-                  {pkg}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="source"
-            label="Lead Source"
-            rules={[{ required: true, message: 'Please select source' }]}
-          >
-            <Select placeholder="Select source">
-              <Option value="Add">Add</Option>
-              <Option value="Call">Call</Option>
-              <Option value="WhatsApp">WhatsApp</Option>
-              <Option value="Facebook">Facebook</Option>
-              <Option value="Insta">Insta</Option>
-              <Option value="Website">Website</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="status" label="Lead Stage">
-            <Select placeholder="Select stage">
-              <Option value="New">New</Option>
-              <Option value="In Progress">In Progress</Option>
-              <Option value="Follow-Up">Follow-Up</Option>
-              <Option value="Converted">Converted</Option>
-              <Option value="Lost">Lost</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="assignedTo" label="Assigned To">
-            <Select placeholder="Select agent (optional)" allowClear>
-              {users.map((user) => (
-                <Option key={user._id || user.id} value={user._id || user.id}>
-                  {user.name} ({user.email})
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="notes" label="Notes">
-            <Input.TextArea rows={4} placeholder="Enter notes (optional)" />
-          </Form.Item>
-
-          <Form.Item>
-            <div style={{
-              display: 'flex',
-              flexDirection: isMobile ? 'column' : 'row',
-              gap: 8,
-              width: '100%'
-            }}>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={createLoading || updateLoading}
-                style={{ width: isMobile ? '100%' : 'auto' }}
+          <Row gutter={[16, 0]}>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="first_name"
+                label="First name"
+                rules={[{ required: true, message: 'Required' }]}
               >
-                {selectedLead ? 'Update' : 'Create'}
+                <Input placeholder="First name" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="last_name"
+                label="Last name"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder="Last name" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="email"
+                label="Email"
+                rules={[
+                  { required: true, message: 'Required' },
+                  { type: 'email', message: 'Invalid email' },
+                ]}
+              >
+                <Input placeholder="Email" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="phone"
+                label="Mobile"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder="Mobile number" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item name="whatsapp" label="WhatsApp">
+                <Input placeholder="Optional" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item name="subject" label="Subject">
+                <Input placeholder="Optional" />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="message" label="Message">
+                <Input.TextArea rows={2} placeholder="Optional" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="branch"
+                label="Branch"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Select placeholder="Select branch" allowClear>
+                  {branches.map((branch) => (
+                    <Option key={branch._id || branch.id} value={branch._id || branch.id}>
+                      {branch.name}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="appointment_date"
+                label="Appointment date"
+                rules={[
+                  { required: true, message: 'Required' },
+                  {
+                    validator: (_, value) => {
+                      if (!value) return Promise.resolve()
+                      const nowPlus24 = dayjs().add(24, 'hour')
+                      if (value.isBefore(nowPlus24, 'day')) {
+                        return Promise.reject(new Error('At least 24 hours in advance'))
+                      }
+                      return Promise.resolve()
+                    },
+                  },
+                ]}
+              >
+                <DatePicker
+                  style={{ width: '100%' }}
+                  format="YYYY-MM-DD"
+                  disabledDate={(current) => current && current < dayjs().startOf('day')}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="slot_time"
+                label="Slot time"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Select placeholder="Select slot">
+                  {SLOT_TIMES.map((time) => (
+                    <Option key={time} value={time}>
+                      {time}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="spa_package"
+                label="Spa package"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Select placeholder="Select package">
+                  {SPA_PACKAGES.map((pkg) => (
+                    <Option key={pkg} value={pkg}>
+                      {pkg}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                name="source"
+                label="Lead source"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Select placeholder="Source">
+                  <Option value="Add">Add</Option>
+                  <Option value="Call">Call</Option>
+                  <Option value="WhatsApp">WhatsApp</Option>
+                  <Option value="Facebook">Facebook</Option>
+                  <Option value="Insta">Insta</Option>
+                  <Option value="Website">Website</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item name="status" label="Stage">
+                <Select placeholder="Stage">
+                  <Option value="New">New</Option>
+                  <Option value="In Progress">In Progress</Option>
+                  <Option value="Follow-Up">Follow-Up</Option>
+                  <Option value="Converted">Converted</Option>
+                  <Option value="Lost">Lost</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="assignedTo" label="Assigned to">
+                <Select placeholder="Agent (optional)" allowClear>
+                  {users.map((user) => (
+                    <Option key={user._id || user.id} value={user._id || user.id}>
+                      {user.name} ({user.email})
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="notes" label="Notes">
+                <Input.TextArea rows={3} placeholder="Internal notes" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item style={{ marginBottom: 0, marginTop: 8 }}>
+            <Space wrap style={{ width: '100%' }}>
+              <Button type="primary" htmlType="submit" loading={createLoading || updateLoading} size="large">
+                {selectedLead ? 'Save changes' : 'Create lead'}
               </Button>
               <Button
+                size="large"
                 onClick={() => {
                   setIsModalVisible(false)
                   form.resetFields()
                   setSelectedLead(null)
                 }}
-                style={{ width: isMobile ? '100%' : 'auto' }}
               >
                 Cancel
               </Button>
-            </div>
+            </Space>
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* Old View Modal - Lead Details (read-only) */}
+      {/* View Modal - Lead Details (read-only) */}
       <Modal
+        className="leads-view-modal"
         title="Lead Details"
         open={isTimelineVisible}
         onCancel={() => {
@@ -1098,119 +1183,62 @@ const Leads = () => {
         footer={null}
         width={isMobile ? '95%' : 700}
         style={{ top: 20 }}
-        styles={{
-          body: {
-            maxHeight: 'calc(100vh - 120px)',
-            overflowY: 'auto',
-            padding: '16px',
-          },
-        }}
       >
         {selectedLead && (
           <div>
-            <Card
-              title="Personal Information"
-              style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
-              styles={{ header: { color: '#D4AF37', borderColor: '#303030' } }}
-            >
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+            <Card title="Personal Information" className="leads-detail-card">
+              <div className="leads-detail-grid">
                 <div>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>First Name:</strong> {selectedLead.first_name || selectedLead.name?.split(' ')[0] || 'N/A'}
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Last Name:</strong> {selectedLead.last_name || selectedLead.name?.split(' ').slice(1).join(' ') || 'N/A'}
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Email:</strong> {selectedLead.email || 'N/A'}
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Mobile:</strong> {selectedLead.mobile || 'N/A'}
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>WhatsApp:</strong> {selectedLead.whatsapp || 'N/A'}
-                  </p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">First Name:</strong> {selectedLead.first_name || selectedLead.name?.split(' ')[0] || 'N/A'}</p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Last Name:</strong> {selectedLead.last_name || selectedLead.name?.split(' ').slice(1).join(' ') || 'N/A'}</p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Email:</strong> {selectedLead.email || 'N/A'}</p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Mobile:</strong> {selectedLead.mobile || 'N/A'}</p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">WhatsApp:</strong> {selectedLead.whatsapp || 'N/A'}</p>
                 </div>
                 <div>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Source:</strong> <Tag color="purple">{selectedLead.source || 'N/A'}</Tag>
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Status:</strong> <Tag color={
-                      selectedLead.status === 'New' ? 'blue' :
-                        selectedLead.status === 'In Progress' ? 'orange' :
-                          selectedLead.status === 'Follow-Up' ? 'purple' :
-                            selectedLead.status === 'Converted' ? 'green' :
-                              selectedLead.status === 'Lost' ? 'red' : 'default'
-                    }>{selectedLead.status || 'N/A'}</Tag>
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Branch:</strong> {selectedLead.branch || 'Unassigned'}
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Assigned To:</strong> {selectedLead.assignedTo || 'Unassigned'}
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Created At:</strong> {selectedLead.createdAt || 'N/A'}
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Last Interaction:</strong> {selectedLead.lastInteraction || 'N/A'}
-                  </p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Source:</strong> <Tag color="purple">{selectedLead.source || 'N/A'}</Tag></p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Status:</strong> <Tag color={
+                    selectedLead.status === 'New' ? 'blue' :
+                      selectedLead.status === 'In Progress' ? 'orange' :
+                        selectedLead.status === 'Follow-Up' ? 'purple' :
+                          selectedLead.status === 'Converted' ? 'green' :
+                            selectedLead.status === 'Lost' ? 'red' : 'default'
+                  }>{selectedLead.status || 'N/A'}</Tag></p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Branch:</strong> {selectedLead.branch || 'Unassigned'}</p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Assigned To:</strong> {selectedLead.assignedTo || 'Unassigned'}</p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Created At:</strong> {selectedLead.createdAt || 'N/A'}</p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Last Interaction:</strong> {selectedLead.lastInteraction || 'N/A'}</p>
                 </div>
               </div>
             </Card>
 
-            <Card
-              title="Appointment Details"
-              style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
-              styles={{ header: { color: '#D4AF37', borderColor: '#303030' } }}
-            >
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+            <Card title="Appointment Details" className="leads-detail-card">
+              <div className="leads-detail-grid">
                 <div>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Appointment Date:</strong> {
-                      selectedLead.appointment_date
-                        ? dayjs(selectedLead.appointment_date).format('MMMM DD, YYYY')
-                        : 'Not scheduled'
-                    }
-                  </p>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Slot Time:</strong> {selectedLead.slot_time || 'Not specified'}
-                  </p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Appointment Date:</strong> {selectedLead.appointment_date ? dayjs(selectedLead.appointment_date).format('MMMM DD, YYYY') : 'Not scheduled'}</p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Slot Time:</strong> {selectedLead.slot_time || 'Not specified'}</p>
                 </div>
                 <div>
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Spa Package:</strong> {selectedLead.spa_package || 'Not specified'}
-                  </p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Spa Package:</strong> {selectedLead.spa_package || 'Not specified'}</p>
                 </div>
               </div>
             </Card>
 
             {(selectedLead.subject || selectedLead.message || selectedLead.notes) && (
-              <Card
-                title="Additional Information"
-                style={{ marginBottom: 16, background: '#1a1a1a', borderColor: '#303030' }}
-                styles={{ header: { color: '#D4AF37', borderColor: '#303030' } }}
-              >
+              <Card title="Additional Information" className="leads-detail-card">
                 {selectedLead.subject && (
-                  <p style={{ margin: '8px 0', color: '#fff' }}>
-                    <strong style={{ color: '#D4AF37' }}>Subject:</strong> {selectedLead.subject}
-                  </p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Subject:</strong> {selectedLead.subject}</p>
                 )}
                 {selectedLead.message && (
-                  <div style={{ margin: '8px 0' }}>
-                    <strong style={{ color: '#D4AF37' }}>Message:</strong>
-                    <p style={{ color: '#fff', marginTop: 4, padding: 8, background: '#2a2a2a', borderRadius: 4 }}>
-                      {selectedLead.message}
-                    </p>
+                  <div className="leads-detail-block">
+                    <strong className="leads-detail-label">Message:</strong>
+                    <p className="leads-detail-block-content">{selectedLead.message}</p>
                   </div>
                 )}
                 {selectedLead.notes && (
-                  <div style={{ margin: '8px 0' }}>
-                    <strong style={{ color: '#D4AF37' }}>Notes:</strong>
-                    <p style={{ color: '#fff', marginTop: 4, padding: 8, background: '#2a2a2a', borderRadius: 4 }}>
-                      {selectedLead.notes}
-                    </p>
+                  <div className="leads-detail-block">
+                    <strong className="leads-detail-label">Notes:</strong>
+                    <p className="leads-detail-block-content">{selectedLead.notes}</p>
                   </div>
                 )}
               </Card>
@@ -1221,6 +1249,7 @@ const Leads = () => {
 
       {/* Follow-Up Modal - Reminders & Activity Logs */}
       <Modal
+        className="leads-followup-modal"
         open={isFollowUpVisible}
         onCancel={() => {
           setIsFollowUpVisible(false)
@@ -1234,27 +1263,19 @@ const Leads = () => {
         width={isMobile ? '98%' : 900}
         style={{ top: 20 }}
         closable={false}
-        styles={{
-          body: { padding: 0 },
-          content: { background: '#141414', borderRadius: 8, overflow: 'hidden' },
-        }}
       >
         {followUpLead && (
-          <div style={{ display: 'flex', flexDirection: 'column', minHeight: isMobile ? 'auto' : 520 }}>
-            {/* Header */}
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '14px 20px', borderBottom: '1px solid #333', background: '#1a1a1a',
-            }}>
+          <div className="leads-followup-wrap">
+            <div className="leads-followup-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: '#fff', fontSize: 16, fontWeight: 500 }}>Lead Details –</span>
-                <span style={{ color: '#D4AF37', fontSize: 16, fontWeight: 600 }}>
+                <span className="leads-followup-header-title">Lead Details –</span>
+                <span className="leads-followup-header-name">
                   {followUpLead.name || `${followUpLead.first_name || ''} ${followUpLead.last_name || ''}`.trim()}
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <span style={{ color: '#888', fontSize: 13 }}>
-                  Company: <strong style={{ color: '#D4AF37' }}>{followUpLead.branch || 'N/A'}</strong>
+                <span className="leads-followup-header-meta">
+                  Company: <strong>{followUpLead.branch || 'N/A'}</strong>
                 </span>
                 <Button
                   type="text"
@@ -1264,23 +1285,13 @@ const Leads = () => {
                     setFollowUpLead(null)
                     setFollowUpTab('reminders')
                   }}
-                  style={{ color: '#888' }}
+                  className="leads-followup-close"
                 />
               </div>
             </div>
 
-            {/* Body: Sidebar + Content */}
-            <div style={{ display: 'flex', flex: 1, flexDirection: isMobile ? 'column' : 'row' }}>
-              {/* Left Sidebar */}
-              <div style={{
-                width: isMobile ? '100%' : 170,
-                borderRight: isMobile ? 'none' : '1px solid #333',
-                borderBottom: isMobile ? '1px solid #333' : 'none',
-                display: 'flex',
-                flexDirection: isMobile ? 'row' : 'column',
-                padding: isMobile ? '0' : '12px 0',
-                background: '#141414',
-              }}>
+            <div className="leads-followup-body">
+              <div className="leads-followup-sidebar">
                 {[
                   { key: 'reminders', icon: <BellOutlined />, label: 'Reminders' },
                   { key: 'activityLogs', icon: <HistoryOutlined />, label: 'Activity Logs' },
@@ -1288,19 +1299,7 @@ const Leads = () => {
                   <div
                     key={tab.key}
                     onClick={() => setFollowUpTab(tab.key)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: isMobile ? '12px 16px' : '10px 16px',
-                      cursor: 'pointer',
-                      color: followUpTab === tab.key ? '#D4AF37' : '#aaa',
-                      fontWeight: followUpTab === tab.key ? 600 : 400,
-                      fontSize: 14,
-                      borderLeft: !isMobile && followUpTab === tab.key ? '3px solid #D4AF37' : !isMobile ? '3px solid transparent' : 'none',
-                      borderBottom: isMobile && followUpTab === tab.key ? '2px solid #D4AF37' : isMobile ? '2px solid transparent' : 'none',
-                      background: followUpTab === tab.key ? 'rgba(212,175,55,0.08)' : 'transparent',
-                      flex: isMobile ? 1 : 'none',
-                      justifyContent: isMobile ? 'center' : 'flex-start',
-                    }}
+                    className={`leads-followup-tab ${followUpTab === tab.key ? 'active' : ''}`}
                   >
                     {tab.icon}
                     <span>{tab.label}</span>
@@ -1308,17 +1307,16 @@ const Leads = () => {
                 ))}
               </div>
 
-              {/* Right Content */}
-              <div style={{ flex: 1, padding: 20, overflowY: 'auto', maxHeight: isMobile ? 'none' : 420 }}>
+              <div className="leads-followup-content">
 
                 {/* ===== REMINDERS TAB ===== */}
                 {followUpTab === 'reminders' && (
                   <div>
-                    <h3 style={{ color: '#fff', marginBottom: 16, fontSize: 16, fontWeight: 600 }}>Set New Reminder</h3>
+                    <h3 className="leads-followup-section-title">Set New Reminder</h3>
 
                     <div style={{ marginBottom: 12 }}>
-                      <label style={{ color: '#D4AF37', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                        <span style={{ color: '#ff4d4f' }}>*</span> Description
+                      <label className="leads-followup-label">
+                        <span className="leads-followup-required">*</span> Description
                       </label>
                       <Input.TextArea
                         rows={3}
@@ -1330,7 +1328,7 @@ const Leads = () => {
                     </div>
 
                     <div style={{ marginBottom: 12 }}>
-                      <label style={{ color: '#888', fontSize: 12, display: 'block', marginBottom: 4 }}>Quick Replies</label>
+                      <label className="leads-followup-label-optional">Quick Replies</label>
                       <Select
                         placeholder="Select a quick reply to insert in description"
                         style={{ width: '100%', borderRadius: 6 }}
@@ -1348,8 +1346,8 @@ const Leads = () => {
 
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 16 }}>
                       <div>
-                        <label style={{ color: '#D4AF37', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                          <span style={{ color: '#ff4d4f' }}>*</span> Date & Time to be notified
+                        <label className="leads-followup-label">
+                          <span className="leads-followup-required">*</span> Date & Time to be notified
                         </label>
                         <DatePicker
                           showTime
@@ -1362,7 +1360,7 @@ const Leads = () => {
                         />
                       </div>
                       <div>
-                        <label style={{ color: '#888', fontSize: 12, display: 'block', marginBottom: 4 }}>Set reminder to</label>
+                        <label className="leads-followup-label-optional">Set reminder to</label>
                         <Select
                           value={reminderAssignee || (followUpLead.branch || undefined)}
                           onChange={setReminderAssignee}
@@ -1439,7 +1437,7 @@ const Leads = () => {
                               {r.status === 'Pending' && (
                                 <Button
                                   type="link" size="small"
-                                  icon={<CheckOutlined style={{ color: '#52c41a' }} />}
+                                  icon={<CheckOutlined style={{ color: 'var(--color-success)' }} />}
                                   title="Mark Complete"
                                   onClick={async () => {
                                     try {
@@ -1484,47 +1482,28 @@ const Leads = () => {
                 {/* ===== ACTIVITY LOGS TAB ===== */}
                 {followUpTab === 'activityLogs' && (
                   <div>
-                    <h3 style={{ color: '#fff', marginBottom: 4, fontSize: 16, fontWeight: 600 }}>
+                    <h3 className="leads-followup-section-title leads-followup-section-title-sm">
                       Lead Activity History ({leadDetail?.activityLogs?.length || 0})
                     </h3>
-                    <div style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      padding: '4px 12px', borderRadius: 4, marginBottom: 20,
-                      color: '#D4AF37', fontSize: 13, fontWeight: 500,
-                      borderBottom: '2px solid #D4AF37',
-                    }}>
+                    <div className="leads-followup-timeline-badge">
                       <HistoryOutlined /> Timeline View
                     </div>
 
                     {(leadDetail?.activityLogs?.length || 0) === 0 ? (
                       <Empty description="No activity logs yet" />
                     ) : (
-                      <div style={{
-                        border: '1px solid #333', borderRadius: 8, padding: 20,
-                        background: '#1a1a1a',
-                      }}>
+                      <div className="leads-followup-timeline-box">
                         {[...(leadDetail?.activityLogs || [])].reverse().map((log, idx) => (
-                          <div key={log._id || idx} style={{
-                            display: 'flex', alignItems: 'flex-start', gap: 12,
-                            paddingBottom: idx < (leadDetail.activityLogs.length - 1) ? 20 : 0,
-                            position: 'relative',
-                          }}>
-                            <div style={{
-                              width: 10, height: 10, borderRadius: '50%',
-                              background: '#D4AF37', marginTop: 5, flexShrink: 0,
-                              boxShadow: '0 0 0 3px rgba(212,175,55,0.2)',
-                            }} />
+                          <div key={log._id || idx} className="leads-followup-timeline-item">
+                            <div className="leads-followup-timeline-dot" />
                             {idx < (leadDetail.activityLogs.length - 1) && (
-                              <div style={{
-                                position: 'absolute', left: 4, top: 18, width: 2,
-                                height: 'calc(100% - 8px)', background: '#333',
-                              }} />
+                              <div className="leads-followup-timeline-line" />
                             )}
                             <div style={{ flex: 1 }}>
-                              <div style={{ color: '#fff', fontSize: 14 }}>
+                              <div className="leads-followup-timeline-text">
                                 {log.action}{log.details ? ` – ${log.details}` : ''}
                               </div>
-                              <div style={{ color: '#888', fontSize: 12, marginTop: 2 }}>
+                              <div className="leads-followup-timeline-meta">
                                 {log.createdAt ? dayjs(log.createdAt).format('M/D/YYYY, h:mm:ss A') : ''}
                               </div>
                             </div>
@@ -1537,14 +1516,9 @@ const Leads = () => {
               </div>
             </div>
 
-            {/* Footer: Convert to Customer */}
-            <div style={{
-              display: 'flex', justifyContent: 'flex-end',
-              padding: '12px 20px', borderTop: '1px solid #333', background: '#1a1a1a',
-            }}>
+            <div className="leads-followup-footer">
               <Button
                 type="primary"
-                style={{ borderRadius: 6, fontWeight: 600 }}
                 onClick={() => {
                   if (followUpLead) {
                     handleEdit({ ...followUpLead, status: 'Converted' })
@@ -1561,6 +1535,7 @@ const Leads = () => {
       </Modal>
 
       <Modal
+        className="leads-call-modal"
         title="Make Call"
         open={isCallModalVisible}
         onCancel={handleCloseCallModal}
@@ -1582,12 +1557,8 @@ const Leads = () => {
       >
         {callLeadRecord && (
           <div>
-            <p style={{ marginBottom: 8 }}>
-              <strong>Lead:</strong> {callLeadRecord.name}
-            </p>
-            <p style={{ marginBottom: 16 }}>
-              <strong>Phone:</strong> {callLeadRecord.mobile || callLeadRecord.phone}
-            </p>
+            <p className="leads-call-row"><strong>Lead:</strong> {callLeadRecord.name}</p>
+            <p className="leads-call-row"><strong>Phone:</strong> {callLeadRecord.mobile || callLeadRecord.phone}</p>
             <Form.Item label="Campaign" style={{ marginBottom: 0 }}>
               <Select
                 placeholder="Select campaign"
@@ -1603,7 +1574,7 @@ const Leads = () => {
               />
             </Form.Item>
             {campaignIds.length === 0 && !defaultCampaign && (
-              <p style={{ color: '#faad14', fontSize: 12, marginTop: 8 }}>
+              <p className="leads-call-warning">
                 Add Campaign / Agent IDs in Settings → API & Integrations → Ozonetel Integration.
               </p>
             )}
@@ -1612,21 +1583,21 @@ const Leads = () => {
       </Modal>
 
       <Modal
+        className="leads-import-modal"
         title="Import Leads from CSV"
         open={isImportModalVisible}
         onCancel={() => setIsImportModalVisible(false)}
         footer={null}
         width={isMobile ? '95%' : 700}
-        style={{ color: '#000000' }}
       >
         <Alert
           message="CSV Format Requirements"
           description={
             <div>
-              <p style={{ color: '#000000' }}><strong >Mandatory Fields:</strong> Name, Phone</p>
-              <p style={{ color: '#000000' }}><strong >Optional Fields:</strong> Email, WhatsApp, Subject, Message</p>
-              <p><strong style={{ color: '#ff4d4f' }}>Important:</strong> Only the above fields are allowed. Any other columns will be rejected.</p>
-              <p style={{ marginTop: 8, fontSize: '12px', color: '#888' }}>
+              <p className="leads-import-strong"><strong>Mandatory Fields:</strong> Name, Phone</p>
+              <p className="leads-import-strong"><strong>Optional Fields:</strong> Email, WhatsApp, Subject, Message</p>
+              <p><strong style={{ color: 'var(--color-danger)' }}>Important:</strong> Only the above fields are allowed. Any other columns will be rejected.</p>
+              <p className="leads-import-note">
                 • Duplicate email/phone entries (in file or database) will be rejected<br />
                 • Source will be set to "Import" automatically<br />
                 • Status will be set to "New" automatically<br />
@@ -1636,7 +1607,7 @@ const Leads = () => {
           }
           type="info"
           showIcon
-          style={{ marginBottom: 16, color: '#000000' }}
+          style={{ marginBottom: 16 }}
         />
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Button
@@ -1651,7 +1622,7 @@ const Leads = () => {
             accept=".csv"
             beforeUpload={(file) => {
               handleFileImport(file)
-              return false // Prevent auto upload
+              return false
             }}
             showUploadList={false}
           >
@@ -1660,11 +1631,9 @@ const Leads = () => {
             </Button>
           </Upload>
         </Space>
-        <div style={{ marginTop: 16, fontSize: '12px', color: '#888' }}>
+        <div className="leads-import-note" style={{ marginTop: 16 }}>
           <p><strong>Allowed CSV Headers (case-insensitive):</strong></p>
-          <p style={{ fontSize: '11px', fontFamily: 'monospace', background: '#2a2a2a', padding: 8, borderRadius: 4 }}>
-            Name, Phone, Email, WhatsApp, Subject, Message
-          </p>
+          <p className="leads-import-code">Name, Phone, Email, WhatsApp, Subject, Message</p>
         </div>
       </Modal>
     </div>

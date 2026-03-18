@@ -1,25 +1,13 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { ConfigProvider, App as AntApp } from 'antd'
 import App from './App'
+import './styles/theme-variables.css'
+import './styles/layout-theme.css'
 import './index.css'
+import './styles/management-pages.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ConfigProvider
-      theme={{
-        token: {
-          colorPrimary: '#D4AF37',
-          colorBgBase: '#1a1a1a',
-          colorText: '#ffffff',
-          colorTextSecondary: '#D4AF37',
-          borderRadius: 6,
-        },
-      }}
-    >
-      <AntApp>
-        <App />
-      </AntApp>
-    </ConfigProvider>
+    <App />
   </React.StrictMode>
 )
