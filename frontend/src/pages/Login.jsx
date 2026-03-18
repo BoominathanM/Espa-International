@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import { useLoginMutation } from '../store/api/authApi'
 import { getDefaultPermissions } from '../utils/permissions'
 import { getApiBaseUrl } from '../utils/apiConfig'
+import './Login.css'
 
 const Login = () => {
   const { message } = App.useApp()
@@ -19,12 +20,12 @@ const Login = () => {
   const onFinish = async (values) => {
     try {
       const result = await loginMutation(values).unwrap()
-      
+
       if (!result || !result.success || !result.user) {
         message.error('Invalid response from server. Please try again.')
         return
       }
-      
+
       const userData = {
         _id: result.user._id || result.user.id,
         id: result.user._id || result.user.id,
@@ -35,26 +36,23 @@ const Login = () => {
         status: result.user.status || 'active',
         phone: result.user.phone || '',
         permissions: result.user.permissions || getDefaultPermissions(result.user.role || 'staff'),
-        // Token is now stored in HTTP-only cookie, not in response
       }
-      
+
       login(userData)
       message.success(`Login successful! Welcome ${userData.name || 'User'}`)
       navigate('/dashboard')
-      
     } catch (error) {
       let errorMessage = 'Login failed. Please check your credentials.'
-      
+
       if (error?.status === 'FETCH_ERROR' || error?.status === 'PARSING_ERROR') {
-        // Get the API URL being used
         const apiUrl = getApiBaseUrl()
-        const isLocalhost = window.location.hostname === 'localhost' || 
-                           window.location.hostname === '127.0.0.1' ||
-                           window.location.hostname === ''
-        
+        const isLocalhost =
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          window.location.hostname === ''
+
         errorMessage = `Cannot connect to server at ${apiUrl}. Please check if backend is running and accessible.`
-        
-        // Add more helpful message for localhost
+
         if (isLocalhost) {
           errorMessage += ' Make sure the backend server is running on port 3001.'
         } else {
@@ -65,86 +63,38 @@ const Login = () => {
       } else if (error?.data?.message) {
         errorMessage = error.data.message
       }
-      
+
       message.error(errorMessage)
     }
   }
 
-
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: `linear-gradient(135deg, var(--bg-color) 0%, var(--card-bg) 100%)`,
-        position: 'relative',
-      }}
-    >
+    <div className="login-page">
       <Tooltip title={isDark ? 'Light mode' : 'Dark mode'}>
         <motion.button
           type="button"
           onClick={toggleTheme}
+          className="login-page__theme-toggle"
           whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.94 }}
           aria-label="Toggle theme"
-          style={{
-            position: 'fixed',
-            top: 16,
-            right: 16,
-            width: 44,
-            height: 44,
-            borderRadius: 10,
-            border: '1px solid var(--border-color)',
-            background: 'var(--card-bg)',
-            color: 'var(--primary-color)',
-            cursor: 'pointer',
-            fontSize: 18,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10,
-          }}
         >
           {isDark ? <SunOutlined /> : <MoonOutlined />}
         </motion.button>
       </Tooltip>
-      <Card
-        style={{
-          width: '100%',
-          maxWidth: 450,
-          margin: '0 16px',
-          background: '#1a1a1a',
-          border: '1px solid #333',
-          boxShadow: '0 4px 20px rgba(212, 175, 55, 0.1)',
-        }}
-        className="login-card"
-      >
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+      <Card className="login-card">
+        <div className="login-page__logo-wrap">
           <img
             src="/espalogo.png"
             alt="ESPA International Logo"
-            style={{
-              maxWidth: '200px',
-              maxHeight: '100px',
-              transform: 'scale(1.2)',
-              marginBottom: 16,
-              objectFit: 'contain',
-            }}
+            className="login-page__logo"
             onError={(e) => {
-              // Fallback if logo not found
               e.target.style.display = 'none'
-              e.target.nextSibling.style.display = 'block'
+              if (e.target.nextSibling) e.target.nextSibling.style.display = 'block'
             }}
           />
         </div>
-        <Form
-          name="login"
-          onFinish={onFinish}
-          autoComplete="off"
-          size="large"
-        >
+        <Form name="login" onFinish={onFinish} autoComplete="off" size="large">
           <Form.Item
             name="email"
             rules={[
@@ -152,31 +102,17 @@ const Login = () => {
               { type: 'email', message: 'Please enter a valid email!' },
             ]}
           >
-            <Input
-              prefix={<MailOutlined />}
-              placeholder="Email"
-              style={{ background: '#2a2a2a', borderColor: '#333', color: '#ffffff' }}
-            />
+            <Input prefix={<MailOutlined />} placeholder="Email" className="login-page__input" />
           </Form.Item>
 
-          <Form.Item
-            name="password"
-            rules={[{ required: true, message: 'Please input your password!' }]}
-          >
-            <Input.Password
-              prefix={<LockOutlined />}
-              placeholder="Password"
-              style={{ background: '#2a2a2a', borderColor: '#333', color: '#ffffff' }}
-            />
+          <Form.Item name="password" rules={[{ required: true, message: 'Please input your password!' }]}>
+            <Input.Password prefix={<LockOutlined />} placeholder="Password" className="login-page__input" />
           </Form.Item>
 
-          <Form.Item style={{ marginBottom: 16 }}>
-            <div style={{ textAlign: 'right' }}>
+          <Form.Item>
+            <div className="login-page__forgot-wrap">
               <Tooltip title="Contact admin">
-                <Button
-                  type="link"
-                  style={{ color: '#D4AF37', padding: 0 }}
-                >
+                <Button type="link" className="login-page__forgot-link">
                   Forgot Password?
                 </Button>
               </Tooltip>
@@ -184,17 +120,7 @@ const Login = () => {
           </Form.Item>
 
           <Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={loginLoading}
-              block
-              style={{
-                height: 45,
-                fontSize: 16,
-                fontWeight: 'bold',
-              }}
-            >
+            <Button type="primary" htmlType="submit" loading={loginLoading} block className="login-page__submit">
               Sign In
             </Button>
           </Form.Item>

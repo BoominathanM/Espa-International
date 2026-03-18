@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Card, Table, Checkbox, Button, Space, App } from 'antd'
+import { Table, Checkbox, Button, Space, App } from 'antd'
 import { SaveOutlined } from '@ant-design/icons'
 import { isSuperAdmin } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
@@ -8,6 +8,8 @@ import {
   useUpdateRoleMutation,
   useInitializeRolesMutation,
 } from '../../store/api/roleApi'
+import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
+import MotionButton from '../../components/MotionButton'
 
 const Roles = () => {
   const { message } = App.useApp()
@@ -141,54 +143,45 @@ const Roles = () => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-          gap: 12,
-        }}
-      >
-        <h2 className="mgmt-settings-section-title">Role Management</h2>
-        <Space>
-          <Button
-            type="default"
-            onClick={handleInitialize}
-            loading={initLoading}
-            size={isMobile ? 'small' : 'middle'}
-          >
-            Initialize
-          </Button>
-          <Button
-            type="primary"
-            icon={<SaveOutlined />}
-            onClick={handleSave}
-            loading={updateLoading}
-            size={isMobile ? 'small' : 'middle'}
-          >
-            {isMobile ? 'Save' : 'Save Permissions'}
-          </Button>
-        </Space>
-      </div>
+    <PageLayout>
+      <PageHeader
+        title="Role Management"
+        extra={
+          <Space wrap>
+            <Button type="default" onClick={handleInitialize} loading={initLoading} size={isMobile ? 'small' : 'middle'}>
+              Initialize
+            </Button>
+            <MotionButton
+              type="primary"
+              icon={<SaveOutlined />}
+              onClick={handleSave}
+              loading={updateLoading}
+              size={isMobile ? 'small' : 'middle'}
+            >
+              {isMobile ? 'Save' : 'Save Permissions'}
+            </MotionButton>
+          </Space>
+        }
+      />
 
-      <Card style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}>
-        <p style={{ color: '#ffffff', marginBottom: 8 }}>
+      <ContentCard staggerIndex={0} compact>
+        <p className="roles-legend-text mgmt-body-text">
           <strong>Legend:</strong> C = Create, R = Read, E = Edit, D = Delete
         </p>
-      </Card>
+      </ContentCard>
 
-      <div className="table-responsive-wrapper">
-        <Table
-          columns={columns}
-          dataSource={modules}
-          pagination={false}
-          scroll={{ x: 'max-content' }}
-          size={isMobile ? 'small' : 'middle'}
-        />
-      </div>
-    </div>
+      <ContentCard staggerIndex={1} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
+        <div className="table-responsive-wrapper">
+          <Table
+            columns={columns}
+            dataSource={modules}
+            pagination={false}
+            scroll={{ x: 'max-content' }}
+            size={isMobile ? 'small' : 'middle'}
+          />
+        </div>
+      </ContentCard>
+    </PageLayout>
   )
 }
 

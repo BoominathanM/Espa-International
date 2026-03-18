@@ -9,9 +9,13 @@ import {
   Space,
   Tag,
   App,
-  Popconfirm,
+  Row,
+  Col,
+  Dropdown,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
+import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
+import MotionButton from '../../components/MotionButton'
 import { canCreate, canEdit, canDelete, isSuperAdmin } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
@@ -93,31 +97,43 @@ const Users = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record) => (
-        <Space>
-          {isSuperAdmin() && (
-            <>
-              <Button
-                type="link"
-                icon={<EditOutlined />}
-                onClick={() => handleEdit(record)}
-              >
-                Edit
-              </Button>
-              <Popconfirm
-                title="Delete this user?"
-                onConfirm={() => handleDelete(record._id || record.id)}
-                okText="Yes"
-                cancelText="No"
-              >
-                <Button type="link" danger icon={<DeleteOutlined />}>
-                  Delete
-                </Button>
-              </Popconfirm>
-            </>
-          )}
-        </Space>
-      ),
+      width: 72,
+      align: 'center',
+      render: (_, record) =>
+        isSuperAdmin() ? (
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'edit', label: 'Edit', icon: <EditOutlined /> },
+                { key: 'delete', label: 'Delete', icon: <DeleteOutlined />, danger: true },
+              ],
+              onClick: ({ key, domEvent }) => {
+                domEvent?.stopPropagation()
+                if (key === 'edit') handleEdit(record)
+                if (key === 'delete') {
+                  Modal.confirm({
+                    title: 'Delete this user?',
+                    content: 'This cannot be undone.',
+                    okText: 'Delete',
+                    okType: 'danger',
+                    cancelText: 'Cancel',
+                    onOk: () => handleDelete(record._id || record.id),
+                  })
+                }
+              },
+            }}
+            trigger={['click']}
+            placement="bottomRight"
+            overlayClassName="settings-actions-dropdown"
+          >
+            <Button
+              type="text"
+              icon={<MoreOutlined className="settings-table-action-icon" />}
+              aria-label="User actions"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Dropdown>
+        ) : null,
     },
   ]
 
@@ -211,43 +227,33 @@ const Users = () => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-          gap: 12,
-        }}
-      >
-        <h2 className="mgmt-settings-section-title">
-          User Management
-        </h2>
-        {isSuperAdmin() && (
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleAdd}
-            size={isMobile ? 'small' : 'middle'}
-          >
-            {isMobile ? 'Add' : 'Add User'}
-          </Button>
-        )}
-      </div>
+    <PageLayout>
+      <PageHeader
+        title="User Management"
+        extra={
+          isSuperAdmin() ? (
+            <MotionButton type="primary" icon={<PlusOutlined />} onClick={handleAdd} size={isMobile ? 'small' : 'middle'}>
+              {isMobile ? 'Add' : 'Add User'}
+            </MotionButton>
+          ) : null
+        }
+      />
 
-      <div className="table-responsive-wrapper">
-        <Table
-          columns={columns}
-          dataSource={users}
-          loading={usersLoading}
-          rowKey={(record) => record._id || record.id}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 'max-content' }}
-        />
-      </div>
+      <ContentCard staggerIndex={0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
+        <div className="table-responsive-wrapper">
+          <Table
+            columns={columns}
+            dataSource={users}
+            loading={usersLoading}
+            rowKey={(record) => record._id || record.id}
+            pagination={{ pageSize: 10 }}
+            scroll={{ x: 'max-content' }}
+          />
+        </div>
+      </ContentCard>
 
       <Modal
+        className="ds-modal-wide"
         title={selectedUser ? 'Edit User' : 'Add New User'}
         open={isModalVisible}
         onCancel={() => {
@@ -260,6 +266,7 @@ const Users = () => {
         <Form
           form={form}
           layout="vertical"
+          className="ds-form-grid"
           onFinish={handleSubmit}
           initialValues={{
             role: 'staff',
@@ -267,24 +274,29 @@ const Users = () => {
             countryCode: '+91',
           }}
         >
-          <Form.Item
-            name="name"
-            label="Name"
-            rules={[{ required: true, message: 'Please enter name' }]}
-          >
-            <Input placeholder="Enter name" />
-          </Form.Item>
-
-          <Form.Item
-            name="email"
-            label="Email"
-            rules={[
-              { required: true, message: 'Please enter email' },
-              { type: 'email', message: 'Please enter valid email' },
-            ]}
-          >
-            <Input placeholder="Enter email" />
-          </Form.Item>
+          <Row gutter={[16, 0]}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="name"
+                label="Name"
+                rules={[{ required: true, message: 'Please enter name' }]}
+              >
+                <Input placeholder="Enter name" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="email"
+                label="Email"
+                rules={[
+                  { required: true, message: 'Please enter email' },
+                  { type: 'email', message: 'Please enter valid email' },
+                ]}
+              >
+                <Input placeholder="Enter email" />
+              </Form.Item>
+            </Col>
+          </Row>
 
           {!selectedUser && (
             <Form.Item
@@ -300,61 +312,68 @@ const Users = () => {
           )}
 
           {selectedUser && (
-            <>
-              <Form.Item
-                name="newPassword"
-                label="New Password"
-                rules={[
-                  { min: 6, message: 'Password must be at least 6 characters' },
-                ]}
-              >
-                <Input.Password placeholder="Enter new password (optional, min 6 characters)" />
-              </Form.Item>
-              <Form.Item
-                name="confirmPassword"
-                label="Confirm New Password"
-                dependencies={['newPassword']}
-                rules={[
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      if (!value || !getFieldValue('newPassword')) {
-                        return Promise.resolve()
-                      }
-                      if (value && getFieldValue('newPassword') === value) {
-                        return Promise.resolve()
-                      }
-                      return Promise.reject(new Error('Passwords do not match'))
-                    },
-                  }),
-                ]}
-              >
-                <Input.Password placeholder="Confirm new password" />
-              </Form.Item>
-            </>
+            <Row gutter={[16, 0]}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="newPassword"
+                  label="New Password"
+                  rules={[{ min: 6, message: 'Password must be at least 6 characters' }]}
+                >
+                  <Input.Password placeholder="Enter new password (optional, min 6 characters)" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="confirmPassword"
+                  label="Confirm New Password"
+                  dependencies={['newPassword']}
+                  rules={[
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        if (!value || !getFieldValue('newPassword')) {
+                          return Promise.resolve()
+                        }
+                        if (value && getFieldValue('newPassword') === value) {
+                          return Promise.resolve()
+                        }
+                        return Promise.reject(new Error('Passwords do not match'))
+                      },
+                    }),
+                  ]}
+                >
+                  <Input.Password placeholder="Confirm new password" />
+                </Form.Item>
+              </Col>
+            </Row>
           )}
 
-          <Form.Item
-            name="role"
-            label="Role"
-            rules={[{ required: true, message: 'Please select role' }]}
-          >
-            <Select placeholder="Select role">
-              <Option value="superadmin">Super Admin</Option>
-              <Option value="admin">Admin</Option>
-              <Option value="supervisor">Supervisor</Option>
-              <Option value="staff">Staff</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="branch" label="Branch">
-            <Select placeholder="Select branch (optional)" allowClear>
-              {branches.map((branch) => (
-                <Option key={branch._id || branch.id} value={branch._id || branch.id}>
-                  {branch.name}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
+          <Row gutter={[16, 0]}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="role"
+                label="Role"
+                rules={[{ required: true, message: 'Please select role' }]}
+              >
+                <Select placeholder="Select role">
+                  <Option value="superadmin">Super Admin</Option>
+                  <Option value="admin">Admin</Option>
+                  <Option value="supervisor">Supervisor</Option>
+                  <Option value="staff">Staff</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="branch" label="Branch">
+                <Select placeholder="Select branch (optional)" allowClear>
+                  {branches.map((branch) => (
+                    <Option key={branch._id || branch.id} value={branch._id || branch.id}>
+                      {branch.name}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
 
           <Form.Item name="status" label="Status">
             <Select placeholder="Select status">
@@ -363,19 +382,11 @@ const Users = () => {
             </Select>
           </Form.Item>
 
-          <Form.Item
-            label="Phone Number"
-            required
-          >
-            <Space.Compact style={{ width: '100%', display: 'flex' }}>
-              <Form.Item
-                name="countryCode"
-                noStyle
-                initialValue="+91"
-                rules={[{ required: true }]}
-              >
+          <Form.Item label="Phone Number" required>
+            <Space.Compact className="ds-phone-row">
+              <Form.Item name="countryCode" noStyle initialValue="+91" rules={[{ required: true }]}>
                 <Select
-                  style={{ width: isMobile ? 120 : 180, minWidth: 120 }}
+                  className="ds-phone-code-select"
                   value={selectedCountryCode}
                   onChange={(value) => {
                     setSelectedCountryCode(value)
@@ -398,10 +409,10 @@ const Users = () => {
                       value={country.dialCode}
                       label={`${country.flag} ${country.dialCode} ${country.name}`}
                     >
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="ds-select-option-row">
                         <span>{country.flag}</span>
                         <span>{country.dialCode}</span>
-                        <span style={{ opacity: 0.7 }}>{country.name}</span>
+                        <span className="ds-select-option-muted">{country.name}</span>
                       </span>
                     </Option>
                   ))}
@@ -418,12 +429,7 @@ const Users = () => {
                   },
                 ]}
               >
-                <Input
-                  placeholder="Enter phone number"
-                  style={{ flex: 1 }}
-                  maxLength={15}
-                  type="tel"
-                />
+                <Input placeholder="Enter phone number" maxLength={15} type="tel" />
               </Form.Item>
             </Space.Compact>
           </Form.Item>
@@ -437,33 +443,16 @@ const Users = () => {
           </Form.Item>
 
           <Form.Item>
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: isMobile ? 'column' : 'row',
-                gap: 8,
-                width: '100%',
-              }}
-            >
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={createLoading || updateLoading}
-                style={{ width: isMobile ? '100%' : 'auto' }}
-              >
+            <div className={`ds-form-footer ${isMobile ? 'ds-form-footer--stack-sm' : ''}`.trim()}>
+              <Button type="primary" htmlType="submit" loading={createLoading || updateLoading}>
                 {selectedUser ? 'Update' : 'Create'}
               </Button>
-              <Button
-                onClick={() => setIsModalVisible(false)}
-                style={{ width: isMobile ? '100%' : 'auto' }}
-              >
-                Cancel
-              </Button>
+              <Button onClick={() => setIsModalVisible(false)}>Cancel</Button>
             </div>
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageLayout>
   )
 }
 

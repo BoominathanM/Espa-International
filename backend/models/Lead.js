@@ -145,6 +145,11 @@ const leadSchema = new mongoose.Schema(
     },
     reminders: [reminderSchema],
     activityLogs: [activityLogSchema],
+    customer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Customer',
+      default: null,
+    },
   },
   {
     timestamps: true,

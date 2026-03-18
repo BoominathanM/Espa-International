@@ -34,7 +34,7 @@ export const leadApi = apiSlice.injectEndpoints({
         method: 'POST',
         body: leadData,
       }),
-      invalidatesTags: ['Lead'],
+      invalidatesTags: ['Lead', 'Dashboard', 'Report'],
     }),
     updateLead: builder.mutation({
       query: ({ id, ...leadData }) => ({
@@ -42,42 +42,27 @@ export const leadApi = apiSlice.injectEndpoints({
         method: 'PUT',
         body: leadData,
       }),
-      invalidatesTags: (result, error, { id }) => [{ type: 'Lead', id }, 'Lead'],
+      invalidatesTags: (result, error, { id }) => [{ type: 'Lead', id }, 'Lead', 'Dashboard', 'Report'],
     }),
     deleteLead: builder.mutation({
       query: (id) => ({
         url: `/leads/${id}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['Lead'],
+      invalidatesTags: ['Lead', 'Dashboard', 'Report'],
     }),
     exportLeads: builder.query({
       query: (params = {}) => {
         const { status, source, branch, assignedTo, search } = params
         const queryParams = new URLSearchParams()
-        
+        queryParams.set('format', 'json')
         if (status) queryParams.append('status', status)
         if (source) queryParams.append('source', source)
         if (branch) queryParams.append('branch', branch)
         if (assignedTo) queryParams.append('assignedTo', assignedTo)
         if (search) queryParams.append('search', search)
-        
         const queryString = queryParams.toString()
-        return {
-          url: `/leads/export${queryString ? `?${queryString}` : ''}`,
-          responseHandler: async (response) => {
-            const blob = await response.blob()
-            const url = window.URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `leads_${new Date().toISOString().split('T')[0]}.csv`
-            document.body.appendChild(a)
-            a.click()
-            window.URL.revokeObjectURL(url)
-            document.body.removeChild(a)
-            return { success: true }
-          },
-        }
+        return `/leads/export?${queryString}`
       },
     }),
     importLeads: builder.mutation({
@@ -86,14 +71,14 @@ export const leadApi = apiSlice.injectEndpoints({
         method: 'POST',
         body: { leads: leadsData },
       }),
-      invalidatesTags: ['Lead'],
+      invalidatesTags: ['Lead', 'Report'],
     }),
     syncAskEvaLeads: builder.mutation({
       query: () => ({
         url: '/leads/sync-askeva',
         method: 'POST',
       }),
-      invalidatesTags: ['Lead'],
+      invalidatesTags: ['Lead', 'Report'],
     }),
     addReminder: builder.mutation({
       query: ({ leadId, ...data }) => ({

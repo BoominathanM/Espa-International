@@ -11,10 +11,10 @@ export default function AnimatedWrapper({ children, variant = 'fadeUp', classNam
       <motion.div
         className={className}
         style={style}
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -16 }}
-        transition={{ duration: 0.35, ease }}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 8 }}
+        transition={{ duration: 0.4, ease }}
       >
         {children}
       </motion.div>

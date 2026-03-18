@@ -9,6 +9,7 @@ import {
   useClearAllNotificationsMutation 
 } from '../../store/api/notificationApi'
 import { useGetLoginHistoryQuery } from '../../store/api/loginHistoryApi'
+import { PageLayout, PageHeader } from '../../components/ds-layout'
 
 const Logs = ({ defaultActiveTab }) => {
   const [notificationPage, setNotificationPage] = useState(1)
@@ -514,10 +515,10 @@ const Logs = ({ defaultActiveTab }) => {
   ]
 
   return (
-    <div className="mgmt-page">
-      <h2 className="mgmt-settings-section-title" style={{ marginBottom: 16 }}>System Logs</h2>
+    <PageLayout className="mgmt-page">
+      <PageHeader title="System Logs" stackOnMobile={false} />
       <Tabs className="mgmt-tabs" items={tabItems} activeKey={activeTab} onChange={setActiveTab} />
-    </div>
+    </PageLayout>
   )
 }
 

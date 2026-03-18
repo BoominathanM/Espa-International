@@ -8,6 +8,7 @@ import API from './API'
 import Logs from './Logs'
 import { canRead } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
+import { PageLayout, PageHeader } from '../../components/ds-layout'
 
 const Settings = () => {
   const { isMobile } = useResponsive()
@@ -68,8 +69,8 @@ const Settings = () => {
   }
 
   return (
-    <div className="mgmt-page">
-      <h1 className="settings-page-title">System Settings</h1>
+    <PageLayout className="ds-settings-shell mgmt-page">
+      <PageHeader title="System Settings" stackOnMobile={false} />
       <Tabs
         className="mgmt-tabs"
         items={tabItems}
@@ -78,7 +79,7 @@ const Settings = () => {
         type={isMobile ? 'card' : 'line'}
         size={isMobile ? 'small' : 'middle'}
       />
-    </div>
+    </PageLayout>
   )
 }
 

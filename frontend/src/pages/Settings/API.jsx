@@ -15,6 +15,7 @@ import {
   useGetOzonetelSettingsQuery,
   useUpdateOzonetelSettingsMutation,
 } from '../../store/api/ozonetelSettingsApi'
+import { PageLayout, PageHeader } from '../../components/ds-layout'
 
 const API = () => {
   const { isMobile } = useResponsive()
@@ -541,14 +542,15 @@ const API = () => {
   ]
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <h2 className="mgmt-settings-section-title" style={{ marginBottom: 16 }}>API & Integrations</h2>
-      <Tabs 
-        items={tabItems} 
+    <PageLayout>
+      <PageHeader title="API & Integrations" stackOnMobile={false} />
+      <Tabs
+        items={tabItems}
         type={isMobile ? 'card' : 'line'}
         size={isMobile ? 'small' : 'middle'}
+        className="mgmt-tabs"
       />
-    </div>
+    </PageLayout>
   )
 }
 

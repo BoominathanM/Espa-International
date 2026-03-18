@@ -3,7 +3,25 @@
  * Use CSS variables only; no hardcoded colors for light/dark.
  */
 
-/* ----- Page header ----- */
+.leads-segmented-wrap {
+  margin-bottom: 12px;
+}
+
+.ds-leads-table-inner {
+  padding: var(--ds-space-24);
+}
+
+@media (max-width: 575px) {
+  .ds-leads-table-inner {
+    padding: var(--ds-space-16);
+  }
+}
+
+.leads-table-row-clickable {
+  cursor: pointer;
+}
+
+/* ----- Page header (legacy; PageHeader component preferred) ----- */
 .leads-page-header {
   display: flex;
   flex-direction: column;

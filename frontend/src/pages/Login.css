@@ -1,0 +1,176 @@
+/**
+ * Login page — light and dark theme via html[data-theme]
+ */
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bg-color) 0%, var(--card-bg) 100%);
+  position: relative;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.login-page__theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--primary-color);
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.login-page__logo-wrap {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-page__logo {
+  max-width: 200px;
+  max-height: 100px;
+  transform: scale(1.2);
+  margin-bottom: 16px;
+  object-fit: contain;
+}
+
+/* ----- Card ----- */
+.login-card.ant-card {
+  width: 100%;
+  max-width: 450px;
+  margin: 0 auto;
+}
+
+[data-theme='light'] .login-card.ant-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='dark'] .login-card.ant-card {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* ----- Inputs: light (readable icons + borders) ----- */
+[data-theme='light'] .login-page__input.ant-input-affix-wrapper,
+[data-theme='light'] .login-page__input.ant-input-password {
+  background: #ffffff !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-color) !important;
+  border-radius: 8px;
+}
+
+[data-theme='light'] .login-page__input.ant-input-affix-wrapper:hover {
+  border-color: var(--primary-color) !important;
+}
+
+[data-theme='light'] .login-page__input.ant-input-affix-wrapper-focused,
+[data-theme='light'] .login-page__input.ant-input-affix-wrapper:focus-within {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 18%, transparent);
+}
+
+[data-theme='light'] .login-page__input .ant-input {
+  background: transparent !important;
+  color: var(--text-color) !important;
+}
+
+[data-theme='light'] .login-page__input .ant-input::placeholder {
+  color: var(--text-muted) !important;
+  opacity: 1 !important;
+}
+
+/* Password inner input — ensure placeholder visible in light (global rules had forced white) */
+[data-theme='light'] .login-page__input.ant-input-password .ant-input::placeholder {
+  color: rgba(0, 0, 0, 0.45) !important;
+  opacity: 1 !important;
+}
+
+[data-theme='light'] .login-page__input .anticon {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme='light'] .login-page__input .ant-input-password-icon {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme='light'] .login-page__input .ant-input-password-icon:hover {
+  color: var(--primary-color) !important;
+}
+
+/* ----- Inputs: dark ----- */
+[data-theme='dark'] .login-page__input.ant-input-affix-wrapper,
+[data-theme='dark'] .login-page__input.ant-input-password {
+  background: #2a2a2a !important;
+  border: 1px solid #444 !important;
+  color: #ffffff !important;
+  border-radius: 8px;
+}
+
+[data-theme='dark'] .login-page__input.ant-input-affix-wrapper:hover,
+[data-theme='dark'] .login-page__input.ant-input-affix-wrapper-focused,
+[data-theme='dark'] .login-page__input.ant-input-affix-wrapper:focus-within {
+  border-color: var(--primary-color) !important;
+}
+
+[data-theme='dark'] .login-page__input .ant-input {
+  background: transparent !important;
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .login-page__input .ant-input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+[data-theme='dark'] .login-page__input .anticon {
+  color: var(--primary-color) !important;
+}
+
+[data-theme='dark'] .login-page__input .ant-input-password-icon {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+[data-theme='dark'] .login-page__input .ant-input-password-icon:hover {
+  color: var(--primary-color) !important;
+}
+
+.login-page__forgot-wrap {
+  text-align: right;
+  margin-bottom: 16px;
+}
+
+.login-page__forgot-link.ant-btn-link {
+  color: var(--primary-color);
+  padding: 0;
+  font-weight: 500;
+}
+
+.login-page__forgot-link.ant-btn-link:hover {
+  color: var(--primary-color);
+  opacity: 0.85;
+}
+
+.login-page__submit.ant-btn-primary {
+  height: 45px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+[data-theme='light'] .login-page__submit.ant-btn-primary {
+  background: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+  color: #fff !important;
+}

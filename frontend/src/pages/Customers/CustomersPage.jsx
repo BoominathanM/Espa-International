@@ -1,17 +1,19 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   Table,
   Button,
   Input,
-  Card,
   Tag,
   Timeline,
   Modal,
   Form,
   Space,
-  message,
+  App,
+  Dropdown,
   Tabs,
   Select,
+  Spin,
+  Empty,
 } from 'antd'
 import {
   SearchOutlined,
@@ -20,66 +22,70 @@ import {
   PlusOutlined,
   UpOutlined,
   DownOutlined,
+  MoreOutlined,
 } from '@ant-design/icons'
 import { canEdit } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
-import dayjs from 'dayjs'
+import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
+import MotionButton from '../../components/MotionButton'
+import {
+  useGetCustomersQuery,
+  useCreateCustomerMutation,
+  useUpdateCustomerMutation,
+} from '../../store/api/customerApi'
+import { useGetBranchesQuery } from '../../store/api/branchApi'
 
 const { TextArea } = Input
 const { Option } = Select
 
 const Customers = () => {
+  const { message } = App.useApp()
   const { isMobile } = useResponsive()
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [isTimelineVisible, setIsTimelineVisible] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [form] = Form.useForm()
   const [showFilters, setShowFilters] = useState(false)
-  const [customers, setCustomers] = useState([
-    {
-      key: '1',
-      name: 'John Doe',
-      mobile: '+91 9876543210',
-      whatsapp: '+91 9876543210',
-      branch: 'Branch 1',
-      tags: ['New Customer'],
-      totalLeads: 3,
-      totalCalls: 5,
-      totalChats: 2,
-      lastInteraction: '2024-01-15 10:30',
-    },
-    {
-      key: '2',
-      name: 'Jane Smith',
-      mobile: '+91 9876543211',
-      whatsapp: '+91 9876543211',
-      branch: 'Branch 2',
-      tags: ['Repeat Customer'],
-      totalLeads: 5,
-      totalCalls: 8,
-      totalChats: 4,
-      lastInteraction: '2024-01-15 14:20',
-    },
-    {
-      key: '3',
-      name: 'Mike Johnson',
-      mobile: '+91 9876543212',
-      whatsapp: '+91 9876543212',
-      branch: 'Branch 1',
-      tags: ['New Customer'],
-      totalLeads: 1,
-      totalCalls: 2,
-      totalChats: 1,
-      lastInteraction: '2024-01-15 16:45',
-    },
-  ])
+  const [filterSearch, setFilterSearch] = useState('')
+  const [filterBranch, setFilterBranch] = useState(undefined)
+  const [appliedSearch, setAppliedSearch] = useState('')
+  const [appliedBranch, setAppliedBranch] = useState(undefined)
+
+  const { data: branchesData } = useGetBranchesQuery()
+  const branches = branchesData?.branches || []
+
+  const queryParams = useMemo(
+    () => ({
+      search: appliedSearch || undefined,
+      branch: appliedBranch,
+    }),
+    [appliedSearch, appliedBranch]
+  )
+
+  const { data, isLoading, refetch } = useGetCustomersQuery(queryParams)
+  const customers = data?.customers || []
+
+  const [createCustomer, { isLoading: createLoading }] = useCreateCustomerMutation()
+  const [updateCustomer, { isLoading: updateLoading }] = useUpdateCustomerMutation()
+
+  const handleApplyFilters = () => {
+    setAppliedSearch(filterSearch.trim())
+    setAppliedBranch(filterBranch)
+  }
+
+  const handleClearFilters = () => {
+    setFilterSearch('')
+    setFilterBranch(undefined)
+    setAppliedSearch('')
+    setAppliedBranch(undefined)
+  }
 
   const columns = [
     {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
-      sorter: (a, b) => a.name.localeCompare(b.name),
+      sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
     },
     {
       title: 'Mobile',
@@ -90,6 +96,7 @@ const Customers = () => {
       title: 'WhatsApp',
       dataIndex: 'whatsapp',
       key: 'whatsapp',
+      render: (v) => v || '-',
     },
     {
       title: 'Branch',
@@ -100,112 +107,117 @@ const Customers = () => {
       title: 'Tags',
       dataIndex: 'tags',
       key: 'tags',
-      render: (tags) => (
-        <>
-          {tags.map((tag) => (
-            <Tag
-              key={tag}
-              color={tag === 'Repeat Customer' ? 'green' : 'blue'}
-            >
-              {tag}
-            </Tag>
-          ))}
-        </>
-      ),
+      render: (tags) =>
+        (tags || []).map((tag) => (
+          <Tag key={tag} color={tag === 'Repeat Customer' ? 'green' : 'blue'}>
+            {tag}
+          </Tag>
+        )),
     },
     {
       title: 'Total Leads',
       dataIndex: 'totalLeads',
       key: 'totalLeads',
-      sorter: (a, b) => a.totalLeads - b.totalLeads,
+      sorter: (a, b) => (a.totalLeads || 0) - (b.totalLeads || 0),
     },
     {
       title: 'Last Interaction',
       dataIndex: 'lastInteraction',
       key: 'lastInteraction',
-      sorter: (a, b) => new Date(a.lastInteraction) - new Date(b.lastInteraction),
     },
     {
-      title: 'Actions',
+      title: 'Action',
       key: 'actions',
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="link"
-            icon={<EyeOutlined />}
-            onClick={() => {
-              setSelectedCustomer(record)
-              setIsTimelineVisible(true)
+      fixed: 'right',
+      width: 52,
+      align: 'center',
+      render: (_, record) => {
+        const items = [
+          { key: 'timeline', label: 'View timeline', icon: <EyeOutlined /> },
+        ]
+        if (canEdit('customers')) {
+          items.push({ key: 'edit', label: 'Edit customer', icon: <EditOutlined /> })
+        }
+        const openEdit = () => {
+          setSelectedCustomer(record)
+          form.setFieldsValue({
+            name: record.name,
+            mobile: record.mobile,
+            whatsapp: record.whatsapp,
+            branch: record.branchId || undefined,
+            email: record.email || '',
+            tags: record.tags || ['New Customer'],
+          })
+          setIsModalVisible(true)
+        }
+        return (
+          <Dropdown
+            menu={{
+              items,
+              onClick: ({ key, domEvent }) => {
+                domEvent?.stopPropagation()
+                if (key === 'timeline') {
+                  setSelectedCustomer(record)
+                  setIsTimelineVisible(true)
+                } else if (key === 'edit') openEdit()
+              },
             }}
+            trigger={['click']}
+            placement="bottomRight"
+            overlayClassName="customers-actions-dropdown"
           >
-            Timeline
-          </Button>
-          {canEdit('customers') && (
             <Button
-              type="link"
-              icon={<EditOutlined />}
-              onClick={() => {
-                setSelectedCustomer(record)
-                form.setFieldsValue(record)
-                setIsModalVisible(true)
-              }}
-            >
-              Edit
-            </Button>
-          )}
-        </Space>
-      ),
+              type="text"
+              size="small"
+              icon={<MoreOutlined className="customers-table-action-icon" style={{ fontSize: 18 }} />}
+              onClick={(e) => e.stopPropagation()}
+              aria-label="Customer actions"
+            />
+          </Dropdown>
+        )
+      },
     },
   ]
 
-  const handleSubmit = (values) => {
-    if (selectedCustomer) {
-      setCustomers(
-        customers.map((customer) =>
-          customer.key === selectedCustomer.key
-            ? { ...customer, ...values }
-            : customer
-        )
-      )
-      message.success('Customer updated successfully')
-    } else {
-      const newCustomer = {
-        key: Date.now().toString(),
-        ...values,
-        totalLeads: 0,
-        totalCalls: 0,
-        totalChats: 0,
-        lastInteraction: dayjs().format('YYYY-MM-DD HH:mm'),
+  const handleSubmit = async (values) => {
+    try {
+      if (selectedCustomer?._id) {
+        await updateCustomer({
+          id: selectedCustomer._id,
+          name: values.name,
+          mobile: values.mobile,
+          whatsapp: values.whatsapp,
+          branch: values.branch,
+          email: values.email,
+          tags: values.tags,
+        }).unwrap()
+        message.success('Customer updated')
+      } else {
+        await createCustomer({
+          name: values.name,
+          mobile: values.mobile,
+          whatsapp: values.whatsapp,
+          branch: values.branch,
+          email: values.email,
+          tags: values.tags || ['New Customer'],
+        }).unwrap()
+        message.success('Customer created')
       }
-      setCustomers([...customers, newCustomer])
-      message.success('Customer created successfully')
+      setIsModalVisible(false)
+      form.resetFields()
+      setSelectedCustomer(null)
+      refetch()
+    } catch (e) {
+      message.error(e?.data?.message || e?.message || 'Operation failed')
     }
-    setIsModalVisible(false)
-    form.resetFields()
   }
 
   const timelineData = selectedCustomer
     ? [
-        {
-          color: 'blue',
-          children: `Customer created - ${selectedCustomer.lastInteraction}`,
-        },
-        {
-          color: 'green',
-          children: `Total Leads: ${selectedCustomer.totalLeads}`,
-        },
-        {
-          color: 'orange',
-          children: `Total Calls: ${selectedCustomer.totalCalls}`,
-        },
-        {
-          color: 'purple',
-          children: `Total Chats: ${selectedCustomer.totalChats}`,
-        },
-        {
-          color: 'cyan',
-          children: `Last Interaction: ${selectedCustomer.lastInteraction}`,
-        },
+        { color: 'blue', children: `Customer profile — last updated ${selectedCustomer.lastInteraction || '—'}` },
+        { color: 'green', children: `Leads linked (conversions): ${selectedCustomer.totalLeads ?? 0}` },
+        { color: 'orange', children: `Calls (matched phone): ${selectedCustomer.totalCalls ?? 0}` },
+        { color: 'purple', children: `Chat estimate: ${selectedCustomer.totalChats ?? 0}` },
       ]
     : []
 
@@ -215,13 +227,22 @@ const Customers = () => {
       label: 'All Customers',
       children: (
         <div className="table-responsive-wrapper">
-          <Table
-            columns={columns}
-            dataSource={customers}
-            pagination={{ pageSize: 10 }}
-            scroll={{ x: 'max-content' }}
-            size={isMobile ? 'small' : 'middle'}
-          />
+          {isLoading ? (
+            <div className="ds-loading-block">
+              <Spin />
+            </div>
+          ) : customers.length === 0 ? (
+            <Empty description="No customers yet. Convert a lead from Lead Management → Follow-up, or add manually." />
+          ) : (
+            <Table
+              columns={columns}
+              dataSource={customers}
+              rowKey="_id"
+              pagination={{ pageSize: 10 }}
+              scroll={{ x: 'max-content' }}
+              size={isMobile ? 'small' : 'middle'}
+            />
+          )}
         </div>
       ),
     },
@@ -232,10 +253,12 @@ const Customers = () => {
         <div className="table-responsive-wrapper">
           <Table
             columns={columns}
-            dataSource={customers.filter((c) => c.tags.includes('New Customer'))}
+            dataSource={customers.filter((c) => (c.tags || []).includes('New Customer'))}
+            rowKey="_id"
             pagination={{ pageSize: 10 }}
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
+            locale={{ emptyText: 'No new customers' }}
           />
         </div>
       ),
@@ -247,10 +270,12 @@ const Customers = () => {
         <div className="table-responsive-wrapper">
           <Table
             columns={columns}
-            dataSource={customers.filter((c) => c.tags.includes('Repeat Customer'))}
+            dataSource={customers.filter((c) => (c.tags || []).includes('Repeat Customer'))}
+            rowKey="_id"
             pagination={{ pageSize: 10 }}
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
+            locale={{ emptyText: 'No repeat customers yet' }}
           />
         </div>
       ),
@@ -258,70 +283,73 @@ const Customers = () => {
   ]
 
   return (
-    <div className="mgmt-page">
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between', 
-        alignItems: isMobile ? 'stretch' : 'center',
-        marginBottom: 16,
-        gap: 12,
-      }}>
-        <h1 className="mgmt-page-title">Customer Management</h1>
-        <Space wrap style={{ width: isMobile ? '100%' : 'auto' }}>
-          <Button
-            icon={showFilters ? <UpOutlined /> : <DownOutlined />}
-            onClick={() => setShowFilters(!showFilters)}
-            size={isMobile ? 'small' : 'middle'}
-          >
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </Button>
-          {canEdit('customers') && (
+    <PageLayout className="mgmt-page">
+      <PageHeader
+        title="Customer Management"
+        extra={
+          <Space wrap>
             <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => {
-                setSelectedCustomer(null)
-                form.resetFields()
-                setIsModalVisible(true)
-              }}
+              icon={showFilters ? <UpOutlined /> : <DownOutlined />}
+              onClick={() => setShowFilters(!showFilters)}
               size={isMobile ? 'small' : 'middle'}
             >
-              {isMobile ? 'Add' : 'Add Customer'}
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
             </Button>
-          )}
-        </Space>
-      </div>
+            {canEdit('customers') && (
+              <MotionButton
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  setSelectedCustomer(null)
+                  form.resetFields()
+                  form.setFieldsValue({ tags: ['New Customer'] })
+                  setIsModalVisible(true)
+                }}
+                size={isMobile ? 'small' : 'middle'}
+              >
+                {isMobile ? 'Add' : 'Add Customer'}
+              </MotionButton>
+            )}
+          </Space>
+        }
+      />
 
       {showFilters && (
-        <Card className="mgmt-filters-card">
-          <div style={{ 
-            display: 'flex', 
-            flexDirection: isMobile ? 'column' : 'row',
-            flexWrap: isMobile ? 'nowrap' : 'wrap',
-            gap: 12,
-            width: '100%'
-          }}>
+        <ContentCard staggerIndex={0} compact>
+          <div className="ds-filters-row ds-filters-row--responsive">
             <Input
-              placeholder="Search by name or mobile"
+              className="ds-filter-grow"
+              placeholder="Search by name, mobile or email"
               prefix={<SearchOutlined />}
-              style={{ width: isMobile ? '100%' : 250, flex: isMobile ? 'none' : '1 1 auto' }}
+              value={filterSearch}
+              onChange={(e) => setFilterSearch(e.target.value)}
+              onPressEnter={handleApplyFilters}
             />
-            <Select placeholder="Filter by Branch" style={{ width: isMobile ? '100%' : 150 }} allowClear>
-              <Option value="Branch 1">Branch 1</Option>
-              <Option value="Branch 2">Branch 2</Option>
-              <Option value="Branch 3">Branch 3</Option>
+            <Select
+              className="ds-filter-fixed"
+              placeholder="Branch"
+              allowClear
+              value={filterBranch}
+              onChange={setFilterBranch}
+              style={{ minWidth: 180 }}
+            >
+              {branches.map((b) => (
+                <Option key={b._id} value={b._id}>
+                  {b.name}
+                </Option>
+              ))}
             </Select>
-            <Select placeholder="Filter by Tag" style={{ width: isMobile ? '100%' : 150 }} allowClear>
-              <Option value="New Customer">New Customer</Option>
-              <Option value="Repeat Customer">Repeat Customer</Option>
-            </Select>
-            <Button type="primary" style={{ width: isMobile ? '100%' : 'auto' }}>Apply Filter</Button>
+            <Button type="primary" onClick={handleApplyFilters}>
+              Apply
+            </Button>
+            <Button onClick={handleClearFilters}>Clear</Button>
           </div>
-        </Card>
+        </ContentCard>
       )}
 
-      <Tabs items={tabItems} className="mgmt-tabs" />
+      <ContentCard staggerIndex={showFilters ? 1 : 0} hoverLift={false}>
+        <Tabs items={tabItems} className="mgmt-tabs" />
+      </ContentCard>
 
       <Modal
         title={selectedCustomer ? 'Edit Customer' : 'Add New Customer'}
@@ -329,62 +357,45 @@ const Customers = () => {
         onCancel={() => {
           setIsModalVisible(false)
           form.resetFields()
+          setSelectedCustomer(null)
         }}
         footer={null}
         width={isMobile ? '95%' : 600}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSubmit}
-          initialValues={{
-            tags: ['New Customer'],
-          }}
-        >
-          <Form.Item
-            name="name"
-            label="Name"
-            rules={[{ required: true, message: 'Please enter name' }]}
-          >
+        <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ tags: ['New Customer'] }}>
+          <Form.Item name="name" label="Name" rules={[{ required: true, message: 'Please enter name' }]}>
             <Input placeholder="Enter name" />
           </Form.Item>
-
-          <Form.Item
-            name="mobile"
-            label="Mobile (Primary Key)"
-            rules={[{ required: true, message: 'Please enter mobile number' }]}
-          >
-            <Input placeholder="Enter mobile number" />
+          <Form.Item name="mobile" label="Mobile" rules={[{ required: true, message: 'Please enter mobile' }]}>
+            <Input placeholder="Mobile number" disabled={!!selectedCustomer} />
           </Form.Item>
-
-          <Form.Item name="whatsapp" label="WhatsApp Number">
-            <Input placeholder="Enter WhatsApp number" />
+          <Form.Item name="whatsapp" label="WhatsApp">
+            <Input placeholder="WhatsApp number" />
           </Form.Item>
-
+          <Form.Item name="email" label="Email">
+            <Input placeholder="Email" />
+          </Form.Item>
           <Form.Item name="branch" label="Branch">
-            <Input placeholder="Enter branch" />
+            <Select placeholder="Select branch" allowClear>
+              {branches.map((b) => (
+                <Option key={b._id} value={b._id}>
+                  {b.name}
+                </Option>
+              ))}
+            </Select>
           </Form.Item>
-
+          <Form.Item name="tags" label="Tags">
+            <Select mode="multiple" placeholder="Tags">
+              <Option value="New Customer">New Customer</Option>
+              <Option value="Repeat Customer">Repeat Customer</Option>
+            </Select>
+          </Form.Item>
           <Form.Item>
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: isMobile ? 'column' : 'row',
-              gap: 8,
-              width: '100%'
-            }}>
-              <Button 
-                type="primary" 
-                htmlType="submit"
-                style={{ width: isMobile ? '100%' : 'auto' }}
-              >
+            <div className={`ds-form-footer ${isMobile ? 'ds-form-footer--stack-sm' : ''}`.trim()}>
+              <Button type="primary" htmlType="submit" loading={createLoading || updateLoading}>
                 {selectedCustomer ? 'Update' : 'Create'}
               </Button>
-              <Button 
-                onClick={() => setIsModalVisible(false)}
-                style={{ width: isMobile ? '100%' : 'auto' }}
-              >
-                Cancel
-              </Button>
+              <Button onClick={() => setIsModalVisible(false)}>Cancel</Button>
             </div>
           </Form.Item>
         </Form>
@@ -401,17 +412,14 @@ const Customers = () => {
           <div>
             <h3 className="mgmt-section-heading">{selectedCustomer.name}</h3>
             <Timeline items={timelineData} />
-            <div style={{ marginTop: 24 }}>
-              <h4 className="mgmt-subheading">Add Note</h4>
-              <TextArea rows={4} placeholder="Enter note..." />
-              <Button type="primary" style={{ marginTop: 8, width: isMobile ? '100%' : 'auto' }}>
-                Add Note
-              </Button>
+            <div className="mgmt-muted" style={{ marginTop: 24 }}>
+              <h4 className="mgmt-subheading">Notes</h4>
+              <TextArea rows={3} placeholder="Use Edit customer to update profile." readOnly />
             </div>
           </div>
         )}
       </Modal>
-    </div>
+    </PageLayout>
   )
 }
 

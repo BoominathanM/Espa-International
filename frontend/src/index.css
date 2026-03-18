@@ -82,8 +82,13 @@ body {
   color: var(--primary-hover) !important;
 }
 
-[data-theme='light'] .ant-menu-light .ant-menu-item:hover {
+/* Hover: gold text on light sidebar — NOT on selected (gold bg) or text disappears */
+[data-theme='light'] .ant-menu-light .ant-menu-item:hover:not(.ant-menu-item-selected) {
   color: var(--primary-color) !important;
+}
+
+[data-theme='light'] .ant-menu-light .ant-menu-item-selected:hover {
+  color: #ffffff !important;
 }
 
 .ant-card {
@@ -335,23 +340,22 @@ body {
   color: #ffffff !important;
 }
 
-/* Password input placeholders - white text */
-.ant-input-password .ant-input {
+/* Password fields — dark theme only (global white broke light login / light forms) */
+[data-theme='dark'] .ant-input-password .ant-input {
   color: #ffffff !important;
 }
 
-.ant-input-password .ant-input::placeholder {
+[data-theme='dark'] .ant-input-password .ant-input::placeholder {
   color: #ffffff !important;
   opacity: 0.6 !important;
 }
 
-/* TextArea placeholders - white text */
-.ant-input {
+[data-theme='dark'] textarea.ant-input,
+[data-theme='dark'] textarea.ant-input::placeholder {
   color: #ffffff !important;
 }
 
-textarea.ant-input::placeholder {
-  color: #ffffff !important;
+[data-theme='dark'] textarea.ant-input::placeholder {
   opacity: 0.6 !important;
 }
 
@@ -821,6 +825,19 @@ textarea.ant-input::placeholder {
 .leads-actions-dropdown .ant-dropdown-menu::-webkit-scrollbar-thumb {
   background: #555;
   border-radius: 4px;
+}
+
+.customers-actions-dropdown .ant-dropdown-menu {
+  min-width: 168px;
+  padding: 4px 0;
+}
+
+.customers-table-action-icon {
+  color: var(--text-secondary, rgba(0, 0, 0, 0.45));
+}
+
+.customers-table-action-icon:hover {
+  color: var(--primary-color, #1677ff);
 }
 
 .leads-form-modal .ant-modal-header {

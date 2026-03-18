@@ -1,0 +1,15 @@
+/* Create Lead action — primary gold, not default Ant blue */
+.calls-create-lead-link.ant-btn-link {
+  color: var(--primary-color) !important;
+  padding: 0 4px;
+}
+
+.calls-create-lead-link.ant-btn-link:hover,
+.calls-create-lead-link.ant-btn-link:focus {
+  color: var(--primary-color) !important;
+  opacity: 0.88;
+}
+
+.calls-create-lead-link.ant-btn-link .anticon {
+  color: inherit;
+}

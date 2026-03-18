@@ -14,6 +14,8 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import { canCreate, canEdit, canDelete, isSuperAdmin } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
+import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
+import MotionButton from '../../components/MotionButton'
 
 const { Option } = Select
 
@@ -157,30 +159,28 @@ const Numbers = () => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between', 
-        marginBottom: 16,
-        gap: 12,
-      }}>
-        <h2 className="mgmt-settings-section-title">Number Configuration</h2>
-        {isSuperAdmin() && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} size={isMobile ? 'small' : 'middle'}>
-            {isMobile ? 'Add' : 'Add Number'}
-          </Button>
-        )}
-      </div>
+    <PageLayout>
+      <PageHeader
+        title="Number Configuration"
+        extra={
+          isSuperAdmin() ? (
+            <MotionButton type="primary" icon={<PlusOutlined />} onClick={handleAdd} size={isMobile ? 'small' : 'middle'}>
+              {isMobile ? 'Add' : 'Add Number'}
+            </MotionButton>
+          ) : null
+        }
+      />
 
-      <div className="table-responsive-wrapper">
-        <Table
-          columns={columns}
-          dataSource={numbers}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 'max-content' }}
-        />
-      </div>
+      <ContentCard staggerIndex={0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
+        <div className="table-responsive-wrapper">
+          <Table
+            columns={columns}
+            dataSource={numbers}
+            pagination={{ pageSize: 10 }}
+            scroll={{ x: 'max-content' }}
+          />
+        </div>
+      </ContentCard>
 
       <Modal
         title={selectedNumber ? 'Edit Number' : 'Add New Number'}
@@ -255,30 +255,16 @@ const Numbers = () => {
           </Form.Item>
 
           <Form.Item>
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: isMobile ? 'column' : 'row',
-              gap: 8,
-              width: '100%'
-            }}>
-              <Button 
-                type="primary" 
-                htmlType="submit"
-                style={{ width: isMobile ? '100%' : 'auto' }}
-              >
+            <div className={`ds-form-footer ${isMobile ? 'ds-form-footer--stack-sm' : ''}`.trim()}>
+              <Button type="primary" htmlType="submit">
                 {selectedNumber ? 'Update' : 'Create'}
               </Button>
-              <Button 
-                onClick={() => setIsModalVisible(false)}
-                style={{ width: isMobile ? '100%' : 'auto' }}
-              >
-                Cancel
-              </Button>
+              <Button onClick={() => setIsModalVisible(false)}>Cancel</Button>
             </div>
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageLayout>
   )
 }
 

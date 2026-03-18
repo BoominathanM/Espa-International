@@ -8,12 +8,12 @@ import {
   Select,
   Space,
   App,
-  Popconfirm,
   Tag,
   Tooltip,
   Badge,
+  Dropdown,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, MoreOutlined } from '@ant-design/icons'
 import { canCreate, canEdit, canDelete, isSuperAdmin } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
@@ -24,6 +24,8 @@ import {
 } from '../../store/api/branchApi'
 import { useGetUnassignedUsersQuery, useGetUsersQuery } from '../../store/api/userApi'
 import { countryCodes, parsePhoneNumber, formatPhoneNumber } from '../../utils/countryCodes'
+import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
+import MotionButton from '../../components/MotionButton'
 
 const { Option } = Select
 
@@ -86,13 +88,8 @@ const Branch = () => {
       render: (_, record) => {
         const count = record.assignedUsers?.length || 0
         return (
-          <Badge
-            count={count}
-            showZero
-            style={{ backgroundColor: '#D4AF37' }}
-            title={`${count} user(s) assigned`}
-          >
-            <UserOutlined style={{ fontSize: 18, color: '#D4AF37' }} />
+          <Badge count={count} showZero className="branch-user-badge" title={`${count} user(s) assigned`}>
+            <UserOutlined className="branch-user-badge-icon" />
           </Badge>
         )
       },
@@ -125,42 +122,48 @@ const Branch = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_, record) => (
-        <Space>
-          {isSuperAdmin() && (
-            <>
-              <Button
-                type="link"
-                icon={<EditOutlined />}
-                onClick={() => handleEdit(record)}
-              >
-                Edit
-              </Button>
-              {record.assignedUsers?.length > 0 ? (
-                <Button
-                  type="link"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={() => handleDeleteClick(record)}
-                >
-                  Delete
-                </Button>
-              ) : (
-                <Popconfirm
-                  title="Are you sure you want to delete this branch?"
-                  onConfirm={() => handleDelete(record._id || record.id)}
-                  okText="Yes"
-                  cancelText="No"
-                >
-                  <Button type="link" danger icon={<DeleteOutlined />}>
-                    Delete
-                  </Button>
-                </Popconfirm>
-              )}
-            </>
-          )}
-        </Space>
-      ),
+      width: 72,
+      align: 'center',
+      render: (_, record) =>
+        isSuperAdmin() ? (
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'edit', label: 'Edit', icon: <EditOutlined /> },
+                { key: 'delete', label: 'Delete', icon: <DeleteOutlined />, danger: true },
+              ],
+              onClick: ({ key, domEvent }) => {
+                domEvent?.stopPropagation()
+                if (key === 'edit') handleEdit(record)
+                if (key === 'delete') {
+                  const hasUsers = (record.assignedUsers?.length || 0) > 0
+                  if (hasUsers) {
+                    handleDeleteClick(record)
+                  } else {
+                    Modal.confirm({
+                      title: 'Delete this branch?',
+                      content: 'This cannot be undone.',
+                      okText: 'Delete',
+                      okType: 'danger',
+                      cancelText: 'Cancel',
+                      onOk: () => handleDelete(record._id || record.id),
+                    })
+                  }
+                }
+              },
+            }}
+            trigger={['click']}
+            placement="bottomRight"
+            overlayClassName="settings-actions-dropdown"
+          >
+            <Button
+              type="text"
+              icon={<MoreOutlined className="settings-table-action-icon" />}
+              aria-label="Branch actions"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Dropdown>
+        ) : null,
     },
   ]
 
@@ -203,7 +206,7 @@ const Branch = () => {
       setIsDeleteModalVisible(true)
       deleteForm.resetFields()
     }
-    // If no users, Popconfirm will handle the confirmation and call handleDelete
+    // If no users, Modal.confirm from dropdown handles delete
   }
 
   const handleDelete = async (id, targetBranchId = null) => {
@@ -270,41 +273,30 @@ const Branch = () => {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-          gap: 12,
-        }}
-      >
-        <h2 className="mgmt-settings-section-title" style={{ margin: 0 }}>
-          Branch Configuration
-        </h2>
-        {isSuperAdmin() && (
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleAdd}
-            size={isMobile ? 'small' : 'middle'}
-          >
-            {isMobile ? 'Add' : 'Add Branch'}
-          </Button>
-        )}
-      </div>
+    <PageLayout>
+      <PageHeader
+        title="Branch Configuration"
+        extra={
+          isSuperAdmin() ? (
+            <MotionButton type="primary" icon={<PlusOutlined />} onClick={handleAdd} size={isMobile ? 'small' : 'middle'}>
+              {isMobile ? 'Add' : 'Add Branch'}
+            </MotionButton>
+          ) : null
+        }
+      />
 
-      <div className="table-responsive-wrapper">
-        <Table
-          columns={columns}
-          dataSource={branches}
-          loading={branchesLoading}
-          rowKey={(record) => record._id || record.id}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 'max-content' }}
-        />
-      </div>
+      <ContentCard staggerIndex={0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
+        <div className="table-responsive-wrapper">
+          <Table
+            columns={columns}
+            dataSource={branches}
+            loading={branchesLoading}
+            rowKey={(record) => record._id || record.id}
+            pagination={{ pageSize: 10 }}
+            scroll={{ x: 'max-content' }}
+          />
+        </div>
+      </ContentCard>
 
       <Modal
         title={selectedBranch ? 'Edit Branch' : 'Add New Branch'}
@@ -599,7 +591,7 @@ const Branch = () => {
           </div>
         )}
       </Modal>
-    </div>
+    </PageLayout>
   )
 }
 

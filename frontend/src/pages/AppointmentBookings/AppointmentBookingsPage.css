@@ -3,8 +3,15 @@
  * Theme via CSS variables; light theme gets stronger contrast on labels and borders.
  */
 
-.appointment-bookings-page {
+.appointment-bookings-page,
+.appt-page-shell {
   padding: 0;
+}
+
+@media (max-width: 575px) {
+  .appt-page-shell.appointment-bookings-page {
+    padding: var(--ds-space-16);
+  }
 }
 
 .appointment-bookings-page .appt-table-action-icon {
@@ -16,6 +23,28 @@
   margin: 0 0 16px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.appointment-bookings-page .appt-filters-card {
+  margin-bottom: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.appointment-bookings-page .appt-filters-row {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 12px;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .appointment-bookings-page .appt-filters-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
 }
 
 .appointment-bookings-page .appt-view-segmented.ant-segmented {
@@ -32,7 +61,7 @@
 
 .appointment-bookings-page .appt-view-segmented .ant-segmented-item-selected .ant-segmented-item-label,
 .appointment-bookings-page .appt-view-segmented .ant-segmented-item-selected .anticon {
-  color: #fff !important;
+  color: var(--text-color) !important;
   font-weight: 600;
 }
 
@@ -142,7 +171,11 @@
 .appointment-bookings-page .appt-legend {
   margin-top: 12px;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-legend > div {
+  color: var(--text-color);
 }
 
 .appointment-bookings-page .appt-legend-swatch-selected {
@@ -178,13 +211,14 @@
 }
 
 .appointment-bookings-page .appt-week-strip-day--sel {
-  background: var(--primary-color);
-  border-color: var(--primary-color);
+  background: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
   color: #fff !important;
 }
 
 .appointment-bookings-page .appt-week-strip-day--sel .appt-week-strip-sub,
-.appointment-bookings-page .appt-week-strip-day--sel .appt-week-strip-num {
+.appointment-bookings-page .appt-week-strip-day--sel .appt-week-strip-num,
+.appointment-bookings-page .appt-week-strip-day--sel .appt-week-strip-month {
   color: #fff !important;
 }
 
@@ -267,6 +301,22 @@
   border-bottom: none;
 }
 
+.appointment-bookings-page .appt-slot-view-btn.ant-btn-link {
+  color: var(--primary-color) !important;
+  padding: 0 4px;
+  font-weight: 500;
+}
+
+.appointment-bookings-page .appt-slot-view-btn.ant-btn-link:hover,
+.appointment-bookings-page .appt-slot-view-btn.ant-btn-link:focus {
+  color: var(--primary-color) !important;
+  opacity: 0.88;
+}
+
+.appointment-bookings-page .appt-slot-view-btn.ant-btn-link .anticon {
+  color: inherit;
+}
+
 .appointment-bookings-page .appt-muted {
   color: var(--text-muted);
   padding: 24px;
@@ -282,42 +332,44 @@
 }
 
 /* Stat pills – primary gold (no blue); Closed uses accent for contrast vs Total */
-.appointment-bookings-page .appt-stat-total {
+.appointment-bookings-page .appt-stat-total.ant-card {
   flex: 1;
   min-width: 70px;
   text-align: center;
-  background: var(--primary-color);
+  background: var(--primary-color) !important;
   border: none;
 }
 
-.appointment-bookings-page .appt-stat-closed {
+.appointment-bookings-page .appt-stat-closed.ant-card {
   flex: 1;
   min-width: 70px;
   text-align: center;
-  background: var(--accent-gold, var(--primary-color));
+  background: var(--accent-gold, var(--primary-color)) !important;
   border: none;
 }
 
-.appointment-bookings-page .appt-stat-current {
+.appointment-bookings-page .appt-stat-current.ant-card {
   flex: 1;
   min-width: 70px;
   text-align: center;
-  background: #fa8c16;
+  background: #fa8c16 !important;
   border: none;
 }
 
 .appointment-bookings-page .appt-stat-card .ant-card-body {
   padding: 12px 8px;
+  background: transparent !important;
+  color: #fff;
 }
 
-.appointment-bookings-page .appt-stat-val {
-  color: #fff;
+.appointment-bookings-page .appt-stat-card .appt-stat-val {
+  color: #fff !important;
   font-size: 18px;
   font-weight: 600;
 }
 
-.appointment-bookings-page .appt-stat-label {
-  color: rgba(255, 255, 255, 0.9);
+.appointment-bookings-page .appt-stat-card .appt-stat-label {
+  color: rgba(255, 255, 255, 0.95) !important;
   font-size: 12px;
 }
 

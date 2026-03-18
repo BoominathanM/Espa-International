@@ -292,26 +292,19 @@ const Layout = ({ children }) => {
       {!useDrawer && (
         <div className="app-sidebar-logo">
           {collapsed ? (
-            <span style={{ fontSize: 24, fontWeight: 'bold' }}>E</span>
+            <span className="app-sidebar-logo-letter">E</span>
           ) : (
             <img
               src="/espalogo.png"
               alt="ESPA Logo"
-              style={{
-                maxWidth: '100%',
-                transform: 'scale(1.8)',
-                maxHeight: '50px',
-                objectFit: 'contain',
-              }}
+              className="app-sidebar-logo-img"
               onError={(e) => {
-                e.target.style.display = 'none'
-                e.target.nextSibling.style.display = 'block'
+                e.target.classList.add('app-sidebar-logo-img--hidden')
+                e.target.nextSibling.classList.add('app-sidebar-logo-fallback--visible')
               }}
             />
           )}
-          <span style={{ fontSize: 20, fontWeight: 'bold', display: 'none' }}>
-            ESPA CRM
-          </span>
+          <span className="app-sidebar-logo-fallback">ESPA CRM</span>
         </div>
       )}
       <Menu
@@ -329,16 +322,7 @@ const Layout = ({ children }) => {
     <AntLayout style={{ minHeight: '100vh' }}>
       {useDrawer ? (
         <Drawer
-          title={
-            <img
-              src="/espalogo.png"
-              alt="ESPA Logo"
-              style={{ maxHeight: '40px', objectFit: 'contain', transform: 'scale(1.2)' }}
-              onError={(e) => {
-                e.target.style.display = 'none'
-              }}
-            />
-          }
+          title={<img src="/espalogo.png" alt="ESPA Logo" className="app-drawer-logo" onError={(e) => { e.target.classList.add('app-sidebar-logo-img--hidden') }} />}
           placement="left"
           onClose={() => setMobileMenuVisible(false)}
           open={mobileMenuVisible}
@@ -383,18 +367,17 @@ const Layout = ({ children }) => {
         }}
       >
         <Header className="app-layout-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div className="app-header-toolbar">
             {useDrawer ? (
-              <MenuUnfoldOutlined onClick={() => setMobileMenuVisible(true)} className="app-trigger-icon" style={{ fontSize: 18 }} />
+              <MenuUnfoldOutlined onClick={() => setMobileMenuVisible(true)} className="app-trigger-icon app-trigger-icon--md" />
             ) : (
               React.createElement(collapsed ? MenuUnfoldOutlined : MenuFoldOutlined, {
-                className: 'trigger app-trigger-icon',
+                className: 'trigger app-trigger-icon app-trigger-icon--md',
                 onClick: () => setCollapsed(!collapsed),
-                style: { fontSize: 18 },
               })
             )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 16 }}>
+          <div className={`app-header-toolbar app-header-toolbar--tight`}>
             <Tooltip title={isDark ? 'Light mode' : 'Dark mode'}>
               <motion.button
                 type="button"
@@ -582,12 +565,13 @@ const Layout = ({ children }) => {
         </Content>
       </AntLayout>
 
-      {/* Profile Drawer */}
+      {/* Profile Drawer — themed via .profile-drawer (light/dark) */}
       <Drawer
+        rootClassName="profile-drawer"
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <UserOutlined style={{ color: '#D4AF37', fontSize: 20 }} />
-            <span style={{ color: '#D4AF37', fontSize: 18, fontWeight: 'bold' }}>Profile</span>
+          <div className="profile-drawer__title-wrap">
+            <UserOutlined className="profile-drawer__title-icon" />
+            <span className="profile-drawer__title-text">Profile</span>
           </div>
         }
         placement="right"
@@ -598,46 +582,38 @@ const Layout = ({ children }) => {
         }}
         open={profileDrawerVisible}
         width={isMobile ? '100%' : 400}
-        bodyStyle={{ background: '#1a1a1a', padding: 24, display: 'flex', flexDirection: 'column', height: '100%' }}
-        headerStyle={{ background: '#1a1a1a', borderBottom: '1px solid #333' }}
       >
-        <div style={{ color: '#ffffff', display: 'flex', flexDirection: 'column', flex: 1 }}>
-          {/* User Information */}
-          <div style={{ marginBottom: 32 }}>
-            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <MailOutlined style={{ color: '#D4AF37', fontSize: 16 }} />
+        <div className="profile-drawer__body">
+          <div className="profile-drawer__section">
+            <div className="profile-drawer__row">
+              <MailOutlined className="profile-drawer__row-icon" />
               <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Email</div>
-                <div style={{ color: '#ffffff', fontSize: 14 }}>{displayUser?.email || 'N/A'}</div>
+                <div className="profile-drawer__label">Email</div>
+                <div className="profile-drawer__value">{displayUser?.email || 'N/A'}</div>
               </div>
             </div>
-
-            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <BankOutlined style={{ color: '#D4AF37', fontSize: 16 }} />
+            <div className="profile-drawer__row">
+              <BankOutlined className="profile-drawer__row-icon" />
               <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Branch</div>
-                <div style={{ color: '#ffffff', fontSize: 14 }}>
-                  {displayUser?.branch?.name || 'Not Assigned'}
-                </div>
+                <div className="profile-drawer__label">Branch</div>
+                <div className="profile-drawer__value">{displayUser?.branch?.name || 'Not Assigned'}</div>
               </div>
             </div>
-
-            <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <SafetyOutlined style={{ color: '#D4AF37', fontSize: 16 }} />
+            <div className="profile-drawer__row">
+              <SafetyOutlined className="profile-drawer__row-icon" />
               <div>
-                <div style={{ color: '#888', fontSize: 12, marginBottom: 4 }}>Role</div>
-                <div style={{ color: '#D4AF37', fontSize: 14, fontWeight: 'bold' }}>
+                <div className="profile-drawer__label">Role</div>
+                <div className="profile-drawer__role">
                   {displayUser?.role ? displayUser.role.charAt(0).toUpperCase() + displayUser.role.slice(1) : 'Staff'}
                 </div>
               </div>
             </div>
           </div>
 
-          <Divider style={{ borderColor: '#333', margin: '24px 0' }} />
+          <Divider className="profile-drawer__divider" />
 
-          {/* Change Password Section - Only for Super Admin */}
           {isSuperAdmin() && (
-            <div style={{ marginBottom: 32 }}>
+            <div className="profile-drawer__section profile-drawer__section--spaced">
               {!showChangePasswordForm ? (
                 <Button
                   type="primary"
@@ -645,18 +621,13 @@ const Layout = ({ children }) => {
                   onClick={() => setShowChangePasswordForm(true)}
                   block
                   size="large"
-                  style={{
-                    background: '#D4AF37',
-                    borderColor: '#D4AF37',
-                    color: '#000',
-                    fontWeight: 'bold',
-                  }}
+                  className="profile-drawer__btn-primary"
                 >
                   Change Password
                 </Button>
               ) : (
                 <div>
-                  <div style={{ color: '#D4AF37', fontSize: 16, fontWeight: 'bold', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div className="profile-drawer__subsection-title">
                     <LockOutlined />
                     Change Password
                   </div>
@@ -665,33 +636,28 @@ const Layout = ({ children }) => {
                     onFinish={handleChangePassword}
                     layout="vertical"
                     requiredMark={false}
+                    className="profile-drawer__form"
                   >
                     <Form.Item
                       name="currentPassword"
-                      label={<span style={{ color: '#ffffff' }}>Current Password</span>}
+                      label={<span className="profile-drawer__form-label">Current Password</span>}
                       rules={[{ required: true, message: 'Please enter current password' }]}
                     >
-                      <Input.Password
-                        placeholder="Enter current password"
-                        style={{ background: '#0a0a0a', border: '1px solid #333', color: '#ffffff' }}
-                      />
+                      <Input.Password placeholder="Enter current password" className="profile-drawer__input" />
                     </Form.Item>
                     <Form.Item
                       name="newPassword"
-                      label={<span style={{ color: '#ffffff' }}>New Password</span>}
+                      label={<span className="profile-drawer__form-label">New Password</span>}
                       rules={[
                         { required: true, message: 'Please enter new password' },
                         { min: 6, message: 'Password must be at least 6 characters' },
                       ]}
                     >
-                      <Input.Password
-                        placeholder="Enter new password"
-                        style={{ background: '#0a0a0a', border: '1px solid #333', color: '#ffffff' }}
-                      />
+                      <Input.Password placeholder="Enter new password" className="profile-drawer__input" />
                     </Form.Item>
                     <Form.Item
                       name="confirmPassword"
-                      label={<span style={{ color: '#ffffff' }}>Confirm New Password</span>}
+                      label={<span className="profile-drawer__form-label">Confirm New Password</span>}
                       dependencies={['newPassword']}
                       rules={[
                         { required: true, message: 'Please confirm new password' },
@@ -705,24 +671,11 @@ const Layout = ({ children }) => {
                         }),
                       ]}
                     >
-                      <Input.Password
-                        placeholder="Confirm new password"
-                        style={{ background: '#0a0a0a', border: '1px solid #333', color: '#ffffff' }}
-                      />
+                      <Input.Password placeholder="Confirm new password" className="profile-drawer__input" />
                     </Form.Item>
                     <Form.Item>
-                      <Space style={{ width: '100%' }} direction="vertical" size="middle">
-                        <Button
-                          type="primary"
-                          htmlType="submit"
-                          block
-                          style={{
-                            background: '#D4AF37',
-                            borderColor: '#D4AF37',
-                            color: '#000',
-                            fontWeight: 'bold',
-                          }}
-                        >
+                      <Space className="profile-drawer__form-actions" direction="vertical" size="middle">
+                        <Button type="primary" htmlType="submit" block className="profile-drawer__btn-primary">
                           Change Password
                         </Button>
                         <Button
@@ -731,10 +684,7 @@ const Layout = ({ children }) => {
                             changePasswordForm.resetFields()
                           }}
                           block
-                          style={{
-                            borderColor: '#333',
-                            color: '#ffffff',
-                          }}
+                          className="profile-drawer__btn-secondary"
                         >
                           Cancel
                         </Button>
@@ -746,19 +696,11 @@ const Layout = ({ children }) => {
             </div>
           )}
 
-          <div style={{ flex: 1, minHeight: 20 }}></div>
+          <div className="profile-drawer__spacer" />
 
-          <Divider style={{ borderColor: '#333', margin: '24px 0' }} />
+          <Divider className="profile-drawer__divider" />
 
-          {/* Logout Button */}
-          <Button
-            type="primary"
-            danger
-            icon={<LogoutOutlined />}
-            onClick={handleLogout}
-            block
-            size="large"
-          >
+          <Button type="primary" danger icon={<LogoutOutlined />} onClick={handleLogout} block size="large">
             Logout
           </Button>
         </div>

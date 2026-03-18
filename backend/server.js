@@ -16,6 +16,9 @@ import whatsappRoutes from './routes/whatsapp.js'
 import ozonetelSettingsRoutes from './routes/ozonetelSettings.js'
 import ozonetelRoutes from './routes/ozonetel.js'
 import cloudAgentRoutes from './routes/cloudagent.js'
+import dashboardRoutes from './routes/dashboard.js'
+import reportRoutes from './routes/reports.js'
+import customerRoutes from './routes/customers.js'
 import webhookRoutes from './routes/webhook.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
@@ -170,6 +173,9 @@ app.use('/api/whatsapp', whatsappRoutes)
 app.use('/api/ozonetel-settings', ozonetelSettingsRoutes)
 app.use('/api/ozonetel', ozonetelRoutes)
 app.use('/api/cloudagent', cloudAgentRoutes)
+app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/reports', reportRoutes)
+app.use('/api/customers', customerRoutes)
 app.use('/webhook', webhookRoutes)
 
 // 404 handler for undefined routes

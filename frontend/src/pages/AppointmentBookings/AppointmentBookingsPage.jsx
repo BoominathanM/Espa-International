@@ -26,9 +26,9 @@ import {
   CalendarOutlined,
   UnorderedListOutlined,
   SearchOutlined,
-  FilterOutlined,
-  PrinterOutlined,
   LeftOutlined,
+  UpOutlined,
+  DownOutlined,
   RightOutlined,
   EditOutlined,
   EyeOutlined,
@@ -54,6 +54,7 @@ import {
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import dayjs from 'dayjs'
 import './AppointmentBookingsPage.css'
+import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 
 const { Option } = Select
 
@@ -503,7 +504,11 @@ const AppointmentBookingsPage = () => {
   const [editingLead, setEditingLead] = useState(null)
   const [detailLeadId, setDetailLeadId] = useState(null)
   const [searchText, setSearchText] = useState('')
-  const [filterOpen, setFilterOpen] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+  const [filterBranch, setFilterBranch] = useState(undefined)
+  const [filterSource, setFilterSource] = useState(undefined)
+  const [filterSlot, setFilterSlot] = useState(undefined)
+  const [listPage, setListPage] = useState(1)
 
   const dateStr = selectedDate.format('YYYY-MM-DD')
 
@@ -526,10 +531,22 @@ const AppointmentBookingsPage = () => {
     return leads.filter((l) => statuses.includes(l.status))
   }, [leads, listTab])
 
+  const attributeFiltered = useMemo(() => {
+    return filteredByTab.filter((l) => {
+      if (filterBranch) {
+        const bid = l.branch?._id || l.branch
+        if (String(bid || '') !== String(filterBranch)) return false
+      }
+      if (filterSource && l.source !== filterSource) return false
+      if (filterSlot && (l.slot_time || '') !== filterSlot) return false
+      return true
+    })
+  }, [filteredByTab, filterBranch, filterSource, filterSlot])
+
   const searchFiltered = useMemo(() => {
-    if (!searchText.trim()) return filteredByTab
+    if (!searchText.trim()) return attributeFiltered
     const q = searchText.toLowerCase()
-    return filteredByTab.filter(
+    return attributeFiltered.filter(
       (l) =>
         (l.first_name && l.first_name.toLowerCase().includes(q)) ||
         (l.last_name && l.last_name.toLowerCase().includes(q)) ||
@@ -537,7 +554,19 @@ const AppointmentBookingsPage = () => {
         (l.phone && String(l.phone).includes(q)) ||
         (l._id && String(l._id).toLowerCase().includes(q))
     )
-  }, [filteredByTab, searchText])
+  }, [attributeFiltered, searchText])
+
+  const handleApplyAppointmentFilters = () => {
+    setListPage(1)
+  }
+
+  const handleClearAppointmentFilters = () => {
+    setSearchText('')
+    setFilterBranch(undefined)
+    setFilterSource(undefined)
+    setFilterSlot(undefined)
+    setListPage(1)
+  }
 
   const summaryCounts = useMemo(() => {
     const total = leads.length
@@ -691,6 +720,10 @@ const AppointmentBookingsPage = () => {
     },
   ]
 
+  useEffect(() => {
+    setListPage(1)
+  }, [listTab, selectedDate])
+
   const hourSlots = []
   for (let h = 0; h < 24; h++) {
     hourSlots.push(h)
@@ -708,7 +741,7 @@ const AppointmentBookingsPage = () => {
 
   if (detailLeadId) {
     return (
-      <div className="appointment-bookings-page" style={{ padding: isMobile ? 8 : 0 }}>
+      <PageLayout className="appointment-bookings-page appt-page-shell">
         <AppointmentDetailPanel
           leadId={detailLeadId}
           onBack={() => {
@@ -718,105 +751,133 @@ const AppointmentBookingsPage = () => {
           isMobile={isMobile}
           messageApi={messageApi}
         />
-      </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="appointment-bookings-page" style={{ padding: isMobile ? 8 : 0 }}>
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: 'space-between',
-          alignItems: isMobile ? 'stretch' : 'center',
-          marginBottom: 16,
-          gap: 12,
-        }}
-      >
-        <div style={{ width: isMobile ? '100%' : 'auto', flex: isMobile ? 'none' : '1 1 auto', minWidth: 0 }}>
-          <h1 className="leads-page-title">Appointment-bookings</h1>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleNewAppointment} className="appt-btn-primary">
-            New Appointment
-          </Button>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: 'space-between',
-          alignItems: isMobile ? 'stretch' : 'center',
-          marginBottom: 16,
-          gap: 12,
-        }}
-      >
-        <div style={{ width: isMobile ? '100%' : 'auto', flex: isMobile ? 'none' : '1 1 auto', minWidth: 0 }}>
-          <Segmented
-            block={isMobile}
-            value={activeView}
-            onChange={setActiveView}
-            options={[
-              {
-                value: 'calendar',
-                label: (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <CalendarOutlined />
-                    Calendar View
-                  </span>
-                ),
-              },
-              {
-                value: 'list',
-                label: (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <UnorderedListOutlined />
-                    Appointments
-                  </span>
-                ),
-              },
-            ]}
-            size={isMobile ? 'small' : 'middle'}
-            className="appt-view-segmented"
-          />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-{activeView === 'list' && (
-        <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16, alignItems: 'center' }}>
-            <Input
-              placeholder="Search..."
-              prefix={<SearchOutlined />}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              style={{ width: 200 }}
-              allowClear
-            />
-            <Button type="primary" icon={<FilterOutlined />} className="appt-btn-primary">
-              Filter
-            </Button>
-            <Button icon={<PrinterOutlined />} />
-
-            {(searchText || filterOpen) && (
-              <Button type="text" onClick={() => { setSearchText(''); setFilterOpen(false); }}>
-                Clear
+    <PageLayout className="appointment-bookings-page appt-page-shell">
+      <PageHeader
+        title="Appointment Bookings"
+        extra={
+          <Space wrap>
+            {activeView === 'list' && (
+              <Button
+                icon={showFilters ? <UpOutlined /> : <DownOutlined />}
+                onClick={() => setShowFilters(!showFilters)}
+                size={isMobile ? 'small' : 'middle'}
+              >
+                {showFilters ? 'Hide Filters' : 'Show Filters'}
               </Button>
             )}
-          </div>
-          </>
-          )}
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleNewAppointment} className="appt-btn-primary">
+              New Appointment
+            </Button>
+          </Space>
+        }
+      />
 
-        </div>
+      <div style={{ marginBottom: 16 }}>
+        <Segmented
+          block={isMobile}
+          value={activeView}
+          onChange={(v) => {
+            setActiveView(v)
+            if (v === 'calendar') setShowFilters(false)
+          }}
+          options={[
+            {
+              value: 'calendar',
+              label: (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <CalendarOutlined />
+                  Calendar View
+                </span>
+              ),
+            },
+            {
+              value: 'list',
+              label: (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <UnorderedListOutlined />
+                  Appointments
+                </span>
+              ),
+            },
+          ]}
+          size={isMobile ? 'small' : 'middle'}
+          className="appt-view-segmented"
+        />
       </div>
       <p className="appt-view-subtitle">
         {activeView === 'calendar'
           ? 'Choose a date on the calendar, then review time slots and open an appointment.'
           : 'Search and filter appointments. Click a row or use the menu to view or edit.'}
       </p>
+
+      {activeView === 'list' && showFilters && (
+        <ContentCard compact className="appt-filters-card">
+          <div className="appt-filters-row ds-filters-row--responsive">
+            <Input
+              className="ds-filter-grow"
+              placeholder="Search by name, email or phone"
+              prefix={<SearchOutlined />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onPressEnter={handleApplyAppointmentFilters}
+              allowClear
+            />
+            <Select
+              className="ds-filter-fixed"
+              placeholder="Filter by Branch"
+              allowClear
+              value={filterBranch}
+              onChange={setFilterBranch}
+              style={{ minWidth: 160 }}
+            >
+              {branches.map((b) => (
+                <Option key={b._id || b.id} value={b._id || b.id}>
+                  {b.name}
+                </Option>
+              ))}
+            </Select>
+            <Select
+              className="ds-filter-fixed"
+              placeholder="Filter by Source"
+              allowClear
+              value={filterSource}
+              onChange={setFilterSource}
+              style={{ minWidth: 140 }}
+            >
+              <Option value="Add">Add</Option>
+              <Option value="Call">Call</Option>
+              <Option value="WhatsApp">WhatsApp</Option>
+              <Option value="Facebook">Facebook</Option>
+              <Option value="Insta">Insta</Option>
+              <Option value="Website">Website</Option>
+              <Option value="Import">Import</Option>
+            </Select>
+            <Select
+              className="ds-filter-fixed"
+              placeholder="Filter by slot"
+              allowClear
+              value={filterSlot}
+              onChange={setFilterSlot}
+              style={{ minWidth: 160 }}
+            >
+              {SLOT_TIMES.map((s) => (
+                <Option key={s} value={s}>
+                  {s}
+                </Option>
+              ))}
+            </Select>
+            <Button type="primary" className="appt-btn-primary" onClick={handleApplyAppointmentFilters}>
+              Apply Filter
+            </Button>
+            <Button onClick={handleClearAppointmentFilters}>Clear</Button>
+          </div>
+        </ContentCard>
+      )}
 
       {activeView === 'calendar' && (
         <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 24, flex: 1 }}>
@@ -918,7 +979,15 @@ const AppointmentBookingsPage = () => {
                               {(l.first_name || '')} {(l.last_name || '').trim()}
                               {l.spa_package && ` · ${l.spa_package}`}
                             </span>
-                            <Button type="gold" size="small" icon={<EyeOutlined />} onClick={() => handleView(l)}>View</Button>
+                            <Button
+                              type="link"
+                              size="small"
+                              className="appt-slot-view-btn"
+                              icon={<EyeOutlined />}
+                              onClick={() => handleView(l)}
+                            >
+                              View
+                            </Button>
                           </div>
                         ))}
                       </Card>
@@ -954,7 +1023,10 @@ const AppointmentBookingsPage = () => {
           </div>
           <Tabs
             activeKey={listTab}
-            onChange={setListTab}
+            onChange={(k) => {
+              setListTab(k)
+              setListPage(1)
+            }}
             items={[
               { key: 'current', label: 'Current' },
               { key: 'rescheduled', label: 'Rescheduled' },
@@ -969,7 +1041,14 @@ const AppointmentBookingsPage = () => {
               dataSource={searchFiltered}
               rowKey="_id"
               loading={leadsLoading}
-              pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} appointments` }}
+              pagination={{
+                current: listPage,
+                pageSize: 10,
+                showSizeChanger: true,
+                showTotal: (t) => `Total ${t} appointments`,
+                onChange: (page) => setListPage(page),
+                onShowSizeChange: () => setListPage(1),
+              }}
               scroll={{ x: 1200 }}
               locale={{ emptyText: 'No data' }}
               onRow={(record) => ({
@@ -1117,7 +1196,7 @@ const AppointmentBookingsPage = () => {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageLayout>
   )
 }
 

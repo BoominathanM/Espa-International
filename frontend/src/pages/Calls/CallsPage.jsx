@@ -6,7 +6,6 @@ import {
   Select,
   Space,
   Tag,
-  Card,
   Modal,
   Spin,
   App,
@@ -21,8 +20,11 @@ import {
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useResponsive } from '../../hooks/useResponsive'
+import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
+import MotionButton from '../../components/MotionButton'
 import { useGetCallLogsQuery } from '../../store/api/cloudAgentApi'
 import dayjs from 'dayjs'
+import './CallsPage.css'
 
 const { Option } = Select
 
@@ -158,6 +160,7 @@ const Calls = () => {
           {!record.leadLinked && (
             <Button
               type="link"
+              className="calls-create-lead-link"
               icon={<UserAddOutlined />}
               onClick={() => {
                 setSelectedCall(record)
@@ -181,85 +184,76 @@ const Calls = () => {
   }
 
   return (
-    <div className="mgmt-page">
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between', 
-        alignItems: isMobile ? 'stretch' : 'center',
-        marginBottom: 16,
-        gap: 12,
-      }}>
-        <h1 className="mgmt-page-title">Call Management</h1>
-        <Space wrap style={{ width: isMobile ? '100%' : 'auto' }}>
-          <Button
-            icon={showFilters ? <UpOutlined /> : <DownOutlined />}
-            onClick={() => setShowFilters(!showFilters)}
-            size={isMobile ? 'small' : 'middle'}
-          >
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </Button>
-          <Button type="primary" icon={<PhoneOutlined />} size={isMobile ? 'small' : 'middle'} onClick={() => navigate('/leads')}>
-            {isMobile ? 'Call' : 'Make Call (from Leads)'}
-          </Button>
-        </Space>
-      </div>
+    <PageLayout className="mgmt-page">
+      <PageHeader
+        title="Call Management"
+        extra={
+          <Space wrap className={isMobile ? 'ds-page-header__extra--full-mobile' : ''}>
+            <Button
+              icon={showFilters ? <UpOutlined /> : <DownOutlined />}
+              onClick={() => setShowFilters(!showFilters)}
+              size={isMobile ? 'small' : 'middle'}
+            >
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </Button>
+            <MotionButton type="primary" icon={<PhoneOutlined />} size={isMobile ? 'small' : 'middle'} onClick={() => navigate('/leads')}>
+              {isMobile ? 'Call' : 'Make Call (from Leads)'}
+            </MotionButton>
+          </Space>
+        }
+      />
 
       {showFilters && (
-        <Card style={{ background: '#1a1a1a', border: '1px solid #333', marginBottom: 16 }}>
-          <div style={{ 
-            display: 'flex', 
-            flexDirection: isMobile ? 'column' : 'row',
-            flexWrap: isMobile ? 'nowrap' : 'wrap',
-            gap: 12,
-            width: '100%'
-          }}>
+        <ContentCard staggerIndex={0} compact>
+          <div className="ds-filters-row ds-filters-row--responsive">
             <Input
+              className="ds-filter-grow"
               placeholder="Search by phone number"
               prefix={<SearchOutlined />}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              style={{ width: isMobile ? '100%' : 250, flex: isMobile ? 'none' : '1 1 auto' }}
             />
-            <Select placeholder="Filter by Type" style={{ width: isMobile ? '100%' : 150 }} allowClear value={filterType} onChange={setFilterType}>
+            <Select className="ds-filter-fixed" placeholder="Filter by Type" allowClear value={filterType} onChange={setFilterType}>
               <Option value="Inbound">Inbound</Option>
               <Option value="Outbound">Outbound</Option>
             </Select>
-            <Select placeholder="Filter by Status" style={{ width: isMobile ? '100%' : 150 }} allowClear value={filterStatus} onChange={setFilterStatus}>
+            <Select className="ds-filter-fixed" placeholder="Filter by Status" allowClear value={filterStatus} onChange={setFilterStatus}>
               <Option value="Answered">Answered</Option>
               <Option value="Missed">Missed</Option>
             </Select>
           </div>
-        </Card>
+        </ContentCard>
       )}
 
-      <div className="table-responsive-wrapper">
-        {callsLoading ? (
-          <div style={{ textAlign: 'center', padding: '40px 0' }}>
-            <Spin size="large" />
-            <p className="mgmt-loading-text">Loading call logs...</p>
-          </div>
-        ) : (
-          <Table
-            columns={columns}
-            dataSource={calls}
-            rowKey="key"
-            pagination={{
-              current: pagination.page,
-              pageSize: pagination.limit,
-              total: pagination.total,
-              showSizeChanger: true,
-              showTotal: (total) => `Total ${total} calls`,
-              onChange: (page, size) => {
-                setCallPage(page)
-                setCallPageSize(size)
-              },
-            }}
-            scroll={{ x: 'max-content' }}
-            size={isMobile ? 'small' : 'middle'}
-          />
-        )}
-      </div>
+      <ContentCard staggerIndex={showFilters ? 1 : 0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
+        <div className="table-responsive-wrapper">
+          {callsLoading ? (
+            <div className="ds-loading-block">
+              <Spin size="large" />
+              <p className="mgmt-loading-text">Loading call logs...</p>
+            </div>
+          ) : (
+            <Table
+              columns={columns}
+              dataSource={calls}
+              rowKey="key"
+              pagination={{
+                current: pagination.page,
+                pageSize: pagination.limit,
+                total: pagination.total,
+                showSizeChanger: true,
+                showTotal: (total) => `Total ${total} calls`,
+                onChange: (page, size) => {
+                  setCallPage(page)
+                  setCallPageSize(size)
+                },
+              }}
+              scroll={{ x: 'max-content' }}
+              size={isMobile ? 'small' : 'middle'}
+            />
+          )}
+        </div>
+      </ContentCard>
 
       <Modal
         title="Create Lead from Call"
@@ -312,7 +306,7 @@ const Calls = () => {
           </div>
         )}
       </Modal>
-    </div>
+    </PageLayout>
   )
 }
 

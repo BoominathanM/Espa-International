@@ -153,3 +153,9 @@
   font-weight: bold;
   color: var(--text-color);
 }
+
+/* Settings — User / Branch table row actions (⋯ menu) */
+.settings-table-action-icon {
+  font-size: 18px;
+  color: var(--primary-color);
+}

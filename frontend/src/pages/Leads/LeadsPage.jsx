@@ -60,11 +60,15 @@ import {
   useDeleteReminderMutation,
 } from '../../store/api/leadApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
+import { useConvertLeadToCustomerMutation } from '../../store/api/customerApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
 import { useGetCampaignsQuery, useMakeCallMutation } from '../../store/api/cloudAgentApi'
 import { useGetMeQuery } from '../../store/api/authApi'
 import { getApiBaseUrl } from '../../utils/apiConfig'
+import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
+import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
+import MotionButton from '../../components/MotionButton'
 
 const { RangePicker } = DatePicker
 const { Option } = Select
@@ -160,12 +164,13 @@ const Leads = () => {
   const [createLead, { isLoading: createLoading }] = useCreateLeadMutation()
   const [updateLead, { isLoading: updateLoading }] = useUpdateLeadMutation()
   const [deleteLeadMutation] = useDeleteLeadMutation()
-  const [exportLeads] = useLazyExportLeadsQuery()
+  const [triggerExport, { isLoading: exporting }] = useLazyExportLeadsQuery()
   const [importLeads, { isLoading: importLoading }] = useImportLeadsMutation()
   const [syncAskEvaLeads, { isLoading: syncAskEvaLoading }] = useSyncAskEvaLeadsMutation()
   const [addReminder, { isLoading: addReminderLoading }] = useAddReminderMutation()
   const [updateReminderApi] = useUpdateReminderMutation()
   const [deleteReminderApi] = useDeleteReminderMutation()
+  const [convertLeadToCustomer, { isLoading: convertingToCustomer }] = useConvertLeadToCustomerMutation()
 
   const followUpLeadId = followUpLead?._id || followUpLead?.key
   const { data: leadDetailData, refetch: refetchLeadDetail } = useGetLeadQuery(followUpLeadId, {
@@ -753,98 +758,73 @@ const Leads = () => {
 
   const handleExport = async () => {
     try {
-      // Build query params
-      const params = new URLSearchParams()
-      if (filterStatus) params.append('status', filterStatus)
-      if (filterSource) params.append('source', filterSource)
-      if (filterBranch) params.append('branch', filterBranch)
-      if (searchText) params.append('search', searchText)
-
-      const queryString = params.toString()
-
-      // Use the same API URL logic as apiSlice
-      const baseUrl = getApiBaseUrl()
-
-      const response = await fetch(`${baseUrl}/leads/export${queryString ? `?${queryString}` : ''}`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || 'Export failed')
+      const result = await triggerExport({
+        status: filterStatus || undefined,
+        source: filterSource || undefined,
+        branch: filterBranch || undefined,
+        search: searchText?.trim() || undefined,
+      }).unwrap()
+      const rows = result?.leads || []
+      if (rows.length === 0) {
+        messageApi.info('No leads to export with current filters.')
+        return
       }
-
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `leads_${new Date().toISOString().split('T')[0]}.csv`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-
-      messageApi.success('Leads exported successfully')
+      const ws = XLSX.utils.json_to_sheet(rows)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Leads')
+      const fileName = `leads_${dayjs().format('YYYY-MM-DD')}.xlsx`
+      XLSX.writeFile(wb, fileName)
+      messageApi.success(`Exported ${rows.length} lead(s) to ${fileName}`)
     } catch (error) {
       console.error('Export error:', error)
-      messageApi.error(error.message || 'Failed to export leads')
+      messageApi.error(error?.data?.message || error?.message || 'Failed to export leads')
     }
   }
 
   return (
-    <div className="leads-management-page" style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden', position: 'relative' }}>
-      <div className="leads-page-header">
-        <div>
-          <h1 className="leads-page-title">Lead Management</h1>
-          <p className="leads-page-subtitle">View, filter, and manage leads. Row click opens follow-up.</p>
-        </div>
-        <Space wrap style={{ width: isMobile ? '100%' : 'auto', justifyContent: isMobile ? 'stretch' : 'flex-end' }}>
-          <Button icon={<SyncOutlined />} onClick={handleSyncAskEva} loading={syncAskEvaLoading} size={isMobile ? 'small' : 'middle'}>
-            {isMobile ? 'Sync AskEva' : 'Sync AskEva'}
-          </Button>
-          <Button icon={<ImportOutlined />} onClick={handleImport} size={isMobile ? 'small' : 'middle'}>
-            {isMobile ? 'Import' : 'Import'}
-          </Button>
-          <Button icon={<ExportOutlined />} onClick={handleExport} size={isMobile ? 'small' : 'middle'}>
-            {isMobile ? 'Export' : 'Export'}
-          </Button>
-          <Button
-            icon={showFilters ? <UpOutlined /> : <DownOutlined />}
-            onClick={() => setShowFilters(!showFilters)}
-            size={isMobile ? 'small' : 'middle'}
-          >
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </Button>
-          {canCreate('leads') && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} size={isMobile ? 'small' : 'middle'}>
-              {isMobile ? 'Add' : 'Add Lead'}
+    <PageLayout className="leads-management-page">
+      <PageHeader
+        title="Lead Management"
+        subtitle="View, filter, and manage leads. Row click opens follow-up."
+        extra={
+          <Space wrap>
+            <Button icon={<SyncOutlined />} onClick={handleSyncAskEva} loading={syncAskEvaLoading} size={isMobile ? 'small' : 'middle'}>
+              {isMobile ? 'Sync AskEva' : 'Sync AskEva'}
             </Button>
-          )}
-        </Space>
-      </div>
+            <Button icon={<ImportOutlined />} onClick={handleImport} size={isMobile ? 'small' : 'middle'}>
+              {isMobile ? 'Import' : 'Import'}
+            </Button>
+            <Button icon={<ExportOutlined />} onClick={handleExport} loading={exporting} size={isMobile ? 'small' : 'middle'}>
+              {isMobile ? 'Export' : 'Export'}
+            </Button>
+            <Button
+              icon={showFilters ? <UpOutlined /> : <DownOutlined />}
+              onClick={() => setShowFilters(!showFilters)}
+              size={isMobile ? 'small' : 'middle'}
+            >
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </Button>
+            {canCreate('leads') && (
+              <MotionButton type="primary" icon={<PlusOutlined />} onClick={handleAdd} size={isMobile ? 'small' : 'middle'}>
+                {isMobile ? 'Add' : 'Add Lead'}
+              </MotionButton>
+            )}
+          </Space>
+        }
+      />
 
       {showFilters && (
-        <Card className="leads-filters-card">
-          <div className="leads-filters-row">
+        <ContentCard staggerIndex={0} compact className="leads-filters-card">
+          <div className="leads-filters-row ds-filters-row--responsive">
             <Input
+              className="ds-filter-grow"
               placeholder="Search by name, email or phone"
               prefix={<SearchOutlined />}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               onPressEnter={handleApplyFilters}
-              style={{ width: isMobile ? '100%' : 250, flex: isMobile ? 'none' : '1 1 auto' }}
             />
-            <Select
-              placeholder="Filter by Source"
-              style={{ width: isMobile ? '100%' : 150 }}
-              allowClear
-              value={filterSource}
-              onChange={setFilterSource}
-            >
+            <Select className="ds-filter-fixed" placeholder="Filter by Source" allowClear value={filterSource} onChange={setFilterSource}>
               <Option value="Add">Add</Option>
               <Option value="Call">Call</Option>
               <Option value="WhatsApp">WhatsApp</Option>
@@ -853,105 +833,93 @@ const Leads = () => {
               <Option value="Website">Website</Option>
               <Option value="Import">Import</Option>
             </Select>
-            <Select
-              placeholder="Filter by Status"
-              style={{ width: isMobile ? '100%' : 150 }}
-              allowClear
-              value={filterStatus}
-              onChange={setFilterStatus}
-            >
+            <Select className="ds-filter-fixed" placeholder="Filter by Status" allowClear value={filterStatus} onChange={setFilterStatus}>
               <Option value="New">New</Option>
               <Option value="In Progress">In Progress</Option>
               <Option value="Follow-Up">Follow-Up</Option>
               <Option value="Converted">Converted</Option>
               <Option value="Lost">Lost</Option>
             </Select>
-            <Select
-              placeholder="Filter by Branch"
-              style={{ width: isMobile ? '100%' : 150 }}
-              allowClear
-              value={filterBranch}
-              onChange={setFilterBranch}
-            >
+            <Select className="ds-filter-fixed" placeholder="Filter by Branch" allowClear value={filterBranch} onChange={setFilterBranch}>
               {branches.map((branch) => (
                 <Option key={branch._id || branch.id} value={branch._id || branch.id}>
                   {branch.name}
                 </Option>
               ))}
             </Select>
-            <Button type="primary" onClick={handleApplyFilters} style={{ width: isMobile ? '100%' : 'auto' }}>
+            <Button type="primary" onClick={handleApplyFilters}>
               Apply Filter
             </Button>
-            <Button onClick={handleClearFilters} style={{ width: isMobile ? '100%' : 'auto' }}>
-              Clear
-            </Button>
+            <Button onClick={handleClearFilters}>Clear</Button>
           </div>
-        </Card>
+        </ContentCard>
       )}
 
-      <Card
-        className="leads-table-card"
-        styles={{ body: { padding: isMobile ? 8 : 16 } }}
+      <ContentCard
+        staggerIndex={showFilters ? 1 : 0}
+        className="leads-table-card ds-table-shell"
+        innerClassName="ds-leads-table-inner"
+        hoverLift={false}
       >
-      <div style={{ marginBottom: 12 }}>
-        <Segmented
-          block={isMobile}
-          value={leadsListTab}
-          onChange={(key) => {
-            setLeadsListTab(key)
-            setCurrentPage(1)
-          }}
-          options={[
-            { label: 'All leads', value: 'all' },
-            { label: 'Remainder leads', value: 'remainder' },
-          ]}
-          size={isMobile ? 'small' : 'middle'}
-        />
-      </div>
-      <p className="leads-table-subtitle">
-        {leadsListTab === 'all'
-          ? 'Every lead in your CRM.'
-          : 'Only leads with at least one reminder. Open a lead row → Follow-up → Reminders to add or manage.'}
-      </p>
-      <div className="table-responsive-wrapper leads-table-scroll">
-        {leadsLoading ? (
-          <div style={{ textAlign: 'center', padding: '40px 0' }}>
-            <Spin size="large" />
-            <p className="leads-loading-text">Loading leads...</p>
-          </div>
-        ) : (
-          <Table
-            columns={tableColumns}
-            dataSource={transformedLeads}
-            pagination={{
-              current: currentPage,
-              pageSize: pageSize,
-              total: pagination.total,
-              showSizeChanger: true,
-              showTotal: (total) =>
-                leadsListTab === 'remainder'
-                  ? `Total ${total} leads with reminders`
-                  : `Total ${total} leads`,
-              onChange: (page, size) => {
-                setCurrentPage(page)
-                setPageSize(size)
-              },
+        <div className="leads-segmented-wrap">
+          <Segmented
+            block={isMobile}
+            value={leadsListTab}
+            onChange={(key) => {
+              setLeadsListTab(key)
+              setCurrentPage(1)
             }}
-            scroll={{ x: 'max-content' }}
+            options={[
+              { label: 'All leads', value: 'all' },
+              { label: 'Remainder leads', value: 'remainder' },
+            ]}
             size={isMobile ? 'small' : 'middle'}
-            onRow={(record) => ({
-              onClick: (e) => {
-                if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.ant-popconfirm')) return
-                setFollowUpLead(record)
-                setFollowUpTab('reminders')
-                setIsFollowUpVisible(true)
-              },
-              style: { cursor: 'pointer' },
-            })}
           />
-        )}
-      </div>
-      </Card>
+        </div>
+        <p className="leads-table-subtitle">
+          {leadsListTab === 'all'
+            ? 'Every lead in your CRM.'
+            : 'Only leads with at least one reminder. Open a lead row → Follow-up → Reminders to add or manage.'}
+        </p>
+        <div className="table-responsive-wrapper leads-table-scroll">
+          {leadsLoading ? (
+            <div className="ds-loading-block">
+              <Spin size="large" />
+              <p className="leads-loading-text">Loading leads...</p>
+            </div>
+          ) : (
+            <Table
+              columns={tableColumns}
+              dataSource={transformedLeads}
+              pagination={{
+                current: currentPage,
+                pageSize: pageSize,
+                total: pagination.total,
+                showSizeChanger: true,
+                showTotal: (total) =>
+                  leadsListTab === 'remainder'
+                    ? `Total ${total} leads with reminders`
+                    : `Total ${total} leads`,
+                onChange: (page, size) => {
+                  setCurrentPage(page)
+                  setPageSize(size)
+                },
+              }}
+              scroll={{ x: 'max-content' }}
+              size={isMobile ? 'small' : 'middle'}
+              onRow={(record) => ({
+                onClick: (e) => {
+                  if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.ant-popconfirm')) return
+                  setFollowUpLead(record)
+                  setFollowUpTab('reminders')
+                  setIsFollowUpVisible(true)
+                },
+                className: 'leads-table-row-clickable',
+              })}
+            />
+          )}
+        </div>
+      </ContentCard>
 
       <Modal
         title={selectedLead ? 'Edit lead' : 'Add new lead'}
@@ -1519,15 +1487,22 @@ const Leads = () => {
             <div className="leads-followup-footer">
               <Button
                 type="primary"
-                onClick={() => {
-                  if (followUpLead) {
-                    handleEdit({ ...followUpLead, status: 'Converted' })
+                loading={convertingToCustomer}
+                disabled={!followUpLeadId || followUpLead?.status === 'Converted'}
+                onClick={async () => {
+                  if (!followUpLeadId) return
+                  try {
+                    await convertLeadToCustomer(followUpLeadId).unwrap()
+                    messageApi.success('Lead converted to customer. Open Customer Management to view.')
                     setIsFollowUpVisible(false)
                     setFollowUpLead(null)
+                    refetchLeads()
+                  } catch (e) {
+                    messageApi.error(e?.data?.message || e?.message || 'Could not convert to customer')
                   }
                 }}
               >
-                Convert to Customer
+                {followUpLead?.status === 'Converted' ? 'Already a customer' : 'Convert to Customer'}
               </Button>
             </div>
           </div>
@@ -1636,7 +1611,7 @@ const Leads = () => {
           <p className="leads-import-code">Name, Phone, Email, WhatsApp, Subject, Message</p>
         </div>
       </Modal>
-    </div>
+    </PageLayout>
   )
 }
 

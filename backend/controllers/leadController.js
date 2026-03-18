@@ -768,63 +768,90 @@ export const deleteLead = async (req, res) => {
   }
 }
 
-// @desc    Export leads to CSV
+// @desc    Export leads to CSV or JSON (format=json for Excel use)
 // @route   GET /api/leads/export
 // @access  Private
 export const exportLeads = async (req, res) => {
   try {
-    const { status, source, branch, assignedTo, search } = req.query
+    const { status, source, branch, assignedTo, search, format } = req.query
 
-    // Build query
+    // Build query (same as getLeads for consistency)
     const query = {}
     if (status) query.status = status
     if (source) query.source = source
     if (branch) query.branch = branch
     if (assignedTo) query.assignedTo = assignedTo
-    if (search) {
+    if (search && search.trim()) {
+      const term = search.trim()
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
+        { first_name: { $regex: term, $options: 'i' } },
+        { last_name: { $regex: term, $options: 'i' } },
+        { email: { $regex: term, $options: 'i' } },
+        { phone: { $regex: term, $options: 'i' } },
       ]
     }
 
-    // Get all leads matching query
     const leads = await Lead.find(query)
       .populate('branch', 'name')
       .populate('assignedTo', 'name email')
       .sort({ createdAt: -1 })
+      .lean()
 
-    // Convert to CSV format
+    if (format === 'json') {
+      const rows = leads.map((lead) => ({
+        'First Name': lead.first_name || '',
+        'Last Name': lead.last_name || '',
+        Email: lead.email || '',
+        Phone: lead.phone || '',
+        WhatsApp: lead.whatsapp || '',
+        Subject: lead.subject || '',
+        Message: lead.message || '',
+        Source: lead.source || '',
+        Status: lead.status || '',
+        Branch: lead.branch?.name || '',
+        'Appointment Date': lead.appointment_date ? lead.appointment_date.toISOString().split('T')[0] : '',
+        'Slot Time': lead.slot_time || '',
+        'Spa Package': lead.spa_package || '',
+        'Assigned To': lead.assignedTo?.name || '',
+        Notes: lead.notes || '',
+        'Last Interaction': lead.lastInteraction ? lead.lastInteraction.toISOString() : '',
+        'Created At': lead.createdAt ? lead.createdAt.toISOString() : '',
+      }))
+      return res.json({ success: true, leads: rows })
+    }
+
+    // CSV format
     const csvHeaders = ['First Name', 'Last Name', 'Email', 'Phone', 'WhatsApp', 'Subject', 'Message', 'Source', 'Status', 'Branch', 'Appointment Date', 'Slot Time', 'Spa Package', 'Assigned To', 'Notes', 'Last Interaction', 'Created At']
-    const csvRows = leads.map(lead => [
-      `"${lead.first_name || ''}"`,
-      `"${lead.last_name || ''}"`,
-      `"${lead.email || ''}"`,
-      `"${lead.phone || ''}"`,
-      `"${lead.whatsapp || ''}"`,
-      `"${lead.subject || ''}"`,
-      `"${lead.message || ''}"`,
-      `"${lead.source || ''}"`,
-      `"${lead.status || ''}"`,
-      `"${lead.branch?.name || ''}"`,
-      `"${lead.appointment_date ? lead.appointment_date.toISOString().split('T')[0] : ''}"`,
-      `"${lead.slot_time || ''}"`,
-      `"${lead.spa_package || ''}"`,
-      `"${lead.assignedTo?.name || ''}"`,
-      `"${lead.notes || ''}"`,
-      `"${lead.lastInteraction ? lead.lastInteraction.toISOString() : ''}"`,
-      `"${lead.createdAt ? lead.createdAt.toISOString() : ''}"`,
-    ])
+    const escapeCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const csvRows = leads.map((lead) =>
+      [
+        lead.first_name,
+        lead.last_name,
+        lead.email,
+        lead.phone,
+        lead.whatsapp,
+        lead.subject,
+        lead.message,
+        lead.source,
+        lead.status,
+        lead.branch?.name,
+        lead.appointment_date ? lead.appointment_date.toISOString().split('T')[0] : '',
+        lead.slot_time,
+        lead.spa_package,
+        lead.assignedTo?.name,
+        lead.notes,
+        lead.lastInteraction ? lead.lastInteraction.toISOString() : '',
+        lead.createdAt ? lead.createdAt.toISOString() : '',
+      ].map(escapeCsv).join(',')
+    )
+    const csvContent = [csvHeaders.join(','), ...csvRows].join('\r\n')
 
-    const csvContent = [csvHeaders.join(','), ...csvRows.map(row => row.join(','))].join('\n')
-
-    res.setHeader('Content-Type', 'text/csv')
-    res.setHeader('Content-Disposition', 'attachment; filename=leads.csv')
-    res.send(csvContent)
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename=leads_${new Date().toISOString().split('T')[0]}.csv`)
+    res.send('\uFEFF' + csvContent)
   } catch (error) {
     console.error('Export leads error:', error)
-    res.status(500).json({ success: false, message: 'Server error' })
+    res.status(500).json({ success: false, message: error.message || 'Server error' })
   }
 }
 

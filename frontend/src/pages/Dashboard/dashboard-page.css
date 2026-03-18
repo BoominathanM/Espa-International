@@ -5,6 +5,33 @@
   max-width: 100%;
   overflow-x: hidden;
   position: relative;
+  --dashboard-chart-h: 300px;
+}
+
+.dashboard-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 240px;
+  padding: var(--ds-space-24);
+}
+
+@media (max-width: 575px) {
+  .dashboard-page {
+    --dashboard-chart-h: 200px;
+  }
+}
+
+@media (min-width: 576px) and (max-width: 767px) {
+  .dashboard-page {
+    --dashboard-chart-h: 250px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  .dashboard-page {
+    --dashboard-chart-h: 280px;
+  }
 }
 
 .dashboard-header {
@@ -175,6 +202,49 @@
   flex: 1;
   overflow: auto;
   max-height: var(--dashboard-chart-h, 280px);
+}
+
+/* Subtle scrollbar for dashboard tables (avoid thick bright yellow) */
+.dashboard-table-wrap::-webkit-scrollbar,
+.dashboard-page .dashboard-table-wrap .ant-table-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.dashboard-table-wrap::-webkit-scrollbar-track,
+.dashboard-page .dashboard-table-wrap .ant-table-body::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 3px;
+}
+
+.dashboard-table-wrap::-webkit-scrollbar-thumb,
+.dashboard-page .dashboard-table-wrap .ant-table-body::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+.dashboard-table-wrap::-webkit-scrollbar-thumb:hover,
+.dashboard-page .dashboard-table-wrap .ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Pie chart: legend text and alignment */
+.dashboard-card--pie .recharts-legend-wrapper {
+  margin-left: 0;
+}
+
+.dashboard-card--pie .recharts-legend-item {
+  margin-right: 12px;
+}
+
+.dashboard-card--pie .recharts-legend-item-text {
+  fill: var(--text-color) !important;
+  color: var(--text-color) !important;
+  font-size: 12px;
+}
+
+.dashboard-card--pie .recharts-legend-item .recharts-surface {
+  margin-right: 6px;
 }
 
 .dashboard-row {
