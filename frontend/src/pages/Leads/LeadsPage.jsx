@@ -109,6 +109,7 @@ const Leads = () => {
   const [showFilters, setShowFilters] = useState(false)
   const [isFollowUpVisible, setIsFollowUpVisible] = useState(false)
   const [followUpLead, setFollowUpLead] = useState(null)
+  const [callLeadMeta, setCallLeadMeta] = useState(null)
   const [followUpTab, setFollowUpTab] = useState('reminders')
   const [reminderDesc, setReminderDesc] = useState('')
   const [reminderDate, setReminderDate] = useState(null)
@@ -131,16 +132,25 @@ const Leads = () => {
   useEffect(() => {
     const state = location.state
     if (state?.createLeadFromCall && state?.phone) {
+      const meta = state?.callMeta || {}
       form.setFieldsValue({
         phone: state.phone,
-        source: 'Call',
+        source: 'IVR',
         status: 'New',
+      })
+      setCallLeadMeta({
+        callLogId: state.callLogId || '',
+        ivrCallRecordingUrl: meta.recordingUrl || '',
+        ivrCallType: meta.callType || '',
+        ivrCallStatus: meta.callStatus || '',
+        ivrAgentName: meta.agentName || '',
+        ivrCallStartedAt: meta.callStartedAt || '',
       })
       setSelectedLead(null)
       setIsModalVisible(true)
       navigate(location.pathname, { replace: true, state: {} })
     }
-  }, [location.state, location.pathname, navigate])
+  }, [form, location.state, location.pathname, navigate])
 
   // API hooks
   const { data: leadsData, isLoading: leadsLoading, refetch: refetchLeads } = useGetLeadsQuery({
@@ -230,6 +240,11 @@ const Leads = () => {
       ipAddress: lead.ipAddress,
       reminders: lead.reminders || [],
       pendingReminderCount: (lead.reminders || []).filter((r) => r.status === 'Pending').length,
+      ivrCallRecordingUrl: lead.ivrCallRecordingUrl || '',
+      ivrCallType: lead.ivrCallType || '',
+      ivrCallStatus: lead.ivrCallStatus || '',
+      ivrAgentName: lead.ivrAgentName || '',
+      ivrCallStartedAt: lead.ivrCallStartedAt || '',
     }))
   }, [leads])
 
@@ -261,6 +276,7 @@ const Leads = () => {
         const colors = {
           Add: 'orange',
           Call: 'gold',
+          IVR: 'purple',
           WhatsApp: 'green',
           Facebook: 'blue',
           Insta: 'pink',
@@ -272,6 +288,7 @@ const Leads = () => {
       filters: [
         { text: 'Add', value: 'Add' },
         { text: 'Call', value: 'Call' },
+        { text: 'IVR', value: 'IVR' },
         { text: 'WhatsApp', value: 'WhatsApp' },
         { text: 'Facebook', value: 'Facebook' },
         { text: 'Insta', value: 'Insta' },
@@ -436,6 +453,7 @@ const Leads = () => {
 
   const handleAdd = () => {
     setSelectedLead(null)
+    setCallLeadMeta(null)
     form.resetFields()
     form.setFieldsValue({
       source: 'Add',
@@ -446,6 +464,7 @@ const Leads = () => {
 
   const handleEdit = (record) => {
     setSelectedLead(record)
+    setCallLeadMeta(null)
     form.setFieldsValue({
       first_name: record.first_name || '',
       last_name: record.last_name || '',
@@ -527,7 +546,7 @@ const Leads = () => {
         whatsapp: values.whatsapp?.trim() || values.phone.trim(),
         subject: values.subject?.trim() || '',
         message: values.message?.trim() || '',
-        source: values.source,
+        source: callLeadMeta ? 'IVR' : values.source,
         status: values.status || 'New',
         branch: values.branch || null,
         appointment_date: values.appointment_date ? values.appointment_date.format('YYYY-MM-DD') : null,
@@ -535,6 +554,7 @@ const Leads = () => {
         spa_package: values.spa_package || '',
         assignedTo: values.assignedTo || null,
         notes: values.notes?.trim() || '',
+        ...(callLeadMeta || {}),
       }
 
       if (selectedLead) {
@@ -827,6 +847,7 @@ const Leads = () => {
             <Select className="ds-filter-fixed" placeholder="Filter by Source" allowClear value={filterSource} onChange={setFilterSource}>
               <Option value="Add">Add</Option>
               <Option value="Call">Call</Option>
+              <Option value="IVR">IVR</Option>
               <Option value="WhatsApp">WhatsApp</Option>
               <Option value="Facebook">Facebook</Option>
               <Option value="Insta">Insta</Option>
@@ -928,6 +949,7 @@ const Leads = () => {
           setIsModalVisible(false)
           form.resetFields()
           setSelectedLead(null)
+          setCallLeadMeta(null)
         }}
         footer={null}
         width={isMobile ? '100%' : 820}
@@ -1084,6 +1106,7 @@ const Leads = () => {
                 <Select placeholder="Source">
                   <Option value="Add">Add</Option>
                   <Option value="Call">Call</Option>
+                  <Option value="IVR">IVR</Option>
                   <Option value="WhatsApp">WhatsApp</Option>
                   <Option value="Facebook">Facebook</Option>
                   <Option value="Insta">Insta</Option>
@@ -1130,6 +1153,7 @@ const Leads = () => {
                   setIsModalVisible(false)
                   form.resetFields()
                   setSelectedLead(null)
+                  setCallLeadMeta(null)
                 }}
               >
                 Cancel
@@ -1191,6 +1215,28 @@ const Leads = () => {
                 </div>
               </div>
             </Card>
+
+            {selectedLead.ivrCallRecordingUrl && (
+              <Card title="IVR Call Recording" className="leads-detail-card">
+                <div className="leads-detail-grid">
+                  <div>
+                    <p className="leads-detail-row"><strong className="leads-detail-label">Agent:</strong> {selectedLead.ivrAgentName || 'N/A'}</p>
+                    <p className="leads-detail-row"><strong className="leads-detail-label">Call Type:</strong> {selectedLead.ivrCallType || 'N/A'}</p>
+                    <p className="leads-detail-row"><strong className="leads-detail-label">Call Status:</strong> {selectedLead.ivrCallStatus || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="leads-detail-row"><strong className="leads-detail-label">Call Time:</strong> {selectedLead.ivrCallStartedAt || 'N/A'}</p>
+                  </div>
+                </div>
+                <audio controls style={{ width: '100%', marginTop: 8 }}>
+                  <source src={selectedLead.ivrCallRecordingUrl} type="audio/mpeg" />
+                  Your browser does not support the audio element.
+                </audio>
+                <p style={{ marginTop: 8 }}>
+                  <a href={selectedLead.ivrCallRecordingUrl} target="_blank" rel="noopener noreferrer">Open recording in new tab</a>
+                </p>
+              </Card>
+            )}
 
             {(selectedLead.subject || selectedLead.message || selectedLead.notes) && (
               <Card title="Additional Information" className="leads-detail-card">

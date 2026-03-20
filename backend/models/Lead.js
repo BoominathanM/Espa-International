@@ -81,7 +81,7 @@ const leadSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ['Website', 'Call', 'WhatsApp', 'Facebook', 'Insta', 'Walk-in', 'Referral', 'Add', 'Import', 'Other'],
+      enum: ['Website', 'Call', 'IVR', 'WhatsApp', 'Facebook', 'Insta', 'Walk-in', 'Referral', 'Add', 'Import', 'Other'],
       default: 'Website',
       required: true,
     },
@@ -141,6 +141,31 @@ const leadSchema = new mongoose.Schema(
     ipAddress: {
       type: String,
       default: '',
+    },
+    ivrCallRecordingUrl: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    ivrCallType: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    ivrCallStatus: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    ivrAgentName: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    ivrCallStartedAt: {
+      type: String,
+      default: '',
+      trim: true,
     },
     askevaLeadId: {
       type: String,

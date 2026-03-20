@@ -120,7 +120,7 @@ export const getCallLogs = async (req, res) => {
     }
 
     const [logs, total] = await Promise.all([
-      CallLog.find(filter).sort({ startTime: -1, createdAt: -1 }).skip(skip).limit(Math.min(100, Math.max(1, parseInt(limit, 10)))).populate('lead', 'name phone email'),
+      CallLog.find(filter).sort({ startTime: -1, createdAt: -1 }).skip(skip).limit(Math.min(100, Math.max(1, parseInt(limit, 10)))).populate('lead', 'name phone email status'),
       CallLog.countDocuments(filter),
     ])
 

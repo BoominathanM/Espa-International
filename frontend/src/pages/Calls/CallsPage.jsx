@@ -80,6 +80,7 @@ const Calls = () => {
       date: log.start_time ? dayjs(log.start_time).format('YYYY-MM-DD HH:mm') : dayjs(log.createdAt).format('YYYY-MM-DD HH:mm'),
       leadLinked: !!log.lead,
       leadId: log.lead?._id,
+      leadStatus: log.lead?.status || '',
       lead: log.lead,
     }))
   }, [callLogs])
@@ -163,7 +164,7 @@ const Calls = () => {
               Play
             </Button>
           ) : null}
-          {!record.leadLinked && (
+          {!record.leadLinked && record.leadStatus !== 'Converted' && (
             <Button
               type="link"
               className="calls-create-lead-link"
@@ -183,7 +184,20 @@ const Calls = () => {
 
   const handleCreateLead = () => {
     if (selectedCall?.phoneNumber) {
-      navigate('/leads', { state: { createLeadFromCall: true, phone: selectedCall.phoneNumber.replace(/\D/g, '') } })
+      navigate('/leads', {
+        state: {
+          createLeadFromCall: true,
+          phone: selectedCall.phoneNumber.replace(/\D/g, ''),
+          callLogId: selectedCall._id,
+          callMeta: {
+            recordingUrl: selectedCall.recordingUrl || '',
+            callType: selectedCall.type || '',
+            callStatus: selectedCall.status || '',
+            agentName: selectedCall.agent || '',
+            callStartedAt: selectedCall.date || '',
+          },
+        },
+      })
       messageApi.success('Redirecting to create lead with this number')
     }
     setIsCreateLeadVisible(false)

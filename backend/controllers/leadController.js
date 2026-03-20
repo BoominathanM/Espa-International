@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import Lead from '../models/Lead.js'
+import CallLog from '../models/CallLog.js'
 import Branch from '../models/Branch.js'
 import User from '../models/User.js'
 import ChatDeletionLog from '../models/ChatDeletionLog.js'
@@ -156,6 +157,12 @@ export const createLead = async (req, res) => {
       appointment_date,
       slot_time,
       spa_package,
+      ivrCallRecordingUrl,
+      ivrCallType,
+      ivrCallStatus,
+      ivrAgentName,
+      ivrCallStartedAt,
+      callLogId,
     } = req.body
 
     // Handle name field - support both old 'name' and new 'first_name'/'last_name'
@@ -244,6 +251,11 @@ export const createLead = async (req, res) => {
       spa_package: spa_package ? spa_package.trim() : '',
       assignedTo: finalAssignedTo,
       notes: notes ? notes.trim() : '',
+      ivrCallRecordingUrl: ivrCallRecordingUrl ? ivrCallRecordingUrl.trim() : '',
+      ivrCallType: ivrCallType ? ivrCallType.trim() : '',
+      ivrCallStatus: ivrCallStatus ? ivrCallStatus.trim() : '',
+      ivrAgentName: ivrAgentName ? ivrAgentName.trim() : '',
+      ivrCallStartedAt: ivrCallStartedAt ? ivrCallStartedAt.trim() : '',
       lastInteraction: new Date(),
       activityLogs: [{
         action: 'Lead Created',
@@ -255,6 +267,10 @@ export const createLead = async (req, res) => {
     })
 
     await lead.save()
+
+    if (callLogId && mongoose.Types.ObjectId.isValid(callLogId)) {
+      await CallLog.findByIdAndUpdate(callLogId, { lead: lead._id })
+    }
 
     const savedLead = await Lead.findById(lead._id)
       .populate({
@@ -661,6 +677,11 @@ export const updateLead = async (req, res) => {
       appointment_date,
       slot_time,
       spa_package,
+      ivrCallRecordingUrl,
+      ivrCallType,
+      ivrCallStatus,
+      ivrAgentName,
+      ivrCallStartedAt,
     } = req.body
 
     const lead = await Lead.findById(req.params.id)
@@ -705,6 +726,11 @@ export const updateLead = async (req, res) => {
     }
     if (slot_time !== undefined) lead.slot_time = slot_time.trim()
     if (spa_package !== undefined) lead.spa_package = spa_package.trim()
+    if (ivrCallRecordingUrl !== undefined) lead.ivrCallRecordingUrl = ivrCallRecordingUrl.trim()
+    if (ivrCallType !== undefined) lead.ivrCallType = ivrCallType.trim()
+    if (ivrCallStatus !== undefined) lead.ivrCallStatus = ivrCallStatus.trim()
+    if (ivrAgentName !== undefined) lead.ivrAgentName = ivrAgentName.trim()
+    if (ivrCallStartedAt !== undefined) lead.ivrCallStartedAt = ivrCallStartedAt.trim()
 
     // Handle branch
     if (branch !== undefined) {
