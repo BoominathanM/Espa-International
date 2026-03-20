@@ -6,44 +6,87 @@ import {
 
 const LOG = "[OZONETEL]";
 
-// 🔥 Convert HH:MM:SS → seconds
-const convertToSeconds = (time) => {
-  if (!time) return 0;
-  const parts = time.split(":").map(Number);
-  if (parts.length !== 3) return 0;
+const sanitizeOptionalKey = (value) => {
+  if (value === null || value === undefined) return undefined;
+  const normalized = String(value).trim();
+  return normalized ? normalized : undefined;
+};
+
+const convertToSeconds = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  if (typeof value !== "string") return 0;
+
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
+
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+
+  const parts = trimmed.split(":").map(Number);
+  if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) return 0;
   return parts[0] * 3600 + parts[1] * 60 + parts[2];
 };
 
-// 🔥 Extract fields (handles inbound + outbound)
+const parseDate = (value) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const extractFields = (p) => {
   const get = (...keys) => keys.find((k) => p[k] !== undefined);
+  const monitorUCID = sanitizeOptionalKey(p[get("monitorUCID", "MonitorUCID")]);
+  const callId = sanitizeOptionalKey(p[get("CallID", "callId")]);
 
   return {
-    customer_number:
+    customerNumber:
       p[get("CallerID", "DialedNumber", "CustomerNumber")] || "",
 
-    call_status:
+    callStatus:
       p[get("Status", "DialStatus", "CustomerStatus")] || "",
 
-    agent_name: p[get("AgentName")] || "",
+    agentName: p[get("AgentName", "agentName")] || "",
+    agentId: p[get("AgentID", "agentId")] || "",
 
-    call_type: p[get("Type", "CallType")] || "Inbound",
+    type: p[get("Type", "CallType")] || "Inbound",
 
-    start_time: p[get("StartTime", "DialTime")]
-      ? new Date(p[get("StartTime", "DialTime")])
-      : null,
+    startTime: parseDate(p[get("StartTime", "DialTime")]),
+    endTime: parseDate(p[get("EndTime", "HangupTime")]),
 
-    end_time: p[get("EndTime")]
-      ? new Date(p[get("EndTime")])
-      : null,
-
-    duration_seconds: convertToSeconds(
+    callDuration: convertToSeconds(
       p[get("CallDuration")] || "00:00:00"
     ),
 
-    recording_url:
+    audioFile:
       p[get("AudioFile", "RecordingUrl")] || "",
+    monitorUCID,
+    callId,
   };
+};
+
+const safeParseData = (input) => {
+  if (typeof input === "string") {
+    return JSON.parse(input);
+  }
+  return input;
+};
+
+const normalizePayloadArray = (payload) => {
+  if (Array.isArray(payload)) return payload.filter(Boolean);
+  if (payload && typeof payload === "object") return [payload];
+  return [];
+};
+
+const extractApiKey = (req, entries) => {
+  return (
+    req.body.Apikey ||
+    req.body.apikey ||
+    req.headers["x-api-key"] ||
+    entries.find((item) => item?.Apikey)?.Apikey ||
+    entries.find((item) => item?.apikey)?.apikey ||
+    ""
+  );
 };
 
 /**
@@ -55,37 +98,64 @@ export const processCallPayload = async (payload) => {
 
   console.log(LOG, "FIELDS:", fields);
 
-  const callLog = await CallLog.create({
-    call_id: payload.monitorUCID || "",
-    agent_id: payload.AgentID || "",
-    agent_name: fields.agent_name,
+  const uniqueFilter = fields.monitorUCID
+    ? { monitorUCID: fields.monitorUCID }
+    : fields.callId
+      ? { callId: fields.callId }
+      : null;
 
-    customer_number: fields.customer_number,
-    call_status: fields.call_status,
-    call_type: fields.call_type,
+  const docToSave = {
+    agentId: fields.agentId,
+    agentName: fields.agentName,
+    customerNumber: fields.customerNumber,
+    callStatus: fields.callStatus,
+    callDuration: fields.callDuration,
+    audioFile: fields.audioFile,
+    startTime: fields.startTime,
+    endTime: fields.endTime,
+    type: fields.type,
+    rawPayload: payload,
+    ...(fields.monitorUCID ? { monitorUCID: fields.monitorUCID } : {}),
+    ...(fields.callId ? { callId: fields.callId } : {}),
+  };
 
-    start_time: fields.start_time,
-    end_time: fields.end_time,
-    duration_seconds: fields.duration_seconds,
-
-    recording_url: fields.recording_url,
-
-    raw_payload: payload,
-  });
+  let callLog;
+  try {
+    if (uniqueFilter) {
+      callLog = await CallLog.findOneAndUpdate(
+        uniqueFilter,
+        { $set: docToSave },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    } else {
+      callLog = await CallLog.create(docToSave);
+    }
+  } catch (error) {
+    // Handle race-condition duplicate inserts gracefully.
+    if (error?.code === 11000 && uniqueFilter) {
+      console.warn(LOG, "Duplicate key detected, loading existing call log", uniqueFilter);
+      callLog = await CallLog.findOne(uniqueFilter);
+      if (!callLog) {
+        throw error;
+      }
+    } else {
+      throw error;
+    }
+  }
 
   console.log(LOG, "Saved:", callLog._id);
 
-  if (fields.call_status && fields.call_status.toLowerCase() === "answered") {
+  if (fields.callStatus && fields.callStatus.toLowerCase() === "answered") {
     const leadRes = await createOrUpdateLeadFromCall({
-      callerId: fields.customer_number,
+      callerId: fields.customerNumber,
     });
 
     if (leadRes.success) {
       await callLog.updateOne({ lead: leadRes.lead._id });
 
       await syncLeadToAskEva(leadRes.lead, {
-        agent: fields.agent_name,
-        duration: fields.duration_seconds,
+        agent: fields.agentName,
+        duration: fields.callDuration,
       });
     }
   }
@@ -95,32 +165,68 @@ export const processCallPayload = async (payload) => {
 
 export const handleCallDetails = async (req, res) => {
   try {
+    console.log("🔥 WEBHOOK HIT");
+    console.log("BODY:", req.body);
+
     console.log(LOG, "RAW BODY:", req.body);
-
-    let payload =
-      typeof req.body.data === "string"
-        ? JSON.parse(req.body.data)
-        : req.body.data;
-
-    if (!payload) {
-      return res.status(400).json({ success: false, message: "Missing data" });
+    if (!req.body || req.body.data === undefined) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required field: data" });
     }
 
-    console.log(LOG, "PARSED:", payload);
-
-    const apiKey =
-      req.body.Apikey ||
-      req.body.apikey ||
-      req.headers["x-api-key"];
-
-    if (apiKey !== process.env.OZONETEL_API_KEY) {
-      return res.status(401).json({ success: false });
+    let parsedPayload;
+    try {
+      parsedPayload = safeParseData(req.body.data);
+    } catch (parseError) {
+      console.warn(LOG, "Invalid JSON in data:", parseError.message);
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid JSON in data field" });
     }
 
-    await processCallPayload(payload);
-    res.json({ success: true });
+    const entries = normalizePayloadArray(parsedPayload);
+    if (entries.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No valid payload entries found" });
+    }
+
+    const configuredApiKey = process.env.OZONETEL_API_KEY;
+    const requestApiKey = extractApiKey(req, entries);
+    if (!configuredApiKey || requestApiKey !== configuredApiKey) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid API key" });
+    }
+
+    const results = await Promise.allSettled(
+      entries.map((entry) => processCallPayload(entry))
+    );
+    const failed = results.filter((result) => result.status === "rejected");
+
+    if (failed.length > 0) {
+      failed.forEach((item) => {
+        console.error(LOG, "Entry processing failed:", item.reason);
+      });
+      return res.status(500).json({
+        success: false,
+        message: "One or more payload entries failed to process",
+        processed: results.length - failed.length,
+        failed: failed.length,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Webhook processed successfully",
+      processed: results.length,
+    });
   } catch (error) {
     console.error(LOG, "ERROR:", error);
-    res.status(500).json({ success: false });
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 };

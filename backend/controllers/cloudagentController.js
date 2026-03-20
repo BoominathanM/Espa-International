@@ -108,18 +108,19 @@ export const getCallLogs = async (req, res) => {
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * Math.min(100, Math.max(1, parseInt(limit, 10)))
 
     const filter = {}
-    if (type) filter.call_type = type
-    if (status) filter.call_status = status
-    if (agentId) filter.agent_id = agentId
+    if (type) filter.type = type
+    if (status) filter.callStatus = status
+    if (agentId) filter.agentId = agentId
     if (search && search.trim()) {
       filter.$or = [
-        { customer_number: { $regex: search.trim(), $options: 'i' } },
-        { call_id: { $regex: search.trim(), $options: 'i' } },
+        { customerNumber: { $regex: search.trim(), $options: 'i' } },
+        { callId: { $regex: search.trim(), $options: 'i' } },
+        { monitorUCID: { $regex: search.trim(), $options: 'i' } },
       ]
     }
 
     const [logs, total] = await Promise.all([
-      CallLog.find(filter).sort({ start_time: -1, createdAt: -1 }).skip(skip).limit(Math.min(100, Math.max(1, parseInt(limit, 10)))).populate('lead', 'name phone email'),
+      CallLog.find(filter).sort({ startTime: -1, createdAt: -1 }).skip(skip).limit(Math.min(100, Math.max(1, parseInt(limit, 10)))).populate('lead', 'name phone email'),
       CallLog.countDocuments(filter),
     ])
 

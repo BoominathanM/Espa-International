@@ -35,6 +35,12 @@ const formatDuration = (seconds) => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+const getAgentDisplayName = (log) => {
+  const agentName = String(log.agent_name || log.agentName || '').trim()
+  const agentId = String(log.agent_id || log.agentId || '').trim()
+  return agentName || agentId || '-'
+}
+
 const Calls = () => {
   const { message: messageApi } = App.useApp()
   const navigate = useNavigate()
@@ -68,7 +74,7 @@ const Calls = () => {
       phoneNumber: log.customer_number || '-',
       duration: formatDuration(log.duration_seconds),
       durationSeconds: log.duration_seconds,
-      agent: log.agent_id || '-',
+      agent: getAgentDisplayName(log),
       status: log.call_status || '-',
       recordingUrl: log.recording_url,
       date: log.start_time ? dayjs(log.start_time).format('YYYY-MM-DD HH:mm') : dayjs(log.createdAt).format('YYYY-MM-DD HH:mm'),
