@@ -252,6 +252,51 @@ export const getReports = async (req, res) => {
     const newCustomers = singlePhone
     const repeatCustomers = multiLeadCount
 
+    // Appointments: filter by appointment_date in range
+    const appointmentMatch = {
+      ...branchFilter,
+      appointment_date: { $ne: null, $gte: start, $lte: end },
+    }
+    const [appointmentTotals, appointmentDetails] = await Promise.all([
+      Lead.aggregate([
+        { $match: appointmentMatch },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            completed: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
+            cancelled: { $sum: { $cond: [{ $eq: ['$status', 'Cancelled'] }, 1, 0] } },
+            rescheduled: { $sum: { $cond: [{ $eq: ['$status', 'Follow-Up'] }, 1, 0] } },
+          },
+        },
+      ]),
+      Lead.find(appointmentMatch)
+        .populate('branch', 'name')
+        .populate('assignedTo', 'name')
+        .sort({ appointment_date: 1, slot_time: 1 })
+        .lean(),
+    ])
+
+    const apt = appointmentTotals[0] || { total: 0, completed: 0, cancelled: 0, rescheduled: 0 }
+    const appointmentStats = {
+      totalAppointments: apt.total || 0,
+      completed: apt.completed || 0,
+      cancelled: apt.cancelled || 0,
+      rescheduled: apt.rescheduled || 0,
+    }
+    const appointmentDetailsTable = (appointmentDetails || []).map((l, i) => ({
+      key: String(l._id),
+      sno: i + 1,
+      date: l.appointment_date ? new Date(l.appointment_date).toISOString().split('T')[0] : '-',
+      customer: `${(l.first_name || '').trim()} ${(l.last_name || '').trim()}`.trim() || '-',
+      phone: l.phone || l.whatsapp || '-',
+      status: l.status,
+      slot: l.slot_time || '-',
+      package: l.spa_package || '-',
+      branch: l.branch?.name || '-',
+      assignedTo: l.assignedTo?.name || '-',
+    }))
+
     res.json({
       success: true,
       meta: { dateFrom: from, dateTo: to },
@@ -265,6 +310,8 @@ export const getReports = async (req, res) => {
         performanceTrend,
         sourceDistribution,
         detailsTable,
+        appointmentStats,
+        appointmentDetailsTable,
       },
       agent: { performance: agentPerformance },
       call: {

@@ -5,6 +5,7 @@ import User from '../models/User.js'
 import ChatDeletionLog from '../models/ChatDeletionLog.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
+import { syncAskEvaAppointmentsToDb } from '../services/askevaAppointmentSyncService.js'
 
 // @desc    Create lead from website contact form
 // @route   POST /api/leads/website
@@ -394,6 +395,40 @@ export const syncAskEvaLeads = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error syncing AskEva leads',
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined,
+    })
+  }
+}
+
+// @desc    Sync appointments from AskEva v1/appointments API to local leads
+// @route   POST /api/leads/sync-askeva-appointments
+// @access  Private (JWT)
+export const syncAskEvaAppointments = async (req, res) => {
+  try {
+    const result = await syncAskEvaAppointmentsToDb({
+      Lead,
+      Branch,
+      autoAssignLeadToBranchUser,
+    })
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: result.error || 'AskEva appointments sync failed',
+      })
+    }
+    res.json({
+      success: true,
+      message: 'AskEva appointments synced successfully',
+      created: result.created,
+      updated: result.updated,
+      skipped: result.skipped,
+      total: result.created + result.updated + result.skipped,
+    })
+  } catch (error) {
+    console.error('[AskEva Appointments Sync] ❌ Error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing AskEva appointments',
       error: process.env.NODE_ENV !== 'production' ? error.message : undefined,
     })
   }
@@ -1209,6 +1244,55 @@ export const completeAppointment = async (req, res) => {
   }
 }
 
+// @desc    Cancel appointment (status + cancellation_notes + activity)
+// @route   POST /api/leads/:id/cancel
+// @access  Private
+export const cancelAppointment = async (req, res) => {
+  try {
+    const cancellation_notes = (req.body.cancellation_notes || '').trim()
+    if (!cancellation_notes) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cancel notes / description are required',
+      })
+    }
+    const lead = await Lead.findById(req.params.id)
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+    if (lead.status === 'Converted') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot cancel a completed appointment',
+      })
+    }
+    if (lead.status === 'Cancelled') {
+      return res.status(400).json({
+        success: false,
+        message: 'Appointment is already cancelled',
+      })
+    }
+    lead.status = 'Cancelled'
+    lead.cancellation_notes = cancellation_notes
+    lead.activityLogs.push({
+      action: 'Appointment Cancelled',
+      details: cancellation_notes,
+      performedBy: req.user?.name || 'User',
+    })
+    lead.lastInteraction = new Date()
+    await lead.save()
+    const updated = await getPopulatedLeadById(lead._id)
+    res.json({
+      success: true,
+      message: 'Appointment marked as cancelled',
+      lead: updated,
+    })
+  } catch (error) {
+    console.error('Cancel appointment error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
 // @desc    Reschedule appointment (history + DB + activity)
 // @route   POST /api/leads/:id/reschedule
 // @access  Private
@@ -1225,10 +1309,10 @@ export const rescheduleAppointment = async (req, res) => {
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Lead not found' })
     }
-    if (lead.status === 'Converted') {
+    if (lead.status === 'Converted' || lead.status === 'Cancelled') {
       return res.status(400).json({
         success: false,
-        message: 'Cannot reschedule a completed appointment',
+        message: 'Cannot reschedule a completed or cancelled appointment',
       })
     }
     const prevDate = lead.appointment_date

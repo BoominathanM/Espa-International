@@ -87,7 +87,7 @@ const leadSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['New', 'In Progress', 'Follow-Up', 'Converted', 'Lost'],
+      enum: ['New', 'In Progress', 'Follow-Up', 'Converted', 'Lost', 'Cancelled'],
       default: 'New',
     },
     branch: {
@@ -123,6 +123,11 @@ const leadSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    cancellation_notes: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     rescheduleHistory: [rescheduleHistorySchema],
     appointmentNoteEntries: [appointmentNoteEntrySchema],
     lastInteraction: {
@@ -138,6 +143,12 @@ const leadSchema = new mongoose.Schema(
       default: '',
     },
     askevaLeadId: {
+      type: String,
+      default: '',
+      trim: true,
+      sparse: true,
+    },
+    askevaAppointmentId: {
       type: String,
       default: '',
       trim: true,
@@ -169,6 +180,7 @@ leadSchema.index({ source: 1 })
 leadSchema.index({ appointment_date: 1 })
 leadSchema.index({ createdAt: -1 })
 leadSchema.index({ askevaLeadId: 1 }, { sparse: true })
+leadSchema.index({ askevaAppointmentId: 1 }, { sparse: true })
 
 // Ensure virtuals are included in JSON
 leadSchema.set('toJSON', { virtuals: true })

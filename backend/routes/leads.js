@@ -12,10 +12,12 @@ import {
   autoAssignUnassignedLeads,
   getLeadsDiagnostics,
   syncAskEvaLeads,
+  syncAskEvaAppointments,
   addReminder,
   updateReminder,
   deleteReminder,
   completeAppointment,
+  cancelAppointment,
   rescheduleAppointment,
   addAppointmentNote,
 } from '../controllers/leadController.js'
@@ -33,12 +35,14 @@ router.get('/whatsapp', authenticateWhatsAppApiKey, getLeads)
 router.post('/', authenticate, createLead)
 router.post('/auto-assign', authenticate, autoAssignUnassignedLeads)
 router.post('/sync-askeva', authenticate, syncAskEvaLeads)
+router.post('/sync-askeva-appointments', authenticate, syncAskEvaAppointments)
 router.get('/diagnostics', authenticate, getLeadsDiagnostics)
 router.get('/', authenticate, getLeads)
 router.get('/export', authenticate, exportLeads)
 router.get('/import/sample', authenticate, getSampleCSV)
 router.post('/import', authenticate, importLeads)
 router.post('/:id/complete', authenticate, completeAppointment)
+router.post('/:id/cancel', authenticate, cancelAppointment)
 router.post('/:id/reschedule', authenticate, rescheduleAppointment)
 router.post('/:id/appointment-notes', authenticate, addAppointmentNote)
 router.get('/:id', authenticate, getLead)

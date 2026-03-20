@@ -40,6 +40,8 @@ import {
   ArrowLeftOutlined,
   ScheduleOutlined,
   MoreOutlined,
+  SyncOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
@@ -48,8 +50,10 @@ import {
   useCreateLeadMutation,
   useUpdateLeadMutation,
   useCompleteAppointmentMutation,
+  useCancelAppointmentMutation,
   useRescheduleAppointmentMutation,
   useAddAppointmentNoteMutation,
+  useSyncAskEvaAppointmentsMutation,
 } from '../../store/api/leadApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import dayjs from 'dayjs'
@@ -84,6 +88,7 @@ const APPOINTMENT_TAB_STATUS = {
   current: ['New', 'In Progress'],
   rescheduled: ['Follow-Up'],
   completed: ['Converted'],
+  cancelled: ['Cancelled'],
   feedbacks: [],
 }
 
@@ -96,6 +101,7 @@ function appointmentDisplayId(lead) {
 
 function uiAppointmentStatus(status) {
   if (status === 'Converted') return { label: 'Completed', color: 'green' }
+  if (status === 'Cancelled') return { label: 'Cancelled', color: 'red' }
   if (status === 'Follow-Up') return { label: 'Rescheduled', color: 'orange' }
   if (status === 'In Progress') return { label: 'Current', color: 'blue' }
   return { label: 'Current', color: 'blue' }
@@ -106,14 +112,17 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
   const { data, isLoading, isFetching, error, refetch } = useGetLeadQuery(leadId)
   const [detailTab, setDetailTab] = useState('details')
   const [completeForm] = Form.useForm()
+  const [cancelForm] = Form.useForm()
   const [rescheduleForm] = Form.useForm()
   const [noteForm] = Form.useForm()
   const [completeAppt, { isLoading: completing }] = useCompleteAppointmentMutation()
+  const [cancelAppt, { isLoading: cancelling }] = useCancelAppointmentMutation()
   const [rescheduleAppt, { isLoading: rescheduling }] = useRescheduleAppointmentMutation()
   const [addNote, { isLoading: noteSaving }] = useAddAppointmentNoteMutation()
 
   const lead = data?.lead
   const isDone = lead?.status === 'Converted'
+  const isCancelled = lead?.status === 'Cancelled'
 
   useEffect(() => {
     if (lead && detailTab === 'reschedule') {
@@ -148,6 +157,18 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
       }).unwrap()
       messageApi.success('Reschedule saved')
       rescheduleForm.setFieldsValue({ reason: '' })
+      refetch()
+    } catch (e) {
+      if (e?.data?.message) messageApi.error(e.data.message)
+    }
+  }
+
+  const onCancel = async () => {
+    try {
+      const v = await cancelForm.validateFields()
+      await cancelAppt({ id: leadId, cancellation_notes: v.cancellation_notes }).unwrap()
+      messageApi.success('Appointment marked as cancelled')
+      cancelForm.resetFields()
       refetch()
     } catch (e) {
       if (e?.data?.message) messageApi.error(e.data.message)
@@ -238,6 +259,12 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
                 <div>{lead.completion_notes}</div>
               </div>
             )}
+            {lead.cancellation_notes && (
+              <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+                <div className="appt-detail-label">Cancel notes / description</div>
+                <div>{lead.cancellation_notes}</div>
+              </div>
+            )}
           </div>
         </div>
       ),
@@ -257,6 +284,8 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
           <div className="appt-detail-label">Completion notes</div>
           <div>{lead.completion_notes || '-'}</div>
         </div>
+      ) : isCancelled ? (
+        <Alert type="info" message="Cancelled appointments cannot be marked as complete" showIcon />
       ) : (
         <Form form={completeForm} layout="vertical" style={{ maxWidth: 560 }}>
           <Form.Item
@@ -275,14 +304,48 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
       ),
     },
     {
+      key: 'cancel',
+      label: (
+        <span>
+          <CloseCircleOutlined /> Cancel
+        </span>
+      ),
+      children: isCancelled ? (
+        <div className="appt-detail-body">
+          <Tag color="error" style={{ marginBottom: 12 }}>
+            Cancelled
+          </Tag>
+          <div className="appt-detail-label">Cancel Notes / Description</div>
+          <div>{lead.cancellation_notes || '-'}</div>
+        </div>
+      ) : isDone ? (
+        <Alert type="info" message="Completed appointments cannot be cancelled" showIcon />
+      ) : (
+        <Form form={cancelForm} layout="vertical" style={{ maxWidth: 560 }}>
+          <Form.Item
+            name="cancellation_notes"
+            label="Cancel Notes / Description"
+            rules={[{ required: true, message: 'Required' }, { max: 500 }]}
+          >
+            <Input.TextArea rows={5} maxLength={500} showCount placeholder="Enter reason or description for cancellation" />
+          </Form.Item>
+          <Space>
+            <Button type="primary" danger icon={<CloseCircleOutlined />} loading={cancelling} onClick={onCancel}>
+              Mark as Cancel
+            </Button>
+          </Space>
+        </Form>
+      ),
+    },
+    {
       key: 'reschedule',
       label: (
         <span>
           <ScheduleOutlined /> Reschedule
         </span>
       ),
-      children: isDone ? (
-        <Alert type="info" message="Completed appointments cannot be rescheduled" showIcon />
+      children: isDone || isCancelled ? (
+        <Alert type="info" message="Completed or cancelled appointments cannot be rescheduled" showIcon />
       ) : (
         <>
           <Form form={rescheduleForm} layout="vertical" style={{ maxWidth: 560 }}>
@@ -497,7 +560,7 @@ const AppointmentBookingsPage = () => {
   const { isMobile } = useResponsive()
   const [form] = Form.useForm()
   const [activeView, setActiveView] = useState('calendar') // 'calendar' | 'list'
-  const [listTab, setListTab] = useState('current') // current | rescheduled | completed | feedbacks
+  const [listTab, setListTab] = useState('current') // current | rescheduled | completed | cancelled | feedbacks
   const [selectedDate, setSelectedDate] = useState(dayjs())
   const [calendarMonth, setCalendarMonth] = useState(dayjs())
   const [newAppointmentOpen, setNewAppointmentOpen] = useState(false)
@@ -521,6 +584,7 @@ const AppointmentBookingsPage = () => {
   const { data: branchesData } = useGetBranchesQuery()
   const [createLead, { isLoading: createLoading }] = useCreateLeadMutation()
   const [updateLead, { isLoading: updateLoading }] = useUpdateLeadMutation()
+  const [syncAskEvaAppointments, { isLoading: syncAskEvaLoading }] = useSyncAskEvaAppointmentsMutation()
 
   const branches = branchesData?.branches || []
   const leads = leadsData?.leads || []
@@ -572,8 +636,22 @@ const AppointmentBookingsPage = () => {
     const total = leads.length
     const closed = leads.filter((l) => l.status === 'Converted').length
     const current = leads.filter((l) => ['New', 'In Progress'].includes(l.status)).length
-    return { total, closed, current }
+    const cancelled = leads.filter((l) => l.status === 'Cancelled').length
+    return { total, closed, current, cancelled }
   }, [leads])
+
+  const handleSyncAskEva = async () => {
+    try {
+      const result = await syncAskEvaAppointments().unwrap()
+      messageApi.success(
+        `AskEva appointments synced: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`
+      )
+      refetchLeads()
+    } catch (error) {
+      console.error('AskEva appointments sync error:', error)
+      messageApi.error(error?.data?.message || error?.message || 'Failed to sync AskEva appointments')
+    }
+  }
 
   const handleNewAppointment = () => {
     setEditingLead(null)
@@ -770,6 +848,14 @@ const AppointmentBookingsPage = () => {
                 {showFilters ? 'Hide Filters' : 'Show Filters'}
               </Button>
             )}
+            <Button
+              icon={<SyncOutlined />}
+              onClick={handleSyncAskEva}
+              loading={syncAskEvaLoading}
+              size={isMobile ? 'small' : 'middle'}
+            >
+              Sync AskEva
+            </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleNewAppointment} className="appt-btn-primary">
               New Appointment
             </Button>
@@ -920,6 +1006,10 @@ const AppointmentBookingsPage = () => {
                 <div className="appt-stat-val">{summaryCounts.current}</div>
                 <div className="appt-stat-label">Current</div>
               </Card>
+              <Card size="small" className="appt-stat-cancelled appt-stat-card">
+                <div className="appt-stat-val">{summaryCounts.cancelled}</div>
+                <div className="appt-stat-label">Cancelled</div>
+              </Card>
             </div>
           </Card>
 
@@ -1031,6 +1121,7 @@ const AppointmentBookingsPage = () => {
               { key: 'current', label: 'Current' },
               { key: 'rescheduled', label: 'Rescheduled' },
               { key: 'completed', label: 'Completed' },
+              { key: 'cancelled', label: 'Cancelled' },
               { key: 'feedbacks', label: 'Feedbacks' },
             ]}
             className="appt-list-tabs"

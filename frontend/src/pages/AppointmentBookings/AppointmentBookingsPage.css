@@ -356,6 +356,14 @@
   border: none;
 }
 
+.appointment-bookings-page .appt-stat-cancelled.ant-card {
+  flex: 1;
+  min-width: 70px;
+  text-align: center;
+  background: #ff4d4f !important;
+  border: none;
+}
+
 .appointment-bookings-page .appt-stat-card .ant-card-body {
   padding: 12px 8px;
   background: transparent !important;

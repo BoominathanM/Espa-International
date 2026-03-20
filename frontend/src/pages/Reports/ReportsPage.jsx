@@ -13,6 +13,7 @@ import {
   Spin,
   Alert,
   Empty,
+  Tag,
 } from 'antd'
 import {
   DownloadOutlined,
@@ -60,6 +61,42 @@ const leadReportColumns = [
     key: 'rate',
     render: (rate) => `${rate}%`,
   },
+]
+
+const appointmentReportColumns = [
+  { title: 'S.No.', dataIndex: 'sno', key: 'sno', width: 60 },
+  { title: 'Date', dataIndex: 'date', key: 'date', width: 110 },
+  { title: 'Customer', dataIndex: 'customer', key: 'customer', ellipsis: true },
+  { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 120 },
+  {
+    title: 'Status',
+    dataIndex: 'status',
+    key: 'status',
+    width: 110,
+    render: (s) => {
+      const labels = {
+        Converted: 'Completed',
+        Cancelled: 'Cancelled',
+        'Follow-Up': 'Rescheduled',
+        New: 'Current',
+        'In Progress': 'Current',
+        Lost: 'Lost',
+      }
+      const colors = {
+        Converted: 'green',
+        Cancelled: 'red',
+        'Follow-Up': 'orange',
+        New: 'blue',
+        'In Progress': 'blue',
+        Lost: 'default',
+      }
+      return <Tag color={colors[s] || 'default'}>{labels[s] || s}</Tag>
+    },
+  },
+  { title: 'Slot', dataIndex: 'slot', key: 'slot', width: 130 },
+  { title: 'Package', dataIndex: 'package', key: 'package', ellipsis: true },
+  { title: 'Branch', dataIndex: 'branch', key: 'branch', width: 100 },
+  { title: 'Assigned To', dataIndex: 'assignedTo', key: 'assignedTo', width: 100 },
 ]
 
 const Reports = () => {
@@ -114,23 +151,67 @@ const Reports = () => {
       }
       if (format === 'excel') {
         try {
-          const rows = report.lead?.detailsTable || []
-          if (rows.length === 0) {
+          const wb = XLSX.utils.book_new()
+          const leadRows = report.lead?.detailsTable || []
+          const aptRows = report.lead?.appointmentDetailsTable || []
+
+          if (reportType === 'appointment') {
+            if (aptRows.length === 0) {
+              message.info('No appointment rows to export for this range')
+              return
+            }
+            const wsApt = XLSX.utils.json_to_sheet(
+              aptRows.map((r) => ({
+                'S.No.': r.sno,
+                Date: r.date,
+                Customer: r.customer,
+                Phone: r.phone,
+                Status: r.status,
+                Slot: r.slot,
+                Package: r.package,
+                Branch: r.branch,
+                'Assigned To': r.assignedTo,
+              }))
+            )
+            XLSX.utils.book_append_sheet(wb, wsApt, 'Appointment details')
+            XLSX.writeFile(wb, `report_appointments_${dateFrom}_${dateTo}.xlsx`)
+            message.success('Excel downloaded')
+            return
+          }
+
+          if (leadRows.length > 0) {
+            const wsLead = XLSX.utils.json_to_sheet(
+              leadRows.map((r) => ({
+                Date: r.date,
+                'Total Leads': r.total,
+                Converted: r.converted,
+                Lost: r.lost,
+                'Conversion Rate %': r.rate,
+              }))
+            )
+            XLSX.utils.book_append_sheet(wb, wsLead, 'Lead report')
+          }
+          if (aptRows.length > 0) {
+            const wsApt = XLSX.utils.json_to_sheet(
+              aptRows.map((r) => ({
+                'S.No.': r.sno,
+                Date: r.date,
+                Customer: r.customer,
+                Phone: r.phone,
+                Status: r.status,
+                Slot: r.slot,
+                Package: r.package,
+                Branch: r.branch,
+                'Assigned To': r.assignedTo,
+              }))
+            )
+            XLSX.utils.book_append_sheet(wb, wsApt, 'Appointments')
+          }
+          if (leadRows.length === 0 && aptRows.length === 0) {
             message.info('No tabular data to export for this range')
             return
           }
-          const ws = XLSX.utils.json_to_sheet(
-            rows.map((r) => ({
-              Date: r.date,
-              'Total Leads': r.total,
-              Converted: r.converted,
-              Lost: r.lost,
-              'Conversion Rate %': r.rate,
-            }))
-          )
-          const wb = XLSX.utils.book_new()
-          XLSX.utils.book_append_sheet(wb, ws, 'Lead report')
-          XLSX.writeFile(wb, `report_leads_${dateFrom}_${dateTo}.xlsx`)
+          XLSX.writeFile(wb, `report_${dateFrom}_${dateTo}.xlsx`)
           message.success('Excel downloaded')
         } catch (e) {
           message.error('Export failed')
@@ -139,7 +220,7 @@ const Reports = () => {
         message.info('PDF export coming soon — use Excel for now')
       }
     },
-    [report, dateFrom, dateTo]
+    [report, dateFrom, dateTo, reportType]
   )
 
   const renderReportContent = () => {
@@ -278,6 +359,166 @@ const Reports = () => {
                 dataSource={tableRows}
                 pagination={{ pageSize: 10 }}
                 locale={{ emptyText: 'No rows for this range' }}
+              />
+            </Card>
+          </>
+        )
+      }
+
+      case 'appointment': {
+        const aptStats = report.lead?.appointmentStats || {}
+        const aptTable = report.lead?.appointmentDetailsTable || []
+        const total = aptStats.totalAppointments ?? 0
+        const completed = aptStats.completed ?? 0
+        const cancelled = aptStats.cancelled ?? 0
+        const rescheduled = aptStats.rescheduled ?? 0
+        const otherActive = Math.max(0, total - completed - cancelled - rescheduled)
+        const barData = [
+          { name: 'Completed', value: completed, fill: 'var(--color-success)' },
+          { name: 'Cancelled', value: cancelled, fill: 'var(--color-danger)' },
+          { name: 'Rescheduled', value: rescheduled, fill: '#fa8c16' },
+          { name: 'Current / Other', value: otherActive, fill: chartT.primary },
+        ]
+        const pieData = barData.filter((d) => d.value > 0)
+        const pieSum = pieData.reduce((acc, d) => acc + d.value, 0)
+
+        return (
+          <>
+            <p className="reports-range-hint" style={{ marginBottom: 16 }}>
+              Appointments filtered by <strong>appointment date</strong> in range: {meta?.dateFrom} → {meta?.dateTo}
+              {isFetching ? ' (updating…)' : ''}
+            </p>
+            <Row gutter={16} className="reports-stat-row">
+              <Col xs={24} sm={12} lg={6}>
+                <Card className="mgmt-card">
+                  <Statistic
+                    title={<span className="mgmt-stat-title">Total Appointments</span>}
+                    value={total}
+                    valueStyle={{ color: 'var(--primary-color)' }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} lg={6}>
+                <Card className="mgmt-card">
+                  <Statistic
+                    title={<span className="mgmt-stat-title">Completed</span>}
+                    value={completed}
+                    valueStyle={{ color: 'var(--color-success)' }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} lg={6}>
+                <Card className="mgmt-card">
+                  <Statistic
+                    title={<span className="mgmt-stat-title">Cancelled</span>}
+                    value={cancelled}
+                    valueStyle={{ color: 'var(--color-danger)' }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} lg={6}>
+                <Card className="mgmt-card">
+                  <Statistic
+                    title={<span className="mgmt-stat-title">Rescheduled</span>}
+                    value={rescheduled}
+                    valueStyle={{ color: '#fa8c16' }}
+                  />
+                </Card>
+              </Col>
+            </Row>
+            <Row gutter={[16, 16]} className="reports-chart-row">
+              <Col xs={24} lg={12}>
+                <Card className="mgmt-card" title={<span className="mgmt-card-title-text">Appointment performance (by status)</span>}>
+                  {total === 0 ? (
+                    <Empty description="No appointments in this date range" />
+                  ) : (
+                    <ResponsiveContainer width="100%" height={chartHeight}>
+                      <BarChart data={barData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartT.grid} />
+                        <XAxis dataKey="name" stroke={chartT.axis} tick={{ fill: chartT.axis }} />
+                        <YAxis stroke={chartT.axis} tick={{ fill: chartT.axis }} allowDecimals={false} />
+                        <Tooltip contentStyle={chartT.tooltipContent} />
+                        <Bar dataKey="value" name="Count" radius={[4, 4, 0, 0]}>
+                          {barData.map((entry, index) => (
+                            <Cell key={`apt-bar-${index}`} fill={entry.fill} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </Card>
+              </Col>
+              <Col xs={24} lg={12}>
+                <Card className="mgmt-card" title={<span className="mgmt-card-title-text">Status mix</span>}>
+                  {total === 0 || pieData.length === 0 ? (
+                    <Empty description="No data" />
+                  ) : (
+                    <ResponsiveContainer width="100%" height={chartHeight}>
+                      <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                        <Pie
+                          data={pieData}
+                          cx="42%"
+                          cy="50%"
+                          innerRadius={48}
+                          outerRadius={78}
+                          paddingAngle={pieData.length > 1 ? 2 : 0}
+                          dataKey="value"
+                          nameKey="name"
+                          label={false}
+                          stroke="var(--card-bg, #1f1f1f)"
+                          strokeWidth={1}
+                        >
+                          {pieData.map((entry, index) => (
+                            <Cell key={`apt-pie-${index}`} fill={entry.fill} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          content={({ active, payload }) => {
+                            if (!active || !payload?.length) return null
+                            const d = payload[0].payload
+                            const n = d?.value ?? 0
+                            const pct = pieSum > 0 ? ((n / pieSum) * 100).toFixed(1) : '0'
+                            return (
+                              <div style={chartT.tooltipContentPrimaryBorder}>
+                                <div style={{ fontWeight: 600, marginBottom: 4 }}>{d?.name}</div>
+                                <div>
+                                  {n} {n === 1 ? 'appointment' : 'appointments'} ({pct}%)
+                                </div>
+                              </div>
+                            )
+                          }}
+                        />
+                        <Legend
+                          layout="vertical"
+                          align="right"
+                          verticalAlign="middle"
+                          wrapperStyle={{
+                            width: '52%',
+                            maxWidth: 240,
+                            paddingLeft: 12,
+                            right: 4,
+                            fontSize: 13,
+                            lineHeight: 1.6,
+                          }}
+                          formatter={(value, entry) => {
+                            const v = entry?.payload?.value ?? 0
+                            const pct = pieSum > 0 ? ((v / pieSum) * 100).toFixed(1) : '0'
+                            return `${value}: ${v} (${pct}%)`
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  )}
+                </Card>
+              </Col>
+            </Row>
+            <Card className="mgmt-card" title={<span className="mgmt-card-title-text">Appointment details</span>}>
+              <Table
+                columns={appointmentReportColumns}
+                dataSource={aptTable}
+                pagination={{ pageSize: 15 }}
+                locale={{ emptyText: 'No appointments in this date range' }}
+                scroll={{ x: 900 }}
               />
             </Card>
           </>
@@ -484,9 +725,10 @@ const Reports = () => {
               onChange={setReportType}
               className="ds-report-toolbar-select"
               size={isMobile ? 'small' : 'middle'}
-              style={{ minWidth: 180 }}
+              style={{ minWidth: 200 }}
             >
               <Option value="lead">Lead performance</Option>
+              <Option value="appointment">Appointment performance</Option>
               <Option value="agent">Agent performance</Option>
               <Option value="call">Call summary</Option>
               <Option value="branch">Branch performance</Option>

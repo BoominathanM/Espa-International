@@ -40,3 +40,22 @@
   font-size: 12px;
   color: var(--text-muted);
 }
+
+.reports-page .reports-section-title {
+  margin: 32px 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, inherit);
+}
+
+/* Status mix pie: avoid cramped/overlapping labels — legend shows counts */
+.reports-page .recharts-legend-wrapper .recharts-legend-item {
+  margin-bottom: 10px !important;
+}
+
+.reports-page .recharts-legend-wrapper .recharts-legend-item-text {
+  white-space: normal !important;
+  word-break: break-word;
+  max-width: 100%;
+  color: var(--text-primary, inherit) !important;
+}

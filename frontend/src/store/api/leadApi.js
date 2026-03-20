@@ -80,6 +80,13 @@ export const leadApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['Lead', 'Report'],
     }),
+    syncAskEvaAppointments: builder.mutation({
+      query: () => ({
+        url: '/leads/sync-askeva-appointments',
+        method: 'POST',
+      }),
+      invalidatesTags: ['Lead', 'Report'],
+    }),
     addReminder: builder.mutation({
       query: ({ leadId, ...data }) => ({
         url: `/leads/${leadId}/reminders`,
@@ -111,6 +118,14 @@ export const leadApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: (result, error, { id }) => [{ type: 'Lead', id }, 'Lead'],
     }),
+    cancelAppointment: builder.mutation({
+      query: ({ id, cancellation_notes }) => ({
+        url: `/leads/${id}/cancel`,
+        method: 'POST',
+        body: { cancellation_notes },
+      }),
+      invalidatesTags: (result, error, { id }) => [{ type: 'Lead', id }, 'Lead'],
+    }),
     rescheduleAppointment: builder.mutation({
       query: ({ id, appointment_date, slot_time, reason }) => ({
         url: `/leads/${id}/reschedule`,
@@ -139,10 +154,12 @@ export const {
   useLazyExportLeadsQuery,
   useImportLeadsMutation,
   useSyncAskEvaLeadsMutation,
+  useSyncAskEvaAppointmentsMutation,
   useAddReminderMutation,
   useUpdateReminderMutation,
   useDeleteReminderMutation,
   useCompleteAppointmentMutation,
+  useCancelAppointmentMutation,
   useRescheduleAppointmentMutation,
   useAddAppointmentNoteMutation,
 } = leadApi
