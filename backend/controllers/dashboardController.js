@@ -63,7 +63,13 @@ export const getDashboard = async (req, res) => {
     }
 
     const todayLeadFilter = { ...branchFilterForLeads, createdAt: { $gte: todayStart, $lte: todayEnd } }
-    const todayCallFilter = { ...callFilter, start_time: { $gte: todayStart, $lte: todayEnd } }
+    const todayCallFilter = {
+      ...callFilter,
+      $or: [
+        { startTime: { $gte: todayStart, $lte: todayEnd } },
+        { createdAt: { $gte: todayStart, $lte: todayEnd } },
+      ],
+    }
 
     const [
       todayLeads,
@@ -79,8 +85,18 @@ export const getDashboard = async (req, res) => {
       unassignedLeadsCount,
     ] = await Promise.all([
       Lead.countDocuments(todayLeadFilter),
-      CallLog.countDocuments({ ...todayCallFilter, call_status: 'Answered' }),
-      CallLog.countDocuments({ ...todayCallFilter, call_status: 'Missed' }),
+      CallLog.countDocuments(todayCallFilter),
+      CallLog.countDocuments({
+        ...todayCallFilter,
+        callStatus: {
+          $in: [
+            /^missed$/i,
+            /^no[\s-]?answer$/i,
+            /^unanswered$/i,
+            /^not[\s-]?answered$/i,
+          ],
+        },
+      }),
       Lead.countDocuments({
         ...branchFilterForLeads,
         appointment_date: { $gte: todayStart, $lte: todayEnd },
@@ -213,8 +229,13 @@ export const getDashboard = async (req, res) => {
       })
     }
     const callTrendByDay = await CallLog.aggregate([
-      { $match: { ...callFilter, start_time: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
-      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$start_time' } }, calls: { $sum: 1 } } },
+      { $match: { ...callFilter, createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: { $ifNull: ['$startTime', '$createdAt'] } } },
+          calls: { $sum: 1 },
+        },
+      },
     ])
     last7.forEach((day) => {
       const c = callTrendByDay.find((x) => x._id === day.dateKey)
