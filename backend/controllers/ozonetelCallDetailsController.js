@@ -30,33 +30,7 @@ const convertToSeconds = (value) => {
 
 const parseDate = (value) => {
   if (!value) return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-  if (typeof value !== "string") return null;
-
-  const raw = value.trim();
-  if (!raw) return null;
-
-  // Ozonetel often sends "YYYY-MM-DD HH:mm:ss" without timezone.
-  // Treat it as IST explicitly to avoid server-timezone drift.
-  const istMatch = raw.match(
-    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/
-  );
-  if (istMatch) {
-    const [, y, m, d, hh, mm, ss] = istMatch;
-    const utcMs =
-      Date.UTC(
-        Number(y),
-        Number(m) - 1,
-        Number(d),
-        Number(hh),
-        Number(mm),
-        Number(ss)
-      ) -
-      5.5 * 60 * 60 * 1000;
-    return new Date(utcMs);
-  }
-
-  const parsed = new Date(raw);
+  const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
