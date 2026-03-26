@@ -33,6 +33,8 @@ export const AuthProvider = ({ children }) => {
       email: userData.email || '',
       role: userData.role || 'staff',
       branch: userData.branch || null,
+      branches: Array.isArray(userData.branches) ? userData.branches : [],
+      allBranches: Boolean(userData.allBranches),
       status: userData.status || 'active',
       phone: userData.phone || '',
       permissions: userData.permissions || getDefaultPermissions(userData.role || 'staff'),

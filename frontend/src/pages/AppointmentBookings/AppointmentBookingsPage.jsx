@@ -59,6 +59,7 @@ import { useGetBranchesQuery } from '../../store/api/branchApi'
 import dayjs from 'dayjs'
 import './AppointmentBookingsPage.css'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
+import { hasPermission, isSuperAdmin } from '../../utils/permissions'
 
 const { Option } = Select
 
@@ -558,6 +559,9 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
 const AppointmentBookingsPage = () => {
   const { message: messageApi } = App.useApp()
   const { isMobile } = useResponsive()
+  const hasSuperAdminAccess = isSuperAdmin()
+  const canCreateAppointment = hasSuperAdminAccess || hasPermission('appointmentBookings', 'create')
+  const canEditAppointment = hasSuperAdminAccess || hasPermission('appointmentBookings', 'edit')
   const [form] = Form.useForm()
   const [activeView, setActiveView] = useState('calendar') // 'calendar' | 'list'
   const [listTab, setListTab] = useState('current') // current | rescheduled | completed | cancelled | feedbacks
@@ -774,12 +778,14 @@ const AppointmentBookingsPage = () => {
           menu={{
             items: [
               { key: 'view', label: 'View details', icon: <EyeOutlined /> },
-              { key: 'edit', label: 'Edit appointment', icon: <EditOutlined /> },
+              ...(canEditAppointment
+                ? [{ key: 'edit', label: 'Edit appointment', icon: <EditOutlined /> }]
+                : []),
             ],
             onClick: ({ key, domEvent }) => {
               domEvent?.stopPropagation()
               if (key === 'view') handleView(record)
-              else if (key === 'edit') handleEdit(record)
+              else if (key === 'edit' && canEditAppointment) handleEdit(record)
             },
           }}
           trigger={['click']}
@@ -856,9 +862,11 @@ const AppointmentBookingsPage = () => {
             >
               Sync AskEva
             </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleNewAppointment} className="appt-btn-primary">
-              New Appointment
-            </Button>
+            {canCreateAppointment && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleNewAppointment} className="appt-btn-primary">
+                New Appointment
+              </Button>
+            )}
           </Space>
         }
       />

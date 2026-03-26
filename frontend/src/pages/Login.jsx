@@ -33,6 +33,8 @@ const Login = () => {
         email: result.user.email || '',
         role: result.user.role || 'staff',
         branch: result.user.branch || null,
+        branches: Array.isArray(result.user.branches) ? result.user.branches : [],
+        allBranches: Boolean(result.user.allBranches),
         status: result.user.status || 'active',
         phone: result.user.phone || '',
         permissions: result.user.permissions || getDefaultPermissions(result.user.role || 'staff'),

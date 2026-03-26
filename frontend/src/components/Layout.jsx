@@ -40,6 +40,15 @@ import { useThemeMode } from '../hooks/useThemeMode'
 import AnimatedWrapper from './AnimatedWrapper'
 
 const { Header, Sider, Content } = AntLayout
+const PERMISSION_LABELS = {
+  dashboard: 'Dashboard',
+  leads: 'Lead Management',
+  appointmentBookings: 'Appointment Bookings',
+  calls: 'Call Records',
+  customers: 'Customer Management',
+  reports: 'Reports & Analytics',
+  settings: 'System Settings',
+}
 
 const Layout = ({ children }) => {
   const { isDark, toggleTheme } = useThemeMode()
@@ -82,6 +91,8 @@ const Layout = ({ children }) => {
         email: currentUserData.user.email || '',
         role: currentUserData.user.role || 'staff',
         branch: currentUserData.user.branch || null,
+        branches: Array.isArray(currentUserData.user.branches) ? currentUserData.user.branches : [],
+        allBranches: Boolean(currentUserData.user.allBranches),
         status: currentUserData.user.status || 'active',
         phone: currentUserData.user.phone || '',
         permissions: currentUserData.user.permissions || user?.permissions || {},
@@ -99,6 +110,19 @@ const Layout = ({ children }) => {
         permissions: currentUserData.user.permissions || user?.permissions || {},
       }
     : user
+  const assignedBranches = Array.isArray(displayUser?.branches) ? displayUser.branches : []
+  const visibleBranchList =
+    assignedBranches.length > 0 ? assignedBranches : (displayUser?.branch ? [displayUser.branch] : [])
+  const permissionsMap = displayUser?.permissions && typeof displayUser.permissions === 'object'
+    ? displayUser.permissions
+    : {}
+  const permissionItems = Object.entries(permissionsMap)
+    .filter(([, actions]) => Array.isArray(actions) && actions.length > 0)
+    .map(([moduleKey, actions]) => ({
+      key: moduleKey,
+      label: PERMISSION_LABELS[moduleKey] || moduleKey,
+      actions: [...actions].map((a) => String(a)).sort(),
+    }))
 
   // Use drawer for mobile (< 576px), tablet (576px - 767px), and small laptop (768px - 992px)
   // Desktop (992px+) uses normal fixed sidebar
@@ -555,8 +579,23 @@ const Layout = ({ children }) => {
             <div className="profile-drawer__row">
               <BankOutlined className="profile-drawer__row-icon" />
               <div>
-                <div className="profile-drawer__label">Branch</div>
-                <div className="profile-drawer__value">{displayUser?.branch?.name || 'Not Assigned'}</div>
+                <div className="profile-drawer__label">Assigned Branches ({visibleBranchList.length})</div>
+                <div className="profile-drawer__value">
+                  {visibleBranchList.length > 0
+                    ? visibleBranchList.map((branch) => branch?.name).filter(Boolean).join(', ')
+                    : 'Not Assigned'}
+                </div>
+              </div>
+            </div>
+            <div className="profile-drawer__row">
+              <SafetyOutlined className="profile-drawer__row-icon" />
+              <div>
+                <div className="profile-drawer__label">Permissions</div>
+                <div className="profile-drawer__value">
+                  {permissionItems.length > 0
+                    ? permissionItems.map((item) => `${item.label}: ${item.actions.join(', ')}`).join(' | ')
+                    : 'No Permissions'}
+                </div>
               </div>
             </div>
             <div className="profile-drawer__row">

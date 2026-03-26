@@ -1,6 +1,7 @@
 import User from '../models/User.js'
 import Role from '../models/Role.js'
 import LoginHistory from '../models/LoginHistory.js'
+import Branch from '../models/Branch.js'
 import jwt from 'jsonwebtoken'
 import { getGeolocationFromIP } from '../utils/geolocation.js'
 
@@ -63,6 +64,22 @@ const resolveUserPermissions = async (user) => {
   }
 
   return rolePermissions
+}
+
+const resolveUserBranches = async (user) => {
+  if (user.allBranches) {
+    const all = await Branch.find().select('name').sort({ name: 1 }).lean()
+    return all.map((b) => ({
+      _id: b._id?.toString(),
+      name: b.name || '',
+    }))
+  }
+  return Array.isArray(user.branches)
+    ? user.branches.map((b) => ({
+        _id: b._id?.toString() || b.toString(),
+        name: b.name || '',
+      }))
+    : []
 }
 
 // @desc    Login user
@@ -182,6 +199,7 @@ export const login = async (req, res) => {
     const token = generateToken(user._id)
 
     // Prepare user data - handle null/empty values properly
+    const resolvedBranches = await resolveUserBranches(user)
     const userData = {
       _id: user._id.toString(),
       id: user._id.toString(),
@@ -192,12 +210,7 @@ export const login = async (req, res) => {
         _id: user.branch._id?.toString() || user.branch.toString(),
         name: user.branch.name || '',
       } : null,
-      branches: Array.isArray(user.branches)
-        ? user.branches.map((b) => ({
-            _id: b._id?.toString() || b.toString(),
-            name: b.name || '',
-          }))
-        : [],
+      branches: resolvedBranches,
       allBranches: Boolean(user.allBranches),
       status: user.status || 'active',
       phone: user.phone || '',
@@ -291,6 +304,7 @@ export const getMe = async (req, res) => {
     // Use user-specific permissions first, then fallback to role permissions
     const permissions = await resolveUserPermissions(user)
 
+    const resolvedBranches = await resolveUserBranches(user)
     const userData = {
       _id: user._id.toString(),
       id: user._id.toString(),
@@ -301,12 +315,7 @@ export const getMe = async (req, res) => {
         _id: user.branch._id?.toString() || user.branch.toString(),
         name: user.branch.name || '',
       } : null,
-      branches: Array.isArray(user.branches)
-        ? user.branches.map((b) => ({
-            _id: b._id?.toString() || b.toString(),
-            name: b.name || '',
-          }))
-        : [],
+      branches: resolvedBranches,
       allBranches: Boolean(user.allBranches),
       status: user.status || 'active',
       phone: user.phone || '',
