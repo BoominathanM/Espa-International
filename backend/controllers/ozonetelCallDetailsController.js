@@ -163,6 +163,21 @@ export const processCallPayload = async (payload) => {
   return callLog;
 };
 
+/**
+ * Ozonetel / CloudAgent often validates the Callback URL with GET or HEAD before enabling webhooks.
+ * Without these handlers, production returns 404 and the dashboard shows the URL as invalid.
+ */
+export const pingOzonetelCallDetails = (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Ozonetel call-details webhook is active (use POST for callbacks)",
+  });
+};
+
+export const headOzonetelCallDetails = (req, res) => {
+  res.status(200).end();
+};
+
 export const handleCallDetails = async (req, res) => {
   try {
     console.log("🔥 WEBHOOK HIT");

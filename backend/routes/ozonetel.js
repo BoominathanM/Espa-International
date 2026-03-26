@@ -16,10 +16,16 @@
  */
 
 import express from 'express'
-import { handleCallDetails } from '../controllers/ozonetelCallDetailsController.js'
+import {
+  handleCallDetails,
+  pingOzonetelCallDetails,
+  headOzonetelCallDetails,
+} from '../controllers/ozonetelCallDetailsController.js'
 
 const router = express.Router()
 
+router.get('/call-details', pingOzonetelCallDetails)
+router.head('/call-details', headOzonetelCallDetails)
 router.post('/call-details', handleCallDetails)
 
 export default router
