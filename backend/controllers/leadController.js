@@ -7,6 +7,13 @@ import ChatDeletionLog from '../models/ChatDeletionLog.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
 import { syncAskEvaAppointmentsToDb } from '../services/askevaAppointmentSyncService.js'
+import { applyBranchScope, canAccessBranch, getAccessibleBranchIds } from '../utils/branchAccess.js'
+
+const DEFAULT_BRANCH_NAME = 'HO - Tambaram'
+
+async function getDefaultLeadBranch() {
+  return Branch.findOne({ name: DEFAULT_BRANCH_NAME })
+}
 
 // @desc    Create lead from website contact form
 // @route   POST /api/leads/website
@@ -78,12 +85,12 @@ export const createWebsiteLead = async (req, res) => {
       }
     }
 
-    // STEP 2 — If branch not provided, auto-default to "Anna Nagar"
+    // STEP 2 — If branch not provided, auto-default to configured branch
     if (!branchId) {
-      const defaultBranch = await Branch.findOne({ name: "Anna Nagar" })
+      const defaultBranch = await getDefaultLeadBranch()
       if (defaultBranch) {
         branchId = defaultBranch._id
-        console.log("🌐 Default branch selected → Anna Nagar")
+        console.log(`🌐 Default branch selected → ${defaultBranch.name}`)
       }
     }
 
@@ -215,11 +222,24 @@ export const createLead = async (req, res) => {
       }
     }
 
-    // Default to Anna Nagar if no branch found
+    // Default to configured branch if no branch found
     if (!branchId) {
-      const defaultBranch = await Branch.findOne({ name: 'Anna Nagar' })
+      const defaultBranch = await getDefaultLeadBranch()
       if (defaultBranch) {
         branchId = defaultBranch._id
+      }
+    }
+
+    if (req.user.role !== 'superadmin' && !req.user.allBranches) {
+      const accessibleBranchIds = getAccessibleBranchIds(req.user) || []
+      if (branchId && !canAccessBranch(req.user, branchId)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Not allowed for selected branch',
+        })
+      }
+      if (!branchId && accessibleBranchIds.length > 0) {
+        branchId = accessibleBranchIds[0]
       }
     }
 
@@ -472,6 +492,11 @@ export const getLeads = async (req, res) => {
       query.branch = branch
     }
 
+    // Non-superadmin users can only view leads from their selected branches.
+    if (req.user.role !== 'superadmin' && !req.user.allBranches) {
+      applyBranchScope(query, req.user, 'branch')
+    }
+
     if (assignedTo) {
       query.assignedTo = assignedTo
     }
@@ -648,6 +673,10 @@ export const getLead = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Lead not found' })
     }
 
+    if (!canAccessBranch(req.user, lead.branch?._id || lead.branch)) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
+    }
+
     res.json({ success: true, lead })
   } catch (error) {
     console.error('Get lead error:', error)
@@ -687,6 +716,10 @@ export const updateLead = async (req, res) => {
     const lead = await Lead.findById(req.params.id)
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+
+    if (!canAccessBranch(req.user, lead.branch)) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
     }
 
     // Handle name field
@@ -737,6 +770,9 @@ export const updateLead = async (req, res) => {
       if (branch === null || branch === '') {
         lead.branch = null
       } else if (mongoose.Types.ObjectId.isValid(branch)) {
+        if (!canAccessBranch(req.user, branch)) {
+          return res.status(403).json({ success: false, message: 'Not allowed for selected branch' })
+        }
         const exists = await Branch.findById(branch)
         if (exists) {
           lead.branch = branch
@@ -812,6 +848,99 @@ export const updateLead = async (req, res) => {
   }
 }
 
+const normalizePhoneForMatch = (value = '') => String(value).replace(/\D/g, '')
+
+// @desc    Merge call audio/details into existing lead by leadId or phone
+// @route   POST /api/leads/merge-call-audio
+// @access  Private
+export const mergeCallAudioToLead = async (req, res) => {
+  try {
+    const {
+      leadId,
+      phone,
+      callLogId,
+      recordingUrl,
+      callType,
+      callStatus,
+      agentName,
+      callStartedAt,
+    } = req.body
+
+    if (!recordingUrl || !String(recordingUrl).trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Recording URL is required',
+      })
+    }
+
+    let lead = null
+    if (leadId && mongoose.Types.ObjectId.isValid(leadId)) {
+      lead = await Lead.findById(leadId)
+    } else if (phone && String(phone).trim()) {
+      const normalized = normalizePhoneForMatch(phone)
+      if (!normalized) {
+        return res.status(400).json({
+          success: false,
+          message: 'Valid phone is required',
+        })
+      }
+
+      const last10 = normalized.length > 10 ? normalized.slice(-10) : normalized
+      lead = await Lead.findOne({
+        $or: [
+          { phone: normalized },
+          { phone: last10 },
+          { phone: { $regex: `${last10}$` } },
+        ],
+      }).sort({ createdAt: -1 })
+    }
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: 'No lead found for this number',
+      })
+    }
+
+    if (!canAccessBranch(req.user, lead.branch)) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
+    }
+
+    lead.ivrCallRecordingUrl = String(recordingUrl || '').trim()
+    if (callType !== undefined) lead.ivrCallType = String(callType || '').trim()
+    if (callStatus !== undefined) lead.ivrCallStatus = String(callStatus || '').trim()
+    if (agentName !== undefined) lead.ivrAgentName = String(agentName || '').trim()
+    if (callStartedAt !== undefined) lead.ivrCallStartedAt = String(callStartedAt || '').trim()
+    lead.lastInteraction = new Date()
+    lead.activityLogs.push({
+      action: 'Call Audio Merged',
+      details: `Recording attached from call log${callLogId ? ` (${callLogId})` : ''}`,
+      performedBy: req.user?.name || 'User',
+    })
+    await lead.save()
+
+    if (callLogId && mongoose.Types.ObjectId.isValid(callLogId)) {
+      await CallLog.findByIdAndUpdate(callLogId, { lead: lead._id })
+    }
+
+    const updatedLead = await Lead.findById(lead._id)
+      .populate('branch', 'name')
+      .populate('assignedTo', 'name email status')
+
+    return res.json({
+      success: true,
+      message: 'Call audio merged to lead successfully',
+      lead: updatedLead,
+    })
+  } catch (error) {
+    console.error('Merge call audio error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+    })
+  }
+}
+
 // @desc    Delete lead
 // @route   DELETE /api/leads/:id
 // @access  Private (Super Admin only)
@@ -868,6 +997,10 @@ export const exportLeads = async (req, res) => {
         { email: { $regex: term, $options: 'i' } },
         { phone: { $regex: term, $options: 'i' } },
       ]
+    }
+
+    if (req.user.role !== 'superadmin' && !req.user.allBranches) {
+      applyBranchScope(query, req.user, 'branch')
     }
 
     const leads = await Lead.find(query)

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Table,
   Button,
@@ -11,18 +11,18 @@ import {
   App,
 } from 'antd'
 import {
-  PhoneOutlined,
   PlayCircleOutlined,
   UserAddOutlined,
   SearchOutlined,
+  ReloadOutlined,
   UpOutlined,
   DownOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useResponsive } from '../../hooks/useResponsive'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
-import MotionButton from '../../components/MotionButton'
 import { useGetCallLogsQuery } from '../../store/api/cloudAgentApi'
+import { useMergeCallAudioMutation } from '../../store/api/leadApi'
 import dayjs from 'dayjs'
 import './CallsPage.css'
 
@@ -51,11 +51,18 @@ const Calls = () => {
   const [showFilters, setShowFilters] = useState(false)
   const [filterType, setFilterType] = useState(undefined)
   const [filterStatus, setFilterStatus] = useState(undefined)
+  const [searchInput, setSearchInput] = useState('')
   const [searchText, setSearchText] = useState('')
   const [callPage, setCallPage] = useState(1)
   const [callPageSize, setCallPageSize] = useState(10)
+  const [mergeCallAudio, { isLoading: mergeAudioLoading }] = useMergeCallAudioMutation()
 
-  const { data: callLogsData, isLoading: callsLoading } = useGetCallLogsQuery({
+  const {
+    data: callLogsData,
+    isLoading: callsLoading,
+    isFetching: callsFetching,
+    refetch: refetchCalls,
+  } = useGetCallLogsQuery({
     page: callPage,
     limit: callPageSize,
     type: filterType || undefined,
@@ -164,6 +171,15 @@ const Calls = () => {
               Play
             </Button>
           ) : null}
+          {record.recordingUrl && record.leadLinked ? (
+            <Button
+              type="link"
+              loading={mergeAudioLoading}
+              onClick={() => handleMergeAudio(record)}
+            >
+              Merge Audio
+            </Button>
+          ) : null}
           {!record.leadLinked && record.leadStatus !== 'Converted' && (
             <Button
               type="link"
@@ -203,12 +219,59 @@ const Calls = () => {
     setIsCreateLeadVisible(false)
   }
 
+  const handleFilterTypeChange = (value) => {
+    setCallPage(1)
+    setFilterType(value)
+  }
+
+  const handleFilterStatusChange = (value) => {
+    setCallPage(1)
+    setFilterStatus(value)
+  }
+
+  const handleRefreshCalls = async () => {
+    try {
+      await refetchCalls()
+      messageApi.success('Call logs refreshed')
+    } catch {
+      messageApi.error('Failed to refresh call logs')
+    }
+  }
+
+  const handleMergeAudio = async (record) => {
+    try {
+      await mergeCallAudio({
+        leadId: record.leadId || undefined,
+        phone: record.phoneNumber,
+        callLogId: record._id,
+        recordingUrl: record.recordingUrl,
+        callType: record.type,
+        callStatus: record.status,
+        agentName: record.agent,
+        callStartedAt: record.date,
+      }).unwrap()
+      messageApi.success('Audio merged to lead. Open Lead Details to listen.')
+      refetchCalls()
+    } catch (error) {
+      messageApi.error(error?.data?.message || 'Unable to merge audio to lead')
+    }
+  }
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setCallPage(1)
+      setSearchText(searchInput)
+    }, 350)
+
+    return () => clearTimeout(timeoutId)
+  }, [searchInput])
+
   return (
     <PageLayout className="mgmt-page">
       <PageHeader
         title="Call Management"
         extra={
-          <Space wrap className={isMobile ? 'ds-page-header__extra--full-mobile' : ''}>
+          <Space wrap className={`calls-toolbar ${isMobile ? 'ds-page-header__extra--full-mobile' : ''}`}>
             <Button
               icon={showFilters ? <UpOutlined /> : <DownOutlined />}
               onClick={() => setShowFilters(!showFilters)}
@@ -216,9 +279,22 @@ const Calls = () => {
             >
               {showFilters ? 'Hide Filters' : 'Show Filters'}
             </Button>
-            {/* <MotionButton type="primary" icon={<PhoneOutlined />} size={isMobile ? 'small' : 'middle'} onClick={() => navigate('/leads')}>
-              {isMobile ? 'Call' : 'Make Call (from Leads)'}
-            </MotionButton> */}
+            <Input
+              className="calls-toolbar__search"
+              placeholder="Search by phone number"
+              prefix={<SearchOutlined />}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              allowClear
+            />
+            <Button
+              onClick={handleRefreshCalls}
+              icon={<ReloadOutlined />}
+              loading={callsFetching}
+              size={isMobile ? 'small' : 'middle'}
+            >
+              Refresh
+            </Button>
           </Space>
         }
       />
@@ -226,18 +302,11 @@ const Calls = () => {
       {showFilters && (
         <ContentCard staggerIndex={0} compact>
           <div className="ds-filters-row ds-filters-row--responsive">
-            <Input
-              className="ds-filter-grow"
-              placeholder="Search by phone number"
-              prefix={<SearchOutlined />}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-            />
-            <Select className="ds-filter-fixed" placeholder="Filter by Type" allowClear value={filterType} onChange={setFilterType}>
+            <Select className="ds-filter-fixed" placeholder="Filter by Type" allowClear value={filterType} onChange={handleFilterTypeChange}>
               <Option value="Inbound">Inbound</Option>
               <Option value="Outbound">Outbound</Option>
             </Select>
-            <Select className="ds-filter-fixed" placeholder="Filter by Status" allowClear value={filterStatus} onChange={setFilterStatus}>
+            <Select className="ds-filter-fixed" placeholder="Filter by Status" allowClear value={filterStatus} onChange={handleFilterStatusChange}>
               <Option value="Answered">Answered</Option>
               <Option value="Missed">Missed</Option>
             </Select>

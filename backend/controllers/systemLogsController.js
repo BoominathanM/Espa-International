@@ -1,12 +1,14 @@
 import Lead from '../models/Lead.js'
 import ChatDeletionLog from '../models/ChatDeletionLog.js'
+import { getAccessibleBranchIds } from '../utils/branchAccess.js'
 
 function leadQueryForUser(reqUser) {
   const q = {}
   if (reqUser.role === 'superadmin') return q
-  if (reqUser.branch) {
-    const bid = reqUser.branch._id || reqUser.branch
-    q.branch = bid
+  if (reqUser.allBranches) return q
+  const branchIds = getAccessibleBranchIds(reqUser) || []
+  if (branchIds.length > 0) {
+    q.branch = { $in: branchIds }
     return q
   }
   return { _id: { $exists: false } }
@@ -22,14 +24,17 @@ export const getChatDeletionLogs = async (req, res) => {
     const skip = (page - 1) * limit
 
     const filter = {}
-    if (req.user.role !== 'superadmin' && req.user.branch) {
-      filter.branch = req.user.branch._id || req.user.branch
-    } else if (req.user.role !== 'superadmin' && !req.user.branch) {
-      return res.json({
-        success: true,
-        logs: [],
-        pagination: { total: 0, page, limit, pages: 0 },
-      })
+    if (req.user.role !== 'superadmin' && !req.user.allBranches) {
+      const branchIds = getAccessibleBranchIds(req.user) || []
+      if (branchIds.length > 0) {
+        filter.branch = { $in: branchIds }
+      } else {
+        return res.json({
+          success: true,
+          logs: [],
+          pagination: { total: 0, page, limit, pages: 0 },
+        })
+      }
     }
 
     const [total, logs] = await Promise.all([
@@ -84,7 +89,7 @@ export const getLeadActivityLogs = async (req, res) => {
       activityLogs: { $exists: true, $ne: [] },
     }
 
-    if (req.user.role !== 'superadmin' && !req.user.branch) {
+    if (req.user.role !== 'superadmin' && !req.user.allBranches && (getAccessibleBranchIds(req.user) || []).length === 0) {
       return res.json({
         success: true,
         logs: [],

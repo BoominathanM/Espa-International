@@ -18,6 +18,21 @@ export const roleApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['Role', 'Auth'],
     }),
+    createRole: builder.mutation({
+      query: ({ name, displayName, permissions }) => ({
+        url: '/roles',
+        method: 'POST',
+        body: { name, displayName, permissions },
+      }),
+      invalidatesTags: ['Role'],
+    }),
+    deleteRole: builder.mutation({
+      query: (name) => ({
+        url: `/roles/${encodeURIComponent(name)}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Role'],
+    }),
     initializeRoles: builder.mutation({
       query: () => ({
         url: '/roles/initialize',
@@ -32,5 +47,7 @@ export const {
   useGetRolesQuery,
   useGetRoleQuery,
   useUpdateRoleMutation,
+  useCreateRoleMutation,
+  useDeleteRoleMutation,
   useInitializeRolesMutation,
 } = roleApi

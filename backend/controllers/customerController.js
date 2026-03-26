@@ -2,6 +2,7 @@ import mongoose from 'mongoose'
 import Customer from '../models/Customer.js'
 import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
+import { applyBranchScope, canAccessBranch, getAccessibleBranchIds } from '../utils/branchAccess.js'
 
 function normalizePhoneDigits(phone) {
   return String(phone || '').replace(/\D/g, '')
@@ -46,8 +47,8 @@ function formatCustomerDoc(c) {
 function customerBranchFilter(req) {
   const user = req.user
   const q = {}
-  if (user.role !== 'superadmin' && user.branch) {
-    q.branch = user.branch._id || user.branch
+  if (user.role !== 'superadmin' && !user.allBranches) {
+    applyBranchScope(q, user, 'branch')
   } else if (req.query.branch && req.query.branch !== 'all') {
     q.branch = req.query.branch
   }
@@ -89,8 +90,14 @@ export const createCustomer = async (req, res) => {
     }
     const user = req.user
     let branchId = branch || null
-    if (user.role !== 'superadmin' && user.branch) {
-      branchId = user.branch._id || user.branch
+    if (user.role !== 'superadmin' && !user.allBranches) {
+      const accessible = getAccessibleBranchIds(user) || []
+      if (branchId && !canAccessBranch(user, branchId)) {
+        return res.status(403).json({ success: false, message: 'Not allowed for selected branch' })
+      }
+      if (!branchId && accessible.length > 0) {
+        branchId = accessible[0]
+      }
     }
     if (branchId && !mongoose.Types.ObjectId.isValid(branchId)) {
       branchId = null
@@ -130,12 +137,8 @@ export const updateCustomer = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Customer not found' })
     }
     const user = req.user
-    if (user.role !== 'superadmin' && user.branch) {
-      const ub = (user.branch._id || user.branch).toString()
-      const cb = customer.branch?.toString()
-      if (cb && cb !== ub) {
-        return res.status(403).json({ success: false, message: 'Not allowed' })
-      }
+    if (!canAccessBranch(user, customer.branch)) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
     }
     const { name, mobile, whatsapp, branch, email, tags, notes } = req.body
     if (name !== undefined) customer.name = name.trim()
@@ -145,8 +148,12 @@ export const updateCustomer = async (req, res) => {
     }
     if (whatsapp !== undefined) customer.whatsapp = whatsapp.trim()
     if (email !== undefined) customer.email = (email || '').trim().toLowerCase()
-    if (branch !== undefined && (user.role === 'superadmin' || !user.branch)) {
+    if (branch !== undefined && (user.role === 'superadmin' || user.allBranches)) {
       customer.branch = branch && mongoose.Types.ObjectId.isValid(branch) ? branch : null
+    } else if (branch !== undefined && user.role !== 'superadmin' && !user.allBranches && branch) {
+      if (!canAccessBranch(user, branch)) {
+        return res.status(403).json({ success: false, message: 'Not allowed for selected branch' })
+      }
     }
     if (tags !== undefined && Array.isArray(tags)) customer.tags = tags
     if (notes !== undefined) customer.notes = notes
@@ -172,11 +179,8 @@ export const convertFromLead = async (req, res) => {
     }
     const user = req.user
     const leadBranchId = lead.branch ? String(lead.branch) : ''
-    if (user.role !== 'superadmin' && user.branch) {
-      const ub = String(user.branch._id || user.branch)
-      if (leadBranchId && ub !== leadBranchId) {
-        return res.status(403).json({ success: false, message: 'Not allowed to convert this lead' })
-      }
+    if (!canAccessBranch(user, leadBranchId)) {
+      return res.status(403).json({ success: false, message: 'Not allowed to convert this lead' })
     }
 
     if (lead.customer) {

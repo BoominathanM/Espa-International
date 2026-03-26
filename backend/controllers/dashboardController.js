@@ -2,6 +2,7 @@ import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
 import User from '../models/User.js'
 import Branch from '../models/Branch.js'
+import { getAccessibleBranchIds } from '../utils/branchAccess.js'
 
 /**
  * Build base filter for leads/calls based on branch and optional date.
@@ -13,8 +14,13 @@ function buildBaseFilter(req, options = {}) {
   const filter = {}
 
   // Branch: for non-superadmin, force user's branch; else use param (or all)
-  if (user.role !== 'superadmin' && user.branch) {
-    filter.branch = user.branch._id || user.branch
+  if (user.role !== 'superadmin' && !user.allBranches) {
+    const ids = getAccessibleBranchIds(user) || []
+    if (ids.length === 0) {
+      filter._id = { $exists: false }
+    } else {
+      filter.branch = { $in: ids }
+    }
   } else if (branchParam && branchParam !== 'all') {
     filter.branch = branchParam
   }
@@ -51,8 +57,8 @@ export const getDashboard = async (req, res) => {
     todayEnd.setUTCHours(23, 59, 59, 999)
 
     let callFilter = {}
-    if (branchParam && branchParam !== 'all') {
-      const leadIdsForBranch = await Lead.find({ branch: branchParam }).distinct('_id')
+    if (branchFilterForLeads.branch) {
+      const leadIdsForBranch = await Lead.find({ branch: branchFilterForLeads.branch }).distinct('_id')
       callFilter = { lead: { $in: leadIdsForBranch } }
     }
 
@@ -79,7 +85,17 @@ export const getDashboard = async (req, res) => {
         ...branchFilterForLeads,
         appointment_date: { $gte: todayStart, $lte: todayEnd },
       }),
-      User.countDocuments({ status: 'active', ...(branchFilterForLeads.branch ? { branch: branchFilterForLeads.branch } : {}) }),
+      User.countDocuments({
+        status: 'active',
+        ...(branchFilterForLeads.branch
+          ? {
+              $or: [
+                { branch: branchFilterForLeads.branch },
+                { branches: branchFilterForLeads.branch },
+              ],
+            }
+          : {}),
+      }),
       Lead.aggregate([
         { $match: branchFilterForLeads },
         {
@@ -197,7 +213,7 @@ export const getDashboard = async (req, res) => {
       })
     }
     const callTrendByDay = await CallLog.aggregate([
-      { $match: { start_time: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
+      { $match: { ...callFilter, start_time: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
       { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$start_time' } }, calls: { $sum: 1 } } },
     ])
     last7.forEach((day) => {

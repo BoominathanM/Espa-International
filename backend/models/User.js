@@ -23,13 +23,22 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['superadmin', 'admin', 'supervisor', 'staff'],
       default: 'staff',
     },
     branch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Branch',
       default: null,
+    },
+    branches: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Branch',
+      },
+    ],
+    allBranches: {
+      type: Boolean,
+      default: false,
     },
     status: {
       type: String,
@@ -44,6 +53,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: '',
       trim: true,
+    },
+    permissions: {
+      type: Map,
+      of: [String],
+      default: undefined,
     },
   },
   {
@@ -69,6 +83,13 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 // Remove password from JSON output
 userSchema.methods.toJSON = function () {
   const userObject = this.toObject()
+  if (userObject.permissions instanceof Map) {
+    const permissionsObj = {}
+    userObject.permissions.forEach((value, key) => {
+      permissionsObj[key] = value
+    })
+    userObject.permissions = permissionsObj
+  }
   delete userObject.password
   return userObject
 }

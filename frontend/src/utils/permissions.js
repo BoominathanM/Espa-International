@@ -45,6 +45,7 @@ export const getDefaultPermissions = (role) => {
     superadmin: {
       dashboard: ['read'],
       leads: ['create', 'read', 'edit', 'delete'],
+      appointmentBookings: ['create', 'read', 'edit', 'delete'],
       calls: ['create', 'read', 'edit', 'delete'],
       chats: ['create', 'read', 'edit', 'delete'],
       customers: ['create', 'read', 'edit', 'delete'],
@@ -54,6 +55,7 @@ export const getDefaultPermissions = (role) => {
     admin: {
       dashboard: ['read'],
       leads: ['create', 'read', 'edit', 'delete'],
+      appointmentBookings: ['read'],
       calls: ['read'],
       chats: ['read', 'edit'],
       customers: ['read', 'edit'],
@@ -63,6 +65,7 @@ export const getDefaultPermissions = (role) => {
     supervisor: {
       dashboard: ['read'],
       leads: ['create', 'read', 'edit'],
+      appointmentBookings: ['read'],
       calls: ['read'],
       chats: ['read', 'edit'],
       customers: ['read', 'edit'],
@@ -72,6 +75,7 @@ export const getDefaultPermissions = (role) => {
     staff: {
       dashboard: ['read'],
       leads: ['read', 'edit'],
+      appointmentBookings: ['read'],
       calls: ['read'],
       chats: ['read', 'edit'],
       customers: ['read'],

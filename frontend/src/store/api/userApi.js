@@ -6,6 +6,10 @@ export const userApi = apiSlice.injectEndpoints({
       query: () => '/users',
       providesTags: ['User'],
     }),
+    getUserRoleCounts: builder.query({
+      query: () => '/users/role-counts',
+      providesTags: ['User'],
+    }),
     getUnassignedUsers: builder.query({
       query: () => '/users/unassigned',
       providesTags: ['User'],
@@ -46,6 +50,7 @@ export const userApi = apiSlice.injectEndpoints({
 
 export const {
   useGetUsersQuery,
+  useGetUserRoleCountsQuery,
   useGetUnassignedUsersQuery,
   useGetUserQuery,
   useCreateUserMutation,

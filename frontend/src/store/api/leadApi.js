@@ -110,6 +110,14 @@ export const leadApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: (result, error, { leadId }) => [{ type: 'Lead', id: leadId }, 'Lead'],
     }),
+    mergeCallAudio: builder.mutation({
+      query: (payload) => ({
+        url: '/leads/merge-call-audio',
+        method: 'POST',
+        body: payload,
+      }),
+      invalidatesTags: ['Lead'],
+    }),
     completeAppointment: builder.mutation({
       query: ({ id, completion_notes }) => ({
         url: `/leads/${id}/complete`,
@@ -158,6 +166,7 @@ export const {
   useAddReminderMutation,
   useUpdateReminderMutation,
   useDeleteReminderMutation,
+  useMergeCallAudioMutation,
   useCompleteAppointmentMutation,
   useCancelAppointmentMutation,
   useRescheduleAppointmentMutation,

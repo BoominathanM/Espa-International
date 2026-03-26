@@ -1,13 +1,19 @@
 import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
 import mongoose from 'mongoose'
+import { getAccessibleBranchIds } from '../utils/branchAccess.js'
 
 function buildLeadBranchFilter(req) {
   const { branch: branchParam } = req.query
   const user = req.user
   const filter = {}
-  if (user.role !== 'superadmin' && user.branch) {
-    filter.branch = user.branch._id || user.branch
+  if (user.role !== 'superadmin' && !user.allBranches) {
+    const ids = getAccessibleBranchIds(user) || []
+    if (ids.length === 0) {
+      filter._id = { $exists: false }
+    } else {
+      filter.branch = { $in: ids }
+    }
   } else if (branchParam && branchParam !== 'all' && mongoose.Types.ObjectId.isValid(branchParam)) {
     filter.branch = new mongoose.Types.ObjectId(branchParam)
   }

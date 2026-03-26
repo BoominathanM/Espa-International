@@ -19,6 +19,7 @@ const seedSuperAdmin = async (force = false) => {
         permissions: {
           dashboard: ['read'],
           leads: ['create', 'read', 'edit', 'delete'],
+          appointmentBookings: ['create', 'read', 'edit', 'delete'],
           calls: ['create', 'read', 'edit', 'delete'],
           chats: ['create', 'read', 'edit', 'delete'],
           customers: ['create', 'read', 'edit', 'delete'],
@@ -32,6 +33,7 @@ const seedSuperAdmin = async (force = false) => {
         permissions: {
           dashboard: ['read'],
           leads: ['create', 'read', 'edit', 'delete'],
+          appointmentBookings: ['read'],
           calls: ['read'],
           chats: ['read', 'edit'],
           customers: ['read', 'edit'],
@@ -45,6 +47,7 @@ const seedSuperAdmin = async (force = false) => {
         permissions: {
           dashboard: ['read'],
           leads: ['create', 'read', 'edit'],
+          appointmentBookings: ['read'],
           calls: ['read'],
           chats: ['read', 'edit'],
           customers: ['read', 'edit'],
@@ -58,6 +61,7 @@ const seedSuperAdmin = async (force = false) => {
         permissions: {
           dashboard: ['read'],
           leads: ['read', 'edit'],
+          appointmentBookings: ['read'],
           calls: ['read'],
           chats: ['read', 'edit'],
           customers: ['read'],

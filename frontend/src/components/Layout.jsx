@@ -127,7 +127,7 @@ const Layout = ({ children }) => {
       key: '/appointment-bookings',
       icon: <CalendarOutlined />,
       label: 'Appointment Bookings',
-      permission: 'leads:read',
+      permission: 'appointmentBookings:read',
     },
     {
       key: '/customers',

@@ -35,6 +35,36 @@ const getUserAgent = (req) => {
   return req.headers['user-agent'] || ''
 }
 
+const toPlainPermissions = (permissionsValue) => {
+  if (!permissionsValue) return {}
+  if (permissionsValue instanceof Map) {
+    const permissions = {}
+    permissionsValue.forEach((value, key) => {
+      permissions[key] = value
+    })
+    return permissions
+  }
+  return permissionsValue
+}
+
+const resolveUserPermissions = async (user) => {
+  const userPermissions = toPlainPermissions(user.permissions)
+  if (userPermissions && Object.keys(userPermissions).length > 0) {
+    return userPermissions
+  }
+
+  const role = await Role.findOne({ name: user.role })
+  const rolePermissions = toPlainPermissions(role?.permissions)
+
+  // Backward compatibility for existing role documents that don't yet include appointmentBookings.
+  if (!rolePermissions.appointmentBookings) {
+    const leadRead = (rolePermissions.leads || []).includes('read')
+    rolePermissions.appointmentBookings = leadRead ? ['read'] : []
+  }
+
+  return rolePermissions
+}
+
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
@@ -70,7 +100,9 @@ export const login = async (req, res) => {
     }
 
     // Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() }).populate('branch', 'name')
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .populate('branch', 'name')
+      .populate('branches', 'name')
 
     if (!user) {
       // Log failed attempt (user not found)
@@ -143,19 +175,8 @@ export const login = async (req, res) => {
       })
     }
 
-    // Get role permissions
-    const role = await Role.findOne({ name: user.role })
-    let permissions = {}
-    if (role && role.permissions) {
-      // Convert Map to Object
-      if (role.permissions instanceof Map) {
-        role.permissions.forEach((value, key) => {
-          permissions[key] = value
-        })
-      } else {
-        permissions = role.permissions
-      }
-    }
+    // Use user-specific permissions first, then fallback to role permissions
+    const permissions = await resolveUserPermissions(user)
 
     // Generate token
     const token = generateToken(user._id)
@@ -171,6 +192,13 @@ export const login = async (req, res) => {
         _id: user.branch._id?.toString() || user.branch.toString(),
         name: user.branch.name || '',
       } : null,
+      branches: Array.isArray(user.branches)
+        ? user.branches.map((b) => ({
+            _id: b._id?.toString() || b.toString(),
+            name: b.name || '',
+          }))
+        : [],
+      allBranches: Boolean(user.allBranches),
       status: user.status || 'active',
       phone: user.phone || '',
       permissions: permissions,
@@ -251,6 +279,7 @@ export const getMe = async (req, res) => {
     const user = await User.findById(req.user._id)
       .select('-password')
       .populate('branch', 'name address phone email')
+      .populate('branches', 'name address phone email')
 
     if (!user) {
       return res.status(404).json({ 
@@ -259,19 +288,8 @@ export const getMe = async (req, res) => {
       })
     }
 
-    // Get role permissions
-    const role = await Role.findOne({ name: user.role })
-    let permissions = {}
-    if (role && role.permissions) {
-      // Convert Map to Object
-      if (role.permissions instanceof Map) {
-        role.permissions.forEach((value, key) => {
-          permissions[key] = value
-        })
-      } else {
-        permissions = role.permissions
-      }
-    }
+    // Use user-specific permissions first, then fallback to role permissions
+    const permissions = await resolveUserPermissions(user)
 
     const userData = {
       _id: user._id.toString(),
@@ -283,6 +301,13 @@ export const getMe = async (req, res) => {
         _id: user.branch._id?.toString() || user.branch.toString(),
         name: user.branch.name || '',
       } : null,
+      branches: Array.isArray(user.branches)
+        ? user.branches.map((b) => ({
+            _id: b._id?.toString() || b.toString(),
+            name: b.name || '',
+          }))
+        : [],
+      allBranches: Boolean(user.allBranches),
       status: user.status || 'active',
       phone: user.phone || '',
       permissions: permissions,

@@ -20,6 +20,7 @@ import {
   cancelAppointment,
   rescheduleAppointment,
   addAppointmentNote,
+  mergeCallAudioToLead,
 } from '../controllers/leadController.js'
 import { authenticate, isSuperAdmin, authenticateApiKey, authenticateWhatsAppApiKey } from '../middleware/auth.js'
 
@@ -36,6 +37,7 @@ router.post('/', authenticate, createLead)
 router.post('/auto-assign', authenticate, autoAssignUnassignedLeads)
 router.post('/sync-askeva', authenticate, syncAskEvaLeads)
 router.post('/sync-askeva-appointments', authenticate, syncAskEvaAppointments)
+router.post('/merge-call-audio', authenticate, mergeCallAudioToLead)
 router.get('/diagnostics', authenticate, getLeadsDiagnostics)
 router.get('/', authenticate, getLeads)
 router.get('/export', authenticate, exportLeads)

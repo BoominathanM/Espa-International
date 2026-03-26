@@ -2,6 +2,8 @@ import axios from 'axios'
 import CallLog from '../models/CallLog.js'
 import OzonetelSettings from '../models/OzonetelSettings.js'
 
+const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 async function getCloudAgentConfig() {
   try {
     const settings = await OzonetelSettings.getSettings()
@@ -108,8 +110,33 @@ export const getCallLogs = async (req, res) => {
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * Math.min(100, Math.max(1, parseInt(limit, 10)))
 
     const filter = {}
-    if (type) filter.type = type
-    if (status) filter.callStatus = status
+    if (type && String(type).trim()) {
+      const normalizedType = String(type).trim()
+      filter.type = { $regex: `^${escapeRegExp(normalizedType)}$`, $options: 'i' }
+    }
+    if (status && String(status).trim()) {
+      const normalizedStatus = String(status).trim().toLowerCase()
+      if (normalizedStatus === 'missed') {
+        filter.callStatus = {
+          $in: [
+            /^missed$/i,
+            /^no[\s-]?answer$/i,
+            /^unanswered$/i,
+            /^not[\s-]?answered$/i,
+          ],
+        }
+      } else if (normalizedStatus === 'answered') {
+        filter.callStatus = {
+          $in: [
+            /^answered$/i,
+            /^answer$/i,
+            /^connected$/i,
+          ],
+        }
+      } else {
+        filter.callStatus = { $regex: `^${escapeRegExp(String(status).trim())}$`, $options: 'i' }
+      }
+    }
     if (agentId) filter.agentId = agentId
     if (search && search.trim()) {
       filter.$or = [

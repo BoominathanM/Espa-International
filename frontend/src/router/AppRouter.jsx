@@ -48,7 +48,7 @@ const AppRouter = () => {
       <Route
         path="/appointment-bookings"
         element={
-          <ProtectedRoute requiredPermission="leads:read">
+          <ProtectedRoute requiredPermission="appointmentBookings:read">
             <Layout>
               <AppointmentBookings />
             </Layout>

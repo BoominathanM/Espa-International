@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import { Tabs } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 import Users from './Users'
-import Roles from './Roles'
 import Branch from './Branch'
 import API from './API'
 import Logs from './Logs'
@@ -37,11 +36,6 @@ const Settings = () => {
       key: 'users',
       label: 'User Management',
       children: <Users />,
-    },
-    {
-      key: 'roles',
-      label: 'Role Management',
-      children: <Roles />,
     },
     {
       key: 'branch',
