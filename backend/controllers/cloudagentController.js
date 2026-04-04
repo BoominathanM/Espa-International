@@ -1,6 +1,7 @@
 import axios from 'axios'
 import CallLog from '../models/CallLog.js'
 import OzonetelSettings from '../models/OzonetelSettings.js'
+import { applyCallLogBranchScope } from '../utils/branchAccess.js'
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -146,8 +147,15 @@ export const getCallLogs = async (req, res) => {
       ]
     }
 
+    applyCallLogBranchScope(filter, req)
+
     const [logs, total] = await Promise.all([
-      CallLog.find(filter).sort({ startTime: -1, createdAt: -1 }).skip(skip).limit(Math.min(100, Math.max(1, parseInt(limit, 10)))).populate('lead', 'name phone email status'),
+      CallLog.find(filter)
+        .sort({ startTime: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(Math.min(100, Math.max(1, parseInt(limit, 10))))
+        .populate('lead', 'name phone email status')
+        .populate('branches', 'name'),
       CallLog.countDocuments(filter),
     ])
 

@@ -1,10 +1,14 @@
+import mongoose from "mongoose";
 import CallLog from "../models/CallLog.js";
+import User from "../models/User.js";
 import {
   createOrUpdateLeadFromCall,
   syncLeadToAskEva,
 } from "../services/ozonetelCallService.js";
 
 const LOG = "[OZONETEL]";
+
+const escapeRegExp = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const sanitizeOptionalKey = (value) => {
   if (value === null || value === undefined) return undefined;
@@ -104,6 +108,81 @@ const normalizePayloadArray = (payload) => {
   return [];
 };
 
+const branchObjectIdsFromUser = (user) => {
+  if (!user) return [];
+  const fromBranches = Array.isArray(user.branches) ? user.branches : [];
+  const fromLegacy = user.branch ? [user.branch] : [];
+  const seen = new Set();
+  const oids = [];
+  for (const ref of [...fromBranches, ...fromLegacy]) {
+    const id = ref?._id ?? ref;
+    const s = id ? String(id) : "";
+    if (!s || !mongoose.Types.ObjectId.isValid(s) || seen.has(s)) continue;
+    seen.add(s);
+    oids.push(new mongoose.Types.ObjectId(s));
+  }
+  return oids;
+};
+
+/**
+ * Resolve CRM user from Ozonetel AgentID / name so CallLog.branches can be set.
+ * 1) cloudAgentAgentId exact (trim)
+ * 2) numeric IDs equal ignoring leading zeros (43 vs 043)
+ * 3) If agentName matches exactly one active user (case-insensitive), use that user
+ */
+const findUserForOzonetelAgent = async (agentIdRaw, agentNameRaw) => {
+  const key = String(agentIdRaw ?? "").trim();
+  const agentName = String(agentNameRaw ?? "").trim();
+  const select = "branches branch name cloudAgentAgentId";
+
+  if (key) {
+    let user = await User.findOne({
+      status: "active",
+      cloudAgentAgentId: key,
+    })
+      .select(select)
+      .lean();
+    if (user) return user;
+
+    if (/^\d+$/.test(key)) {
+      const normKey = key.replace(/^0+/, "") || "0";
+      const idRegex = new RegExp(`^0*${escapeRegExp(normKey)}$`);
+      user = await User.findOne({
+        status: "active",
+        cloudAgentAgentId: idRegex,
+      })
+        .select(select)
+        .lean();
+      if (user) return user;
+    }
+  }
+
+  if (agentName) {
+    const nameMatches = await User.find({
+      status: "active",
+      name: new RegExp(`^${escapeRegExp(agentName)}$`, "i"),
+    })
+      .select(select)
+      .lean();
+    if (nameMatches.length === 1) return nameMatches[0];
+  }
+
+  return null;
+};
+
+const resolveBranchIdsForAgent = async (agentIdRaw, agentNameRaw) => {
+  const user = await findUserForOzonetelAgent(agentIdRaw, agentNameRaw);
+  const oids = branchObjectIdsFromUser(user);
+  if (user && oids.length === 0) {
+    console.warn(LOG, "User matched Ozonetel agent but has no branch assigned — add Branch in User Management.", {
+      userId: user._id,
+      name: user.name,
+      cloudAgentAgentId: user.cloudAgentAgentId,
+    });
+  }
+  return oids;
+};
+
 const extractApiKey = (req, entries) => {
   return (
     req.body.Apikey ||
@@ -124,6 +203,19 @@ export const processCallPayload = async (payload) => {
 
   console.log(LOG, "FIELDS:", fields);
 
+  const branchIds = await resolveBranchIdsForAgent(fields.agentId, fields.agentName);
+  if (
+    branchIds.length === 0 &&
+    (String(fields.agentId ?? "").trim() || String(fields.agentName ?? "").trim())
+  ) {
+    console.warn(LOG, "No user matched for CallLog.branches — check User Management.", {
+      ozonetelAgentId: String(fields.agentId ?? "").trim() || null,
+      ozonetelAgentName: String(fields.agentName ?? "").trim() || null,
+      hint:
+        "Set CloudAgent Agent ID on the user to match Ozonetel AgentID, or use a unique user name identical to AgentName; user must have branch(es) assigned.",
+    });
+  }
+
   const uniqueFilter = fields.monitorUCID
     ? { monitorUCID: fields.monitorUCID }
     : fields.callId
@@ -141,6 +233,7 @@ export const processCallPayload = async (payload) => {
     endTime: fields.endTime,
     type: fields.type,
     rawPayload: payload,
+    branches: branchIds,
     ...(fields.monitorUCID ? { monitorUCID: fields.monitorUCID } : {}),
     ...(fields.callId ? { callId: fields.callId } : {}),
   };

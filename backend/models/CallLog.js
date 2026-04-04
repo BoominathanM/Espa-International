@@ -19,6 +19,13 @@ const callLogSchema = new mongoose.Schema(
       ref: "Lead",
       default: null,
     },
+    /** Branches derived from the user whose cloudAgentAgentId matches agentId (Ozonetel). */
+    branches: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Branch",
+      },
+    ],
   },
   {
     timestamps: true,
@@ -62,6 +69,7 @@ callLogSchema.virtual("call_id").get(function callIdVirtual() {
 // Query and dedupe indexes
 callLogSchema.index({ customerNumber: 1 });
 callLogSchema.index({ agentId: 1 });
+callLogSchema.index({ branches: 1 });
 callLogSchema.index({ callStatus: 1 });
 callLogSchema.index({ startTime: -1 });
 callLogSchema.index({ createdAt: -1 });

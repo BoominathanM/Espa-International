@@ -169,6 +169,27 @@ const Users = () => {
       render: (phone) => phone || '-',
     },
     {
+      title: 'Agent ID',
+      dataIndex: 'cloudAgentAgentId',
+      key: 'cloudAgentAgentId',
+      ellipsis: true,
+      sorter: (a, b) =>
+        String(a.cloudAgentAgentId || '').localeCompare(String(b.cloudAgentAgentId || ''), undefined, {
+          sensitivity: 'base',
+        }),
+      render: (agentId) => {
+        const id = typeof agentId === 'string' ? agentId.trim() : ''
+        if (!id) {
+          return <span className="mgmt-muted">Not set</span>
+        }
+        return (
+          <span style={{ fontFamily: 'monospace', fontSize: 13 }} title={id}>
+            {id}
+          </span>
+        )
+      },
+    },
+    {
       title: 'Actions',
       key: 'actions',
       width: 72,

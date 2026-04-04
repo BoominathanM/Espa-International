@@ -63,3 +63,51 @@ export const applyBranchScope = (filter, user, field = 'branch') => {
   return filter
 }
 
+const toBranchObjectIds = (ids) => {
+  const out = []
+  const seen = new Set()
+  for (const id of ids || []) {
+    const s = String(id || '').trim()
+    if (!s || !mongoose.Types.ObjectId.isValid(s) || seen.has(s)) continue
+    seen.add(s)
+    out.push(new mongoose.Types.ObjectId(s))
+  }
+  return out
+}
+
+/**
+ * CallLog stores agent-linked branches in `branches` (array). Apply visibility from req.user and optional ?branch=.
+ * Superadmin / allBranches: optional branch filter only. Others: restricted to accessible branches.
+ */
+export const applyCallLogBranchScope = (filter, req) => {
+  const requested = parseRequestedBranchIds(req.query.branch)
+  const accessible = getAccessibleBranchIds(req.user)
+
+  let scopedOids = null
+
+  if (accessible === null) {
+    if (requested?.length) scopedOids = toBranchObjectIds(requested)
+  } else {
+    const accOids = toBranchObjectIds(accessible)
+    if (accOids.length === 0) {
+      filter._id = { $exists: false }
+      return
+    }
+    if (requested?.length) {
+      const reqOids = toBranchObjectIds(requested)
+      const intersect = reqOids.filter((r) => accOids.some((a) => a.equals(r)))
+      if (intersect.length === 0) {
+        filter._id = { $exists: false }
+        return
+      }
+      scopedOids = intersect
+    } else {
+      scopedOids = accOids
+    }
+  }
+
+  if (scopedOids?.length) {
+    filter.branches = scopedOids.length === 1 ? scopedOids[0] : { $in: scopedOids }
+  }
+}
+

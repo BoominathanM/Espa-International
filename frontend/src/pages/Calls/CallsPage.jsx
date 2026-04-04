@@ -22,6 +22,7 @@ import { useNavigate } from 'react-router-dom'
 import { useResponsive } from '../../hooks/useResponsive'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import { useGetCallLogsQuery } from '../../store/api/cloudAgentApi'
+import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useMergeCallAudioMutation } from '../../store/api/leadApi'
 import dayjs from 'dayjs'
 import './CallsPage.css'
@@ -41,6 +42,31 @@ const getAgentDisplayName = (log) => {
   return agentName || agentId || '-'
 }
 
+const getBranchDisplay = (log) => {
+  const raw = log.branches
+  if (!Array.isArray(raw) || raw.length === 0) return null
+  const names = raw
+    .map((b) => (typeof b === 'object' && b?.name ? String(b.name).trim() : ''))
+    .filter(Boolean)
+  return names.length ? names.join(', ') : null
+}
+
+/** Aligns provider spellings with CRM labels (Answered / Missed). Matches cloudagentController status filter. */
+const normalizeCallRecordStatus = (raw) => {
+  const s = String(raw ?? '').trim()
+  if (!s || s === '-') return '-'
+  if (/^answered$/i.test(s) || /^answer$/i.test(s) || /^connected$/i.test(s)) return 'Answered'
+  if (
+    /^missed$/i.test(s) ||
+    /^no[\s-]?answer$/i.test(s) ||
+    /^unanswered$/i.test(s) ||
+    /^not[\s-]?answered$/i.test(s)
+  ) {
+    return 'Missed'
+  }
+  return s
+}
+
 const Calls = () => {
   const { message: messageApi } = App.useApp()
   const navigate = useNavigate()
@@ -51,6 +77,7 @@ const Calls = () => {
   const [showFilters, setShowFilters] = useState(false)
   const [filterType, setFilterType] = useState(undefined)
   const [filterStatus, setFilterStatus] = useState(undefined)
+  const [filterBranches, setFilterBranches] = useState([])
   const [searchInput, setSearchInput] = useState('')
   const [searchText, setSearchText] = useState('')
   const [callPage, setCallPage] = useState(1)
@@ -68,7 +95,14 @@ const Calls = () => {
     type: filterType || undefined,
     status: filterStatus || undefined,
     search: searchText?.trim() || undefined,
+    branch: filterBranches.length ? filterBranches : undefined,
   })
+
+  const { data: branchesData } = useGetBranchesQuery()
+  const branchOptions = useMemo(() => {
+    const list = branchesData?.branches ?? []
+    return list.map((b) => ({ value: b._id || b.id, label: b.name }))
+  }, [branchesData])
 
   const callLogs = callLogsData?.callLogs || []
   const pagination = callLogsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
@@ -82,7 +116,8 @@ const Calls = () => {
       duration: formatDuration(log.duration_seconds),
       durationSeconds: log.duration_seconds,
       agent: getAgentDisplayName(log),
-      status: log.call_status || '-',
+      branch: getBranchDisplay(log),
+      status: normalizeCallRecordStatus(log.call_status || '-'),
       recordingUrl: log.recording_url,
       date: log.start_time ? dayjs(log.start_time).format('YYYY-MM-DD HH:mm') : dayjs(log.createdAt).format('YYYY-MM-DD HH:mm'),
       leadLinked: !!log.lead,
@@ -125,6 +160,12 @@ const Calls = () => {
       title: 'Agent',
       dataIndex: 'agent',
       key: 'agent',
+    },
+    {
+      title: 'Branch',
+      dataIndex: 'branch',
+      key: 'branch',
+      render: (text) => (text ? <Tag color="blue">{text}</Tag> : <span className="mgmt-muted">—</span>),
     },
     {
       title: 'Status',
@@ -229,6 +270,11 @@ const Calls = () => {
     setFilterStatus(value)
   }
 
+  const handleFilterBranchesChange = (value) => {
+    setCallPage(1)
+    setFilterBranches(value || [])
+  }
+
   const handleRefreshCalls = async () => {
     try {
       await refetchCalls()
@@ -287,6 +333,23 @@ const Calls = () => {
               onChange={(e) => setSearchInput(e.target.value)}
               allowClear
             />
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Branches (all if empty)"
+              value={filterBranches}
+              onChange={handleFilterBranchesChange}
+              maxTagCount="responsive"
+              optionFilterProp="children"
+              style={{ minWidth: isMobile ? 140 : 200 }}
+              size={isMobile ? 'small' : 'middle'}
+            >
+              {branchOptions.map((opt) => (
+                <Option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </Option>
+              ))}
+            </Select>
             <Button
               onClick={handleRefreshCalls}
               icon={<ReloadOutlined />}
