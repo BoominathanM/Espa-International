@@ -260,12 +260,17 @@
   color: #888;
 }
 
-/* Schedule column */
-.appointment-bookings-page .appt-time-rail {
-  width: 60px;
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--text-secondary);
+/* Calendar day list: one card per booking, chronological order, no nested scroll. */
+.appointment-bookings-page .appt-schedule-timed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.appointment-bookings-page .appt-schedule-unscheduled {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .appointment-bookings-page .appt-section-title {
@@ -281,11 +286,68 @@
 .appointment-bookings-page .appt-slot-card.ant-card {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
+  border-radius: 8px;
 }
 
 .appointment-bookings-page .appt-slot-card .ant-card-head {
   border-bottom-color: var(--border-color);
   color: var(--text-color);
+}
+
+/* Calendar day cards: time column + detail row (no separate title strip). */
+.appointment-bookings-page .appt-slot-layout {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.appointment-bookings-page .appt-slot-time {
+  flex: 0 0 132px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+  line-height: 1.35;
+}
+
+.appointment-bookings-page .appt-slot-detail {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.appointment-bookings-page .appt-slot-detail-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-color);
+}
+
+/* Open package slots (no booking) — green emphasis */
+.appointment-bookings-page .appt-slot-card--available.ant-card {
+  background: rgba(82, 196, 26, 0.1);
+  border-color: #52c41a;
+}
+
+.appointment-bookings-page .appt-slot-detail--available {
+  justify-content: flex-end;
+}
+
+.appointment-bookings-page .appt-slot-available-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #389e0d;
+}
+
+[data-theme='dark'] .appointment-bookings-page .appt-slot-card--available.ant-card {
+  background: rgba(82, 196, 26, 0.14);
+  border-color: #73d13d;
+}
+
+[data-theme='dark'] .appointment-bookings-page .appt-slot-available-label {
+  color: #95de64;
 }
 
 .appointment-bookings-page .appt-slot-row {
@@ -299,6 +361,23 @@
 
 .appointment-bookings-page .appt-slot-row:last-child {
   border-bottom: none;
+}
+
+@media (max-width: 576px) {
+  .appointment-bookings-page .appt-slot-layout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .appointment-bookings-page .appt-slot-time {
+    flex-basis: auto;
+  }
+
+  .appointment-bookings-page .appt-slot-detail {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 .appointment-bookings-page .appt-slot-view-btn.ant-btn-link {
@@ -325,6 +404,28 @@
 .appointment-bookings-page .appt-list-tabs.ant-tabs {
   /* border-bottom: 1px solid var(--border-color); */
   margin-bottom: 16px;
+}
+
+/* Calendar day view: filter slots by package duration */
+.appointment-bookings-page .appt-schedule-duration-tabs.ant-tabs {
+  margin-bottom: 8px;
+}
+
+.appointment-bookings-page .appt-schedule-duration-tabs .ant-tabs-nav::before {
+  border-bottom-color: var(--border-color);
+}
+
+.appointment-bookings-page .appt-schedule-duration-tabs .ant-tabs-tab {
+  color: var(--text-secondary);
+}
+
+.appointment-bookings-page .appt-schedule-duration-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.appointment-bookings-page .appt-schedule-duration-tabs .ant-tabs-ink-bar {
+  background: var(--primary-color);
 }
 
 .appointment-bookings-page .appt-table-wrap .ant-table-wrapper {
@@ -539,4 +640,28 @@
 
 .appointment-bookings-page .appt-schedule-scroll::-webkit-scrollbar-track {
   background: var(--scrollbar-track);
+}
+
+/* Calendar: keep Today + week strip fixed; scroll from "Appointments for" down */
+.appointment-bookings-page .appt-schedule-day-card.ant-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.appointment-bookings-page .appt-schedule-day-card .ant-card-body {
+  min-height: 0;
+}
+
+.appointment-bookings-page .appt-schedule-day-header {
+  flex-shrink: 0;
+}
+
+.appointment-bookings-page .appt-schedule-appointments-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-top: 8px;
+  margin-top: 8px;
 }

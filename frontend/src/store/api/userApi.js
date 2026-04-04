@@ -45,6 +45,13 @@ export const userApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['User', 'Lead', 'Branch'],
     }),
+    deleteInactiveUser: builder.mutation({
+      query: (id) => ({
+        url: `/users/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['User', 'Lead', 'Branch'],
+    }),
   }),
 })
 
@@ -57,4 +64,5 @@ export const {
   useUpdateUserMutation,
   useLazyGetDisablePreviewQuery,
   useDisableUserMutation,
+  useDeleteInactiveUserMutation,
 } = userApi

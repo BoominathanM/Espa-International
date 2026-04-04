@@ -3,6 +3,8 @@ import User from '../models/User.js'
 import Branch from '../models/Branch.js'
 import Notification from '../models/Notification.js'
 import Lead from '../models/Lead.js'
+import LoginHistory from '../models/LoginHistory.js'
+import ChatDeletionLog from '../models/ChatDeletionLog.js'
 
 const ALLOWED_MODULES = ['dashboard', 'leads', 'appointmentBookings', 'calls', 'customers', 'reports', 'settings']
 const ALLOWED_ACTIONS = ['create', 'read', 'edit', 'delete']
@@ -519,6 +521,83 @@ export const disableUser = async (req, res) => {
     res.json({ success: true, message: 'User disabled successfully' })
   } catch (error) {
     console.error('disableUser error:', error)
+    res.status(500).json({ message: 'Server error' })
+  }
+}
+
+// @desc    Permanently delete an inactive user (superadmin only)
+// @route   DELETE /api/users/:id
+// @access  Private (Super Admin only)
+export const deleteInactiveUser = async (req, res) => {
+  try {
+    const { id } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid user id' })
+    }
+    if (req.user._id.toString() === id) {
+      return res.status(400).json({ message: 'You cannot delete your own account' })
+    }
+
+    const user = await User.findById(id)
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+    if (user.status !== 'inactive') {
+      return res.status(400).json({
+        message: 'Only inactive users can be deleted. Disable the user first, then delete.',
+      })
+    }
+
+    const uidStr = user._id.toString()
+
+    await Lead.updateMany({ assignedTo: user._id }, { $set: { assignedTo: null } })
+
+    const reminderLeads = await Lead.find({
+      reminders: { $elemMatch: { assignedTo: uidStr } },
+    })
+    for (const lead of reminderLeads) {
+      let dirty = false
+      for (const r of lead.reminders) {
+        if (r.assignedTo === uidStr) {
+          r.assignedTo = ''
+          dirty = true
+        }
+      }
+      if (dirty) await lead.save()
+    }
+
+    await Branch.updateMany({ assignedUsers: user._id }, { $pull: { assignedUsers: user._id } })
+
+    await Notification.updateMany({ user: user._id }, { $set: { user: null } })
+    await Notification.updateMany({ createdBy: user._id }, { $set: { createdBy: null } })
+    await Notification.updateMany({ readBy: user._id }, { $set: { readBy: null } })
+
+    await LoginHistory.deleteMany({ user: user._id })
+    await ChatDeletionLog.deleteMany({ userId: user._id })
+
+    await User.deleteOne({ _id: user._id })
+
+    try {
+      const creatorName = req.user?.name || 'System Admin'
+      const creatorBranchName = req.user?.branch?.name || 'No Branch'
+      const adminNotification = new Notification({
+        title: 'User Deleted',
+        message: `${creatorName} (${creatorBranchName}) permanently deleted inactive user ${user.name} (${user.email}).`,
+        type: 'warning',
+        user: null,
+        role: 'superadmin',
+        branch: null,
+        createdBy: req.user?._id || null,
+      })
+      await adminNotification.save()
+    } catch (e) {
+      console.error('deleteInactiveUser notification:', e)
+    }
+
+    res.json({ success: true, message: 'User deleted permanently' })
+  } catch (error) {
+    console.error('deleteInactiveUser error:', error)
     res.status(500).json({ message: 'Server error' })
   }
 }

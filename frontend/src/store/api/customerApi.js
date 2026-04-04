@@ -1,4 +1,5 @@
 import { apiSlice } from './apiSlice'
+import { appendBranchQueryParams } from '../../utils/branchQueryParams'
 
 export const customerApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
@@ -6,7 +7,7 @@ export const customerApi = apiSlice.injectEndpoints({
       query: (params = {}) => {
         const q = new URLSearchParams()
         if (params.search) q.append('search', params.search)
-        if (params.branch && params.branch !== 'all') q.append('branch', params.branch)
+        appendBranchQueryParams(q, params.branch)
         const qs = q.toString()
         return `/customers${qs ? `?${qs}` : ''}`
       },

@@ -60,30 +60,19 @@ import dayjs from 'dayjs'
 import './AppointmentBookingsPage.css'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import { hasPermission, isSuperAdmin } from '../../utils/permissions'
+import {
+  SPA_PACKAGES,
+  ALL_SLOT_TIMES_CHRONO,
+  SLOT_TIMES_2H,
+  SLOT_TIMES_2H20,
+  SLOT_TIMES_1H,
+  SLOT_TIMES_1_5H,
+  parseSlotTimeRange,
+  isWithinPackageScheduleHours,
+  slotTimesWithCurrent,
+} from '../../constants/appointments'
 
 const { Option } = Select
-
-const SPA_PACKAGES = [
-  'Bali Signature (2 Hours)',
-  'Bamboo Massage (2 Hours)',
-  'Banana Leaf Spa (2 Hours)',
-  'Couple Combo (2 Hours)',
-  'Cucumber Full Body Facial Signature (2 Hours)',
-  'E Spa Signature (2 Hours)',
-  'Full Body Facial Signature (2 Hours)',
-  'Hot Stone Massage (2 Hours)',
-  'Thailand Balm Signature (2 Hours)',
-  'Thailand Signature (2 Hours)',
-]
-
-const SLOT_TIMES = [
-  '10 AM - 12 PM',
-  '12 PM - 2 PM',
-  '2 PM - 4 PM',
-  '4 PM - 6 PM',
-  '6 PM - 8 PM',
-  '8 PM - 10 PM',
-]
 
 const APPOINTMENT_TAB_STATUS = {
   current: ['New', 'In Progress'],
@@ -106,6 +95,71 @@ function uiAppointmentStatus(status) {
   if (status === 'Follow-Up') return { label: 'Rescheduled', color: 'orange' }
   if (status === 'In Progress') return { label: 'Current', color: 'blue' }
   return { label: 'Current', color: 'blue' }
+}
+
+/** Calendar day list: slot time on the left, guest + package + View on the right (one row, no header band). */
+function CalendarDayAppointmentCard({ slot, lead, onView }) {
+  return (
+    <Card
+      size="small"
+      className="appt-slot-card appt-slot-card--calendar-row"
+      styles={{ body: { padding: '12px 16px' } }}
+    >
+      <div className="appt-slot-layout">
+        <div className="appt-slot-time">{slot}</div>
+        <div className="appt-slot-detail">
+          <span className="appt-slot-detail-text">
+            {(lead.first_name || '')} {(lead.last_name || '').trim()}
+            {lead.spa_package && ` · ${lead.spa_package}`}
+          </span>
+          <Button
+            type="link"
+            size="small"
+            className="appt-slot-view-btn"
+            icon={<EyeOutlined />}
+            onClick={() => onView(lead)}
+          >
+            View
+          </Button>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/** Package slot with no booking — same row layout as booked slots, highlighted in green. */
+function CalendarAvailableSlotRow({ slotLabel }) {
+  return (
+    <Card
+      size="small"
+      className="appt-slot-card appt-slot-card--calendar-row appt-slot-card--available"
+      styles={{ body: { padding: '12px 16px' } }}
+    >
+      <div className="appt-slot-layout">
+        <div className="appt-slot-time">{slotLabel}</div>
+        <div className="appt-slot-detail appt-slot-detail--available">
+          <span className="appt-slot-available-label">Available</span>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/** One duration band: available rows + booking cards for those slot labels only. */
+function CalendarDayDurationSlotList({ slots, leadsBySlot, onView }) {
+  return (
+    <div className="appt-schedule-timed-list">
+      {slots.flatMap((slot) => {
+        const list = leadsBySlot[slot] || []
+        if (list.length === 0) {
+          return [<CalendarAvailableSlotRow key={`available-${slot}`} slotLabel={slot} />]
+        }
+        return list.map((l) => (
+          <CalendarDayAppointmentCard key={l._id} slot={slot} lead={l} onView={onView} />
+        ))
+      })}
+    </div>
+  )
 }
 
 /** Full appointment detail: tabs persist via API (complete / reschedule / notes). */
@@ -354,7 +408,13 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
               <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
             </Form.Item>
             <Form.Item name="slot_time" label="Appointment Timing" rules={[{ required: true, message: 'Select time slot' }]}>
-              <Select placeholder="Select Time Slot" options={SLOT_TIMES.map((t) => ({ label: t, value: t }))} />
+              <Select
+                placeholder="Select time slot"
+                options={slotTimesWithCurrent(lead?.spa_package, lead?.slot_time).map((t) => ({
+                  label: t,
+                  value: t,
+                }))}
+              />
             </Form.Item>
             <Form.Item name="reason" label="Reschedule Reason / Description" rules={[{ max: 500 }]}>
               <Input.TextArea rows={4} maxLength={500} showCount />
@@ -563,8 +623,15 @@ const AppointmentBookingsPage = () => {
   const canCreateAppointment = hasSuperAdminAccess || hasPermission('appointmentBookings', 'create')
   const canEditAppointment = hasSuperAdminAccess || hasPermission('appointmentBookings', 'edit')
   const [form] = Form.useForm()
+  const watchedSpaPackage = Form.useWatch('spaPackage', form)
+  const watchedPreferredSlot = Form.useWatch('preferredSlotTime', form)
+  const newAppointmentSlotOptions = useMemo(() => {
+    if (!watchedSpaPackage || !String(watchedSpaPackage).trim()) return []
+    return slotTimesWithCurrent(watchedSpaPackage, watchedPreferredSlot)
+  }, [watchedSpaPackage, watchedPreferredSlot])
   const [activeView, setActiveView] = useState('calendar') // 'calendar' | 'list'
   const [listTab, setListTab] = useState('current') // current | rescheduled | completed | cancelled | feedbacks
+  const [scheduleDurationTab, setScheduleDurationTab] = useState('2h')
   const [selectedDate, setSelectedDate] = useState(dayjs())
   const [calendarMonth, setCalendarMonth] = useState(dayjs())
   const [newAppointmentOpen, setNewAppointmentOpen] = useState(false)
@@ -572,7 +639,7 @@ const AppointmentBookingsPage = () => {
   const [detailLeadId, setDetailLeadId] = useState(null)
   const [searchText, setSearchText] = useState('')
   const [showFilters, setShowFilters] = useState(false)
-  const [filterBranch, setFilterBranch] = useState(undefined)
+  const [filterBranches, setFilterBranches] = useState([])
   const [filterSource, setFilterSource] = useState(undefined)
   const [filterSlot, setFilterSlot] = useState(undefined)
   const [listPage, setListPage] = useState(1)
@@ -581,6 +648,7 @@ const AppointmentBookingsPage = () => {
 
   const { data: leadsData, isLoading: leadsLoading, refetch: refetchLeads } = useGetLeadsQuery({
     appointmentDate: dateStr,
+    branch: filterBranches.length ? filterBranches : undefined,
     page: 1,
     limit: 500,
   })
@@ -601,15 +669,15 @@ const AppointmentBookingsPage = () => {
 
   const attributeFiltered = useMemo(() => {
     return filteredByTab.filter((l) => {
-      if (filterBranch) {
-        const bid = l.branch?._id || l.branch
-        if (String(bid || '') !== String(filterBranch)) return false
+      if (filterBranches.length) {
+        const bid = String(l.branch?._id || l.branch || '')
+        if (!filterBranches.some((id) => String(id) === bid)) return false
       }
       if (filterSource && l.source !== filterSource) return false
       if (filterSlot && (l.slot_time || '') !== filterSlot) return false
       return true
     })
-  }, [filteredByTab, filterBranch, filterSource, filterSlot])
+  }, [filteredByTab, filterBranches, filterSource, filterSlot])
 
   const searchFiltered = useMemo(() => {
     if (!searchText.trim()) return attributeFiltered
@@ -630,7 +698,7 @@ const AppointmentBookingsPage = () => {
 
   const handleClearAppointmentFilters = () => {
     setSearchText('')
-    setFilterBranch(undefined)
+    setFilterBranches([])
     setFilterSource(undefined)
     setFilterSlot(undefined)
     setListPage(1)
@@ -808,19 +876,37 @@ const AppointmentBookingsPage = () => {
     setListPage(1)
   }, [listTab, selectedDate])
 
-  const hourSlots = []
-  for (let h = 0; h < 24; h++) {
-    hourSlots.push(h)
-  }
+  const leadsByPackageSlot = useMemo(() => {
+    const m = Object.fromEntries(ALL_SLOT_TIMES_CHRONO.map((t) => [t, []]))
+    leads.forEach((l) => {
+      const s = l.slot_time
+      if (s != null && s !== '' && Object.prototype.hasOwnProperty.call(m, s)) m[s].push(l)
+    })
+    return m
+  }, [leads])
 
-  const appointmentsBySlot = useMemo(() => {
+  const unscheduledSlotGroups = useMemo(() => {
     const map = {}
     leads.forEach((l) => {
       const slot = l.slot_time || 'Other'
       if (!map[slot]) map[slot] = []
       map[slot].push(l)
     })
-    return map
+    const groups = Object.entries(map).map(([slot, list]) => ({
+      slot,
+      list,
+      range: parseSlotTimeRange(slot),
+    }))
+    groups.sort((a, b) => {
+      if (a.range && b.range) {
+        if (a.range.startM !== b.range.startM) return a.range.startM - b.range.startM
+        return a.range.endM - b.range.endM
+      }
+      if (a.range && !b.range) return -1
+      if (!a.range && b.range) return 1
+      return String(a.slot).localeCompare(String(b.slot))
+    })
+    return groups.filter((g) => !g.range || !isWithinPackageScheduleHours(g.range))
   }, [leads])
 
   if (detailLeadId) {
@@ -923,11 +1009,13 @@ const AppointmentBookingsPage = () => {
             />
             <Select
               className="ds-filter-fixed"
-              placeholder="Filter by Branch"
+              mode="multiple"
               allowClear
-              value={filterBranch}
-              onChange={setFilterBranch}
-              style={{ minWidth: 160 }}
+              maxTagCount="responsive"
+              placeholder="Branches (all if empty)"
+              value={filterBranches}
+              onChange={setFilterBranches}
+              style={{ minWidth: 200 }}
             >
               {branches.map((b) => (
                 <Option key={b._id || b.id} value={b._id || b.id}>
@@ -959,7 +1047,7 @@ const AppointmentBookingsPage = () => {
               onChange={setFilterSlot}
               style={{ minWidth: 160 }}
             >
-              {SLOT_TIMES.map((s) => (
+              {ALL_SLOT_TIMES_CHRONO.map((s) => (
                 <Option key={s} value={s}>
                   {s}
                 </Option>
@@ -974,7 +1062,15 @@ const AppointmentBookingsPage = () => {
       )}
 
       {activeView === 'calendar' && (
-        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 24, flex: 1 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: 24,
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
           <Card className="appt-card" style={{ width: isMobile ? '100%' : 320 }} bodyStyle={{ padding: 16 }}>
             <div className="appt-calendar-wrap">
               <Calendar
@@ -1022,77 +1118,124 @@ const AppointmentBookingsPage = () => {
           </Card>
 
           <Card
-            className="appt-card appt-schedule-scroll"
-            style={{ flex: 1, minWidth: 0 }}
-            bodyStyle={{ padding: 16, maxHeight: 'calc(100vh - 280px)', overflow: 'auto' }}
+            className="appt-card appt-schedule-day-card"
+            style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+            styles={{
+              body: {
+                padding: 16,
+                flex: 1,
+                minHeight: 0,
+                maxHeight: 'calc(100vh - 180px)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              },
+            }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-              <Button type="primary" size="small" className="appt-btn-primary" onClick={() => setSelectedDate(dayjs())}>
-                Today
-              </Button>
-              <Button type="text" icon={<LeftOutlined />} onClick={() => setSelectedDate(selectedDate.subtract(1, 'day'))} className="appt-btn-text-gold" />
-              <span className="appt-date-title">{selectedDate.format('dddd, MMMM D')}</span>
-              <Button type="text" icon={<RightOutlined />} onClick={() => setSelectedDate(selectedDate.add(1, 'day'))} className="appt-btn-text-gold" />
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
-              {[-3, -2, -1, 0, 1, 2, 3].map((d) => {
-                const day = selectedDate.add(d, 'day')
-                const str = day.format('YYYY-MM-DD')
-                const isSel = str === dateStr
-                return (
-                  <div
-                    key={str}
-                    onClick={() => setSelectedDate(day)}
-                    className={`appt-week-strip-day ${isSel ? 'appt-week-strip-day--sel' : ''}`}
-                  >
-                    <div className="appt-week-strip-sub">{day.format('ddd')}</div>
-                    <div className="appt-week-strip-num">{day.date()}</div>
-                  </div>
-                )
-              })}
-            </div>
-            <h3 className="appt-section-title">
-              Appointments for {selectedDate.format('dddd, MMMM D')}
-            </h3>
-            <div style={{ display: 'flex', minHeight: 400 }}>
-              <div className="appt-time-rail">
-                {hourSlots.map((h) => (
-                  <div key={h} style={{ height: 40 }}>
-                    {h === 0 ? '12 AM' : h === 12 ? '12 PM' : h < 12 ? `${h} AM` : `${h - 12} PM`}
-                  </div>
-                ))}
+            <div className="appt-schedule-day-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                <Button type="primary" size="small" className="appt-btn-primary" onClick={() => setSelectedDate(dayjs())}>
+                  Today
+                </Button>
+                <Button type="text" icon={<LeftOutlined />} onClick={() => setSelectedDate(selectedDate.subtract(1, 'day'))} className="appt-btn-text-gold" />
+                <span className="appt-date-title">{selectedDate.format('dddd, MMMM D')}</span>
+                <Button type="text" icon={<RightOutlined />} onClick={() => setSelectedDate(selectedDate.add(1, 'day'))} className="appt-btn-text-gold" />
               </div>
-              <div style={{ flex: 1, position: 'relative' }}>
-                {leadsLoading ? (
-                  <div className="appt-muted">Loading...</div>
-                ) : leads.length === 0 ? (
-                  <Empty description="No appointments" style={{ marginTop: 24 }} />
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {Object.entries(appointmentsBySlot).map(([slot, list]) => (
-                      <Card size="small" key={slot} className="appt-slot-card" title={slot}>
-                        {list.map((l) => (
-                          <div key={l._id} className="appt-slot-row">
-                            <span>
-                              {(l.first_name || '')} {(l.last_name || '').trim()}
-                              {l.spa_package && ` · ${l.spa_package}`}
-                            </span>
-                            <Button
-                              type="link"
-                              size="small"
-                              className="appt-slot-view-btn"
-                              icon={<EyeOutlined />}
-                              onClick={() => handleView(l)}
-                            >
-                              View
-                            </Button>
-                          </div>
-                        ))}
-                      </Card>
-                    ))}
-                  </div>
-                )}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 0, overflowX: 'auto', paddingBottom: 4 }}>
+                {[-3, -2, -1, 0, 1, 2, 3].map((d) => {
+                  const day = selectedDate.add(d, 'day')
+                  const str = day.format('YYYY-MM-DD')
+                  const isSel = str === dateStr
+                  return (
+                    <div
+                      key={str}
+                      onClick={() => setSelectedDate(day)}
+                      className={`appt-week-strip-day ${isSel ? 'appt-week-strip-day--sel' : ''}`}
+                    >
+                      <div className="appt-week-strip-sub">{day.format('ddd')}</div>
+                      <div className="appt-week-strip-num">{day.date()}</div>
+                    </div>
+                  )
+                })}
               </div>
+            </div>
+            <div className="appt-schedule-scroll appt-schedule-appointments-scroll">
+              <h3 className="appt-section-title">
+                Appointments for {selectedDate.format('dddd, MMMM D')}
+              </h3>
+              {leadsLoading ? (
+                <div className="appt-muted">Loading...</div>
+              ) : (
+                <>
+                  <Tabs
+                    type="line"
+                    size="small"
+                    activeKey={scheduleDurationTab}
+                    onChange={setScheduleDurationTab}
+                    className="appt-schedule-duration-tabs"
+                    items={[
+                      {
+                        key: '2h',
+                        label: '2 hours',
+                        children: (
+                          <CalendarDayDurationSlotList
+                            slots={SLOT_TIMES_2H}
+                            leadsBySlot={leadsByPackageSlot}
+                            onView={handleView}
+                          />
+                        ),
+                      },
+                      {
+                        key: '2h20',
+                        label: '2.20 hours',
+                        children: (
+                          <CalendarDayDurationSlotList
+                            slots={SLOT_TIMES_2H20}
+                            leadsBySlot={leadsByPackageSlot}
+                            onView={handleView}
+                          />
+                        ),
+                      },
+                      {
+                        key: '1h',
+                        label: '1 hour',
+                        children: (
+                          <CalendarDayDurationSlotList
+                            slots={SLOT_TIMES_1H}
+                            leadsBySlot={leadsByPackageSlot}
+                            onView={handleView}
+                          />
+                        ),
+                      },
+                      {
+                        key: '1h30',
+                        label: '1.30 hours',
+                        children: (
+                          <CalendarDayDurationSlotList
+                            slots={SLOT_TIMES_1_5H}
+                            leadsBySlot={leadsByPackageSlot}
+                            onView={handleView}
+                          />
+                        ),
+                      },
+                    ]}
+                  />
+                  {unscheduledSlotGroups.length > 0 && (
+                    <div className="appt-schedule-unscheduled" style={{ marginTop: 16 }}>
+                      {unscheduledSlotGroups.flatMap(({ slot, list }) =>
+                        list.map((l) => (
+                          <CalendarDayAppointmentCard
+                            key={`${slot}-${l._id}`}
+                            slot={slot}
+                            lead={l}
+                            onView={handleView}
+                          />
+                        )),
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </Card>
         </div>
@@ -1180,7 +1323,7 @@ const AppointmentBookingsPage = () => {
           form.resetFields()
         }}
         footer={null}
-        width={640}
+        width={isMobile ? '100%' : 720}
         styles={{ body: { padding: 24 } }}
       >
         <Form
@@ -1188,46 +1331,46 @@ const AppointmentBookingsPage = () => {
           layout="vertical"
           onFinish={handleFormSubmit}
           requiredMark={true}
-          style={{ maxWidth: 560 }}
+        
         >
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
             <Form.Item
               name="first_name"
-              label="FIRST NAME"
+              label="First name"
               rules={[{ required: true, message: 'Required' }]}
             >
-              <Input placeholder="FIRST NAME *" style={{ borderRadius: 6 }} />
+              <Input placeholder="Enter first name" style={{ borderRadius: 6 }} />
             </Form.Item>
             <Form.Item
               name="last_name"
-              label="LAST NAME"
+              label="Last name"
               rules={[{ required: true, message: 'Required' }]}
             >
-              <Input placeholder="LAST NAME *" style={{ borderRadius: 6 }} />
+              <Input placeholder="Enter last name" style={{ borderRadius: 6 }} />
             </Form.Item>
             <Form.Item
               name="contact"
-              label="CONTACT"
+              label="Contact"
               rules={[{ required: true, message: 'Required' }]}
             >
-              <Input placeholder="CONTACT *" style={{ borderRadius: 6 }} />
+              <Input placeholder="Phone or mobile" style={{ borderRadius: 6 }} />
             </Form.Item>
             <Form.Item
               name="email"
-              label="EMAIL"
+              label="Email"
               rules={[
                 { required: true, message: 'Required' },
                 { type: 'email', message: 'Invalid email' },
               ]}
             >
-              <Input placeholder="EMAIL *" style={{ borderRadius: 6 }} />
+              <Input placeholder="name@example.com" style={{ borderRadius: 6 }} />
             </Form.Item>
             <Form.Item
               name="branch"
-              label="CHOOSE BRANCH"
+              label="Branch"
               rules={[{ required: true, message: 'Required' }]}
             >
-              <Select placeholder="CHOOSE BRANCH *" allowClear style={{ borderRadius: 6 }}>
+              <Select placeholder="Select branch" allowClear style={{ borderRadius: 6 }}>
                 {branches.map((b) => (
                   <Option key={b._id || b.id} value={b._id || b.id}>
                     {b.name}
@@ -1236,11 +1379,40 @@ const AppointmentBookingsPage = () => {
               </Select>
             </Form.Item>
             <Form.Item
+              name="preferredAppointmentDate"
+              label="Preferred appointment date"
+              rules={[
+                { required: true, message: 'Required' },
+                {
+                  validator: (_, value) => {
+                    if (!value) return Promise.resolve()
+                    const nowPlus24 = dayjs().add(24, 'hour')
+                    if (value.isBefore(nowPlus24, 'day')) {
+                      return Promise.reject(new Error('At least 24 hours in advance'))
+                    }
+                    return Promise.resolve()
+                  },
+                },
+              ]}
+            >
+              <DatePicker
+                format="MM/DD/YYYY"
+                placeholder="MM/DD/YYYY"
+                style={{ width: '100%', borderRadius: 6 }}
+                disabledDate={(current) => current && current < dayjs().startOf('day')}
+              />
+            </Form.Item>
+            <Form.Item
               name="spaPackage"
-              label="CHOOSE SPA PACKAGE"
+              label="Spa package"
               rules={[{ required: true, message: 'Required' }]}
             >
-              <Select placeholder="CHOOSE SPA PACKAGE *" allowClear style={{ borderRadius: 6 }}>
+              <Select
+                placeholder="Select spa package first"
+                allowClear
+                style={{ borderRadius: 6 }}
+                onChange={() => form.setFieldsValue({ preferredSlotTime: undefined })}
+              >
                 {SPA_PACKAGES.map((p) => (
                   <Option key={p} value={p}>
                     {p}
@@ -1248,35 +1420,36 @@ const AppointmentBookingsPage = () => {
                 ))}
               </Select>
             </Form.Item>
+            <Form.Item
+              name="preferredSlotTime"
+              label="Preferred slot time"
+              rules={[{ required: true, message: 'Required' }]}
+            >
+              <Select
+                placeholder={
+                  watchedSpaPackage && String(watchedSpaPackage).trim()
+                    ? 'Select time slot'
+                    : 'Select spa package first'
+                }
+                allowClear
+                style={{ borderRadius: 6 }}
+                disabled={!watchedSpaPackage || !String(watchedSpaPackage).trim()}
+              >
+                {newAppointmentSlotOptions.map((t) => (
+                  <Option key={t} value={t}>
+                    {t}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item
+              name="description"
+              label="Description / notes"
+              style={isMobile ? undefined : { gridColumn: '1 / -1' }}
+            >
+              <Input.TextArea rows={2} placeholder="Short description for appointment card" />
+            </Form.Item>
           </div>
-          <Form.Item
-            name="preferredAppointmentDate"
-            label="PREFERRED APPOINTMENT DATE"
-            rules={[{ required: true, message: 'Required' }]}
-          >
-            <DatePicker
-              format="MM/DD/YYYY"
-              placeholder="mm/dd/yyyy"
-              style={{ width: '100%', borderRadius: 6 }}
-              disabledDate={(current) => current && current < dayjs().startOf('day')}
-            />
-          </Form.Item>
-          <Form.Item
-            name="preferredSlotTime"
-            label="PREFERRED SLOT TIME"
-            rules={[{ required: true, message: 'Required' }]}
-          >
-            <Select placeholder="PREFERRED SLOT TIME *" allowClear style={{ borderRadius: 6 }}>
-              {SLOT_TIMES.map((t) => (
-                <Option key={t} value={t}>
-                  {t}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item name="description" label="DESCRIPTION / NOTES">
-            <Input.TextArea rows={2} placeholder="Short description for appointment card" />
-          </Form.Item>
           <Form.Item style={{ marginBottom: 0, marginTop: 16 }}>
             <Space>
               <Button type="primary" htmlType="submit" loading={createLoading || updateLoading} className="appt-btn-primary">

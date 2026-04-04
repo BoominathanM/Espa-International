@@ -7,7 +7,7 @@ import ChatDeletionLog from '../models/ChatDeletionLog.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
 import { syncAskEvaAppointmentsToDb } from '../services/askevaAppointmentSyncService.js'
-import { applyBranchScope, canAccessBranch, getAccessibleBranchIds } from '../utils/branchAccess.js'
+import { applyBranchScope, canAccessBranch, getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
 
 const DEFAULT_BRANCH_NAME = 'HO - Tambaram'
 
@@ -488,9 +488,8 @@ export const getLeads = async (req, res) => {
       query.source = source
     }
 
-    if (branch) {
-      query.branch = branch
-    }
+    const branchMatch = leadBranchMatchFromParam(branch)
+    if (branchMatch) Object.assign(query, branchMatch)
 
     // Non-superadmin users can only view leads from their selected branches.
     if (req.user.role !== 'superadmin' && !req.user.allBranches) {
@@ -987,7 +986,8 @@ export const exportLeads = async (req, res) => {
     const query = {}
     if (status) query.status = status
     if (source) query.source = source
-    if (branch) query.branch = branch
+    const exportBranchMatch = leadBranchMatchFromParam(branch)
+    if (exportBranchMatch) Object.assign(query, exportBranchMatch)
     if (assignedTo) query.assignedTo = assignedTo
     if (search && search.trim()) {
       const term = search.trim()

@@ -1,4 +1,5 @@
 import { apiSlice } from './apiSlice'
+import { appendBranchQueryParams } from '../../utils/branchQueryParams'
 
 export const notificationApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
@@ -7,7 +8,7 @@ export const notificationApi = apiSlice.injectEndpoints({
         const queryParams = new URLSearchParams()
         if (params.user) queryParams.append('user', params.user)
         if (params.role) queryParams.append('role', params.role)
-        if (params.branch) queryParams.append('branch', params.branch)
+        appendBranchQueryParams(queryParams, params.branch)
         if (params.isRead !== undefined) queryParams.append('isRead', params.isRead)
         if (params.page) queryParams.append('page', params.page)
         if (params.limit) queryParams.append('limit', params.limit)

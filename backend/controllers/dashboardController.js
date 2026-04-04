@@ -2,7 +2,7 @@ import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
 import User from '../models/User.js'
 import Branch from '../models/Branch.js'
-import { getAccessibleBranchIds } from '../utils/branchAccess.js'
+import { getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
 
 /**
  * Build base filter for leads/calls based on branch and optional date.
@@ -21,8 +21,9 @@ function buildBaseFilter(req, options = {}) {
     } else {
       filter.branch = { $in: ids }
     }
-  } else if (branchParam && branchParam !== 'all') {
-    filter.branch = branchParam
+  } else {
+    const match = leadBranchMatchFromParam(branchParam)
+    if (match) Object.assign(filter, match)
   }
 
   // Date range for "today" stats

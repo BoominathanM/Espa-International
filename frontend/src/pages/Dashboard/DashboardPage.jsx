@@ -5,7 +5,6 @@ import {
   PhoneOutlined,
   TeamOutlined,
   ArrowUpOutlined,
-  CloseCircleOutlined,
   CalendarOutlined,
 } from '@ant-design/icons'
 import {
@@ -57,13 +56,13 @@ const STATUS_TAG = {
 const Dashboard = () => {
   const { isMobile, isTablet, isSmallLaptop, isDesktop } = useResponsive()
   const navigate = useNavigate()
-  const [selectedBranch, setSelectedBranch] = useState('all')
+  const [selectedBranchIds, setSelectedBranchIds] = useState([])
   const [selectedDate, setSelectedDate] = useState(null)
 
   const showBranchDropdown = isSuperAdmin() || isAdmin() || isSupervisor()
 
   const dateParam = selectedDate ? selectedDate.format('YYYY-MM-DD') : undefined
-  const branchParam = selectedBranch === 'all' ? undefined : selectedBranch
+  const branchParam = selectedBranchIds.length ? selectedBranchIds : undefined
 
   const { data: branchesData } = useGetBranchesQuery(undefined, { skip: !showBranchDropdown })
   const { data: dashboardResponse, isLoading: dashboardLoading, isError: dashboardError } = useGetDashboardQuery(
@@ -110,10 +109,7 @@ const Dashboard = () => {
 
   const branchOptions = useMemo(() => {
     const list = branchesData?.branches ?? []
-    return [
-      { value: 'all', label: 'All Branches' },
-      ...list.map((b) => ({ value: b._id || b.id, label: b.name })),
-    ]
+    return list.map((b) => ({ value: b._id || b.id, label: b.name }))
   }, [branchesData])
 
   const columns = [
@@ -164,14 +160,16 @@ const Dashboard = () => {
                 View leads
               </MotionButton>
               <Select
-                value={selectedBranch}
-                onChange={(value) => setSelectedBranch(value || 'all')}
-                allowClear={selectedBranch !== 'all'}
-                clearIcon={<CloseCircleOutlined className="dashboard-select-clear" />}
+                mode="multiple"
+                allowClear
+                maxTagCount="responsive"
+                value={selectedBranchIds}
+                onChange={setSelectedBranchIds}
                 className="dashboard-field"
                 size={isMobile ? 'small' : 'middle'}
                 loading={!branchesData}
-                placeholder="Branch"
+                placeholder="Branches (all if empty)"
+                style={{ minWidth: isMobile ? 160 : 220 }}
               >
                 {branchOptions.map((opt) => (
                   <Option key={opt.value} value={opt.value}>

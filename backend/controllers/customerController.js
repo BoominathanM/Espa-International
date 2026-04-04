@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import Customer from '../models/Customer.js'
 import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
-import { applyBranchScope, canAccessBranch, getAccessibleBranchIds } from '../utils/branchAccess.js'
+import { applyBranchScope, canAccessBranch, getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
 
 function normalizePhoneDigits(phone) {
   return String(phone || '').replace(/\D/g, '')
@@ -49,8 +49,9 @@ function customerBranchFilter(req) {
   const q = {}
   if (user.role !== 'superadmin' && !user.allBranches) {
     applyBranchScope(q, user, 'branch')
-  } else if (req.query.branch && req.query.branch !== 'all') {
-    q.branch = req.query.branch
+  } else {
+    const match = leadBranchMatchFromParam(req.query.branch)
+    if (match) Object.assign(q, match)
   }
   return q
 }

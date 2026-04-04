@@ -47,9 +47,9 @@ const Customers = () => {
   const [form] = Form.useForm()
   const [showFilters, setShowFilters] = useState(false)
   const [filterSearch, setFilterSearch] = useState('')
-  const [filterBranch, setFilterBranch] = useState(undefined)
+  const [filterBranches, setFilterBranches] = useState([])
   const [appliedSearch, setAppliedSearch] = useState('')
-  const [appliedBranch, setAppliedBranch] = useState(undefined)
+  const [appliedBranchIds, setAppliedBranchIds] = useState([])
 
   const { data: branchesData } = useGetBranchesQuery()
   const branches = branchesData?.branches || []
@@ -57,9 +57,9 @@ const Customers = () => {
   const queryParams = useMemo(
     () => ({
       search: appliedSearch || undefined,
-      branch: appliedBranch,
+      branch: appliedBranchIds.length ? appliedBranchIds : undefined,
     }),
-    [appliedSearch, appliedBranch]
+    [appliedSearch, appliedBranchIds]
   )
 
   const { data, isLoading, refetch } = useGetCustomersQuery(queryParams)
@@ -70,14 +70,14 @@ const Customers = () => {
 
   const handleApplyFilters = () => {
     setAppliedSearch(filterSearch.trim())
-    setAppliedBranch(filterBranch)
+    setAppliedBranchIds(filterBranches)
   }
 
   const handleClearFilters = () => {
     setFilterSearch('')
-    setFilterBranch(undefined)
+    setFilterBranches([])
     setAppliedSearch('')
-    setAppliedBranch(undefined)
+    setAppliedBranchIds([])
   }
 
   const columns = [
@@ -327,11 +327,13 @@ const Customers = () => {
             />
             <Select
               className="ds-filter-fixed"
-              placeholder="Branch"
+              mode="multiple"
               allowClear
-              value={filterBranch}
-              onChange={setFilterBranch}
-              style={{ minWidth: 180 }}
+              maxTagCount="responsive"
+              placeholder="Branches (all if empty)"
+              value={filterBranches}
+              onChange={setFilterBranches}
+              style={{ minWidth: 200 }}
             >
               {branches.map((b) => (
                 <Option key={b._id} value={b._id}>

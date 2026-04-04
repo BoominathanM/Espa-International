@@ -69,36 +69,21 @@ import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import MotionButton from '../../components/MotionButton'
+import { SPA_PACKAGES, slotTimesWithCurrent } from '../../constants/appointments'
 
 const { RangePicker } = DatePicker
 const { Option } = Select
-
-const SPA_PACKAGES = [
-  'Bali Signature (2 Hours)',
-  'Bamboo Massage (2 Hours)',
-  'Banana Leaf Spa (2 Hours)',
-  'Couple Combo (2 Hours)',
-  'Cucumber Full Body Facial Signature (2 Hours)',
-  'E Spa Signature (2 Hours)',
-  'Full Body Facial Signature (2 Hours)',
-  'Hot Stone Massage (2 Hours)',
-  'Thailand Balm Signature (2 Hours)',
-  'Thailand Signature (2 Hours)',
-]
-
-const SLOT_TIMES = [
-  '10 AM - 12 PM',
-  '12 PM - 2 PM',
-  '2 PM - 4 PM',
-  '4 PM - 6 PM',
-  '6 PM - 8 PM',
-  '8 PM - 10 PM',
-]
 
 const Leads = () => {
   const { message: messageApi } = App.useApp()
   const { isMobile } = useResponsive()
   const [form] = Form.useForm()
+  const watchedSpaPackage = Form.useWatch('spa_package', form)
+  const watchedSlotTime = Form.useWatch('slot_time', form)
+  const leadFormSlotOptions = useMemo(() => {
+    if (!watchedSpaPackage || !String(watchedSpaPackage).trim()) return []
+    return slotTimesWithCurrent(watchedSpaPackage, watchedSlotTime)
+  }, [watchedSpaPackage, watchedSlotTime])
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [isTimelineVisible, setIsTimelineVisible] = useState(false)
   const [isImportModalVisible, setIsImportModalVisible] = useState(false)
@@ -119,7 +104,7 @@ const Leads = () => {
   const [searchText, setSearchText] = useState('')
   const [filterSource, setFilterSource] = useState(null)
   const [filterStatus, setFilterStatus] = useState(null)
-  const [filterBranch, setFilterBranch] = useState(null)
+  const [filterBranches, setFilterBranches] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   /** 'all' = every lead; 'remainder' = leads that have at least one reminder */
@@ -157,7 +142,7 @@ const Leads = () => {
     search: searchText || undefined,
     source: filterSource || undefined,
     status: filterStatus || undefined,
-    branch: filterBranch || undefined,
+    branch: filterBranches.length ? filterBranches : undefined,
     page: currentPage,
     limit: pageSize,
     hasReminders: leadsListTab === 'remainder' ? true : undefined,
@@ -582,7 +567,7 @@ const Leads = () => {
     setSearchText('')
     setFilterSource(null)
     setFilterStatus(null)
-    setFilterBranch(null)
+    setFilterBranches([])
     setCurrentPage(1)
   }
 
@@ -781,7 +766,7 @@ const Leads = () => {
       const result = await triggerExport({
         status: filterStatus || undefined,
         source: filterSource || undefined,
-        branch: filterBranch || undefined,
+        branch: filterBranches.length ? filterBranches : undefined,
         search: searchText?.trim() || undefined,
       }).unwrap()
       const rows = result?.leads || []
@@ -861,7 +846,16 @@ const Leads = () => {
               <Option value="Converted">Converted</Option>
               <Option value="Lost">Lost</Option>
             </Select>
-            <Select className="ds-filter-fixed" placeholder="Filter by Branch" allowClear value={filterBranch} onChange={setFilterBranch}>
+            <Select
+              className="ds-filter-fixed"
+              mode="multiple"
+              allowClear
+              maxTagCount="responsive"
+              placeholder="Branches (all if empty)"
+              value={filterBranches}
+              onChange={setFilterBranches}
+              style={{ minWidth: 200 }}
+            >
               {branches.map((branch) => (
                 <Option key={branch._id || branch.id} value={branch._id || branch.id}>
                   {branch.name}
@@ -1069,14 +1063,17 @@ const Leads = () => {
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item
-                name="slot_time"
-                label="Slot time"
+                name="spa_package"
+                label="Spa package"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <Select placeholder="Select slot">
-                  {SLOT_TIMES.map((time) => (
-                    <Option key={time} value={time}>
-                      {time}
+                <Select
+                  placeholder="Select package first"
+                  onChange={() => form.setFieldsValue({ slot_time: undefined })}
+                >
+                  {SPA_PACKAGES.map((pkg) => (
+                    <Option key={pkg} value={pkg}>
+                      {pkg}
                     </Option>
                   ))}
                 </Select>
@@ -1084,14 +1081,21 @@ const Leads = () => {
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item
-                name="spa_package"
-                label="Spa package"
+                name="slot_time"
+                label="Slot time"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <Select placeholder="Select package">
-                  {SPA_PACKAGES.map((pkg) => (
-                    <Option key={pkg} value={pkg}>
-                      {pkg}
+                <Select
+                  placeholder={
+                    watchedSpaPackage && String(watchedSpaPackage).trim()
+                      ? 'Select time slot'
+                      : 'Select spa package first'
+                  }
+                  disabled={!watchedSpaPackage || !String(watchedSpaPackage).trim()}
+                >
+                  {leadFormSlotOptions.map((time) => (
+                    <Option key={time} value={time}>
+                      {time}
                     </Option>
                   ))}
                 </Select>

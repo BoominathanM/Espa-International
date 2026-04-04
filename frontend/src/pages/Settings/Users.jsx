@@ -18,7 +18,7 @@ import {
   Switch,
   Divider,
 } from 'antd'
-import { PlusOutlined, EditOutlined, MoreOutlined, StopOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, MoreOutlined, StopOutlined, DeleteOutlined } from '@ant-design/icons'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import MotionButton from '../../components/MotionButton'
 import { getDefaultPermissions, isSuperAdmin } from '../../utils/permissions'
@@ -30,6 +30,7 @@ import {
   useUpdateUserMutation,
   useLazyGetDisablePreviewQuery,
   useDisableUserMutation,
+  useDeleteInactiveUserMutation,
 } from '../../store/api/userApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useCreateRoleMutation, useDeleteRoleMutation, useGetRolesQuery } from '../../store/api/roleApi'
@@ -80,6 +81,8 @@ const Users = () => {
   const [disableModalOpen, setDisableModalOpen] = useState(false)
   const [disableTarget, setDisableTarget] = useState(null)
   const [disableForm] = Form.useForm()
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   // API hooks
   const { data: usersData, isLoading: usersLoading, refetch: refetchUsers } = useGetUsersQuery()
@@ -93,6 +96,7 @@ const Users = () => {
   const [fetchDisablePreview, { data: disablePreview, isFetching: disablePreviewLoading }] =
     useLazyGetDisablePreviewQuery()
   const [disableUser, { isLoading: disableSubmitting }] = useDisableUserMutation()
+  const [deleteInactiveUser, { isLoading: deleteUserSubmitting }] = useDeleteInactiveUserMutation()
 
   const users = usersData?.users || []
   const branches = branchesData?.branches || []
@@ -186,11 +190,23 @@ const Users = () => {
                       },
                     ]
                   : []),
+                ...(record.status === 'inactive'
+                  ? [
+                      { type: 'divider' },
+                      {
+                        key: 'delete',
+                        label: 'Delete permanently',
+                        icon: <DeleteOutlined />,
+                        danger: true,
+                      },
+                    ]
+                  : []),
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent?.stopPropagation()
                 if (key === 'edit') handleEdit(record)
                 if (key === 'disable') openDisableModal(record)
+                if (key === 'delete') openDeleteModal(record)
               },
             }}
             trigger={['click']}
@@ -293,6 +309,31 @@ const Users = () => {
     } catch (e) {
       if (e?.errorFields) throw e
       message.error(e?.data?.message || e?.message || 'Failed to disable user')
+      throw e
+    }
+  }
+
+  const openDeleteModal = (record) => {
+    setDeleteTarget(record)
+    setDeleteModalOpen(true)
+  }
+
+  const closeDeleteModal = () => {
+    setDeleteModalOpen(false)
+    setDeleteTarget(null)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+    const id = deleteTarget._id || deleteTarget.id
+    try {
+      await deleteInactiveUser(id).unwrap()
+      message.success('User deleted permanently')
+      closeDeleteModal()
+      refetchUsers()
+      refetchBranches()
+    } catch (e) {
+      message.error(e?.data?.message || e?.message || 'Failed to delete user')
       throw e
     }
   }
@@ -885,6 +926,31 @@ const Users = () => {
         ) : (
           <Alert type="error" message="Could not load preview. Close and try again." />
         )}
+      </Modal>
+
+      <Modal
+        title="Delete inactive user"
+        open={deleteModalOpen}
+        onCancel={closeDeleteModal}
+        destroyOnClose
+        okText="Delete permanently"
+        okButtonProps={{ danger: true, loading: deleteUserSubmitting }}
+        onOk={handleConfirmDelete}
+        cancelText="Cancel"
+        width={isMobile ? '95%' : 480}
+      >
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="This cannot be undone"
+          description="The account will be removed from the database. Login history for this user will be deleted. Lead assignments and notification references will be cleared."
+        />
+        {deleteTarget ? (
+          <p style={{ margin: 0 }}>
+            Delete <strong>{deleteTarget.name}</strong> ({deleteTarget.email})?
+          </p>
+        ) : null}
       </Modal>
     </PageLayout>
   )

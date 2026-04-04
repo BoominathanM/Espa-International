@@ -102,7 +102,7 @@ const appointmentReportColumns = [
 const Reports = () => {
   const { isMobile } = useResponsive()
   const [reportType, setReportType] = useState('lead')
-  const [selectedBranch, setSelectedBranch] = useState('all')
+  const [selectedBranchIds, setSelectedBranchIds] = useState([])
   const [dateFrom, setDateFrom] = useState(() => dayjs().subtract(29, 'day').format('YYYY-MM-DD'))
   const [dateTo, setDateTo] = useState(() => dayjs().format('YYYY-MM-DD'))
   const [rangeValue, setRangeValue] = useState(() => [dayjs().subtract(29, 'day'), dayjs()])
@@ -115,11 +115,11 @@ const Reports = () => {
 
   const reportParams = useMemo(
     () => ({
-      branch: selectedBranch === 'all' ? undefined : selectedBranch,
+      branch: selectedBranchIds.length ? selectedBranchIds : undefined,
       dateFrom,
       dateTo,
     }),
-    [selectedBranch, dateFrom, dateTo]
+    [selectedBranchIds, dateFrom, dateTo]
   )
 
   const { data: reportRes, isLoading, isFetching, error, refetch } = useGetReportsQuery(reportParams)
@@ -705,14 +705,16 @@ const Reports = () => {
           <Space wrap>
             {showBranchDropdown && (
               <Select
-                value={selectedBranch}
-                onChange={(v) => setSelectedBranch(v || 'all')}
+                mode="multiple"
+                allowClear
+                maxTagCount="responsive"
+                value={selectedBranchIds}
+                onChange={setSelectedBranchIds}
                 className="ds-report-toolbar-select"
                 size={isMobile ? 'small' : 'middle'}
-                placeholder="Branch"
-                style={{ minWidth: 160 }}
+                placeholder="Branches (all if empty)"
+                style={{ minWidth: isMobile ? 160 : 220 }}
               >
-                <Option value="all">All branches</Option>
                 {branches.map((b) => (
                   <Option key={b._id} value={b._id}>
                     {b.name}

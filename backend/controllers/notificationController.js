@@ -1,6 +1,7 @@
 import Notification from '../models/Notification.js'
 import User from '../models/User.js'
 import Branch from '../models/Branch.js'
+import { leadBranchMatchFromParam } from '../utils/branchAccess.js'
 
 // @desc    Get all notifications with filtering
 // @route   GET /api/notifications
@@ -17,7 +18,10 @@ export const getAllNotifications = async (req, res) => {
     if (currentUser.role === 'superadmin') {
       if (user) query.user = user
       if (role) query.role = role
-      if (branch) query.branch = branch
+      if (branch) {
+        const match = leadBranchMatchFromParam(branch)
+        if (match) Object.assign(query, match)
+      }
       if (isRead !== undefined) query.isRead = isRead === 'true'
     } else {
       // For other roles, show notifications that match:

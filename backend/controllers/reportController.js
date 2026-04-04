@@ -1,7 +1,6 @@
 import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
-import mongoose from 'mongoose'
-import { getAccessibleBranchIds } from '../utils/branchAccess.js'
+import { getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
 
 function buildLeadBranchFilter(req) {
   const { branch: branchParam } = req.query
@@ -14,8 +13,9 @@ function buildLeadBranchFilter(req) {
     } else {
       filter.branch = { $in: ids }
     }
-  } else if (branchParam && branchParam !== 'all' && mongoose.Types.ObjectId.isValid(branchParam)) {
-    filter.branch = new mongoose.Types.ObjectId(branchParam)
+  } else {
+    const match = leadBranchMatchFromParam(branchParam)
+    if (match) Object.assign(filter, match)
   }
   return filter
 }

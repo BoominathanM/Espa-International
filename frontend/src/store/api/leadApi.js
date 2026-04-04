@@ -1,4 +1,5 @@
 import { apiSlice } from './apiSlice'
+import { appendBranchQueryParams } from '../../utils/branchQueryParams'
 
 export const leadApi = apiSlice.injectEndpoints({
   endpoints: (builder) => ({
@@ -9,7 +10,7 @@ export const leadApi = apiSlice.injectEndpoints({
         
         if (status) queryParams.append('status', status)
         if (source) queryParams.append('source', source)
-        if (branch) queryParams.append('branch', branch)
+        appendBranchQueryParams(queryParams, branch)
         if (assignedTo) queryParams.append('assignedTo', assignedTo)
         if (search) queryParams.append('search', search)
         if (hasReminders) queryParams.append('hasReminders', 'true')
@@ -58,7 +59,7 @@ export const leadApi = apiSlice.injectEndpoints({
         queryParams.set('format', 'json')
         if (status) queryParams.append('status', status)
         if (source) queryParams.append('source', source)
-        if (branch) queryParams.append('branch', branch)
+        appendBranchQueryParams(queryParams, branch)
         if (assignedTo) queryParams.append('assignedTo', assignedTo)
         if (search) queryParams.append('search', search)
         const queryString = queryParams.toString()
