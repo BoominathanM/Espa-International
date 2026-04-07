@@ -223,12 +223,12 @@ const handleLeadCreated = async (req, res, data, timestamp) => {
       }
     }
 
-    // Default to Anna Nagar if no branch found
+    // Default to HO - Tambaram if no branch found
     if (!branchId) {
-      const defaultBranch = await Branch.findOne({ name: 'Anna Nagar' })
+      const defaultBranch = await Branch.findOne({ name: 'HO - Tambaram' })
       if (defaultBranch) {
         branchId = defaultBranch._id
-        console.log('[WhatsApp Webhook] Default branch selected → Anna Nagar')
+        console.log('[WhatsApp Webhook] Default branch selected → HO - Tambaram')
       }
     }
 

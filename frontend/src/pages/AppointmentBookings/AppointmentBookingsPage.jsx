@@ -1383,16 +1383,6 @@ const AppointmentBookingsPage = () => {
               label="Preferred appointment date"
               rules={[
                 { required: true, message: 'Required' },
-                {
-                  validator: (_, value) => {
-                    if (!value) return Promise.resolve()
-                    const nowPlus24 = dayjs().add(24, 'hour')
-                    if (value.isBefore(nowPlus24, 'day')) {
-                      return Promise.reject(new Error('At least 24 hours in advance'))
-                    }
-                    return Promise.resolve()
-                  },
-                },
               ]}
             >
               <DatePicker

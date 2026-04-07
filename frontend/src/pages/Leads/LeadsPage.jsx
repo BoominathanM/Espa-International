@@ -259,26 +259,32 @@ const Leads = () => {
       key: 'source',
       render: (source) => {
         const colors = {
-          Add: 'orange',
+          Website: 'purple',
           Call: 'gold',
           IVR: 'purple',
           WhatsApp: 'green',
           Facebook: 'blue',
           Insta: 'pink',
-          Website: 'purple',
+          'Walk-in': 'geekblue',
+          Referral: 'magenta',
+          Add: 'orange',
           Import: 'cyan',
+          Other: 'default',
         }
         return <Tag color={colors[source] || 'default'}>{source}</Tag>
       },
       filters: [
-        { text: 'Add', value: 'Add' },
+        { text: 'Website', value: 'Website' },
         { text: 'Call', value: 'Call' },
         { text: 'IVR', value: 'IVR' },
         { text: 'WhatsApp', value: 'WhatsApp' },
         { text: 'Facebook', value: 'Facebook' },
         { text: 'Insta', value: 'Insta' },
-        { text: 'Website', value: 'Website' },
+        { text: 'Walk-in', value: 'Walk-in' },
+        { text: 'Referral', value: 'Referral' },
+        { text: 'Add', value: 'Add' },
         { text: 'Import', value: 'Import' },
+        { text: 'Other', value: 'Other' },
       ],
       onFilter: (value, record) => record.source === value,
     },
@@ -830,14 +836,17 @@ const Leads = () => {
               onPressEnter={handleApplyFilters}
             />
             <Select className="ds-filter-fixed" placeholder="Filter by Source" allowClear value={filterSource} onChange={setFilterSource}>
-              <Option value="Add">Add</Option>
+              <Option value="Website">Website</Option>
               <Option value="Call">Call</Option>
               <Option value="IVR">IVR</Option>
               <Option value="WhatsApp">WhatsApp</Option>
               <Option value="Facebook">Facebook</Option>
               <Option value="Insta">Insta</Option>
-              <Option value="Website">Website</Option>
+              <Option value="Walk-in">Walk-in</Option>
+              <Option value="Referral">Referral</Option>
+              <Option value="Add">Add</Option>
               <Option value="Import">Import</Option>
+              <Option value="Other">Other</Option>
             </Select>
             <Select className="ds-filter-fixed" placeholder="Filter by Status" allowClear value={filterStatus} onChange={setFilterStatus}>
               <Option value="New">New</Option>
@@ -1042,16 +1051,6 @@ const Leads = () => {
                 label="Appointment date"
                 rules={[
                   { required: true, message: 'Required' },
-                  {
-                    validator: (_, value) => {
-                      if (!value) return Promise.resolve()
-                      const nowPlus24 = dayjs().add(24, 'hour')
-                      if (value.isBefore(nowPlus24, 'day')) {
-                        return Promise.reject(new Error('At least 24 hours in advance'))
-                      }
-                      return Promise.resolve()
-                    },
-                  },
                 ]}
               >
                 <DatePicker
@@ -1108,13 +1107,17 @@ const Leads = () => {
                 rules={[{ required: true, message: 'Required' }]}
               >
                 <Select placeholder="Source">
+                  <Option value="Website">Website</Option>
                   <Option value="Add">Add</Option>
                   <Option value="Call">Call</Option>
                   <Option value="IVR">IVR</Option>
                   <Option value="WhatsApp">WhatsApp</Option>
                   <Option value="Facebook">Facebook</Option>
                   <Option value="Insta">Insta</Option>
-                  <Option value="Website">Website</Option>
+                  <Option value="Walk-in">Walk-in</Option>
+                  <Option value="Referral">Referral</Option>
+                  <Option value="Import">Import</Option>
+                  <Option value="Other">Other</Option>
                 </Select>
               </Form.Item>
             </Col>
