@@ -12,7 +12,7 @@ const getApiBaseUrl = () => {
     return 'http://localhost:3001/api'
   } else {
     // Production: use Render backend URL https://espa-international.onrender.com/api
-    return 'https://e-spa.askeva.net/api'
+    return 'http://espacrm.in/api'
   }
 }
 

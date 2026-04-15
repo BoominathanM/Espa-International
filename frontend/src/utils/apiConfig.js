@@ -29,7 +29,7 @@ export const getApiBaseUrl = () => {
     // Otherwise use the configured production URL
     return import.meta.env.VITE_PRODUCTION_API_URL || 
            `${protocol}//${hostname}/api` || 
-           'https://e-spa.askeva.net/api'
+           'http://espacrm.in/api'
   }
 }
 
