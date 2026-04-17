@@ -178,6 +178,14 @@ const Leads = () => {
   const users = usersData?.users || []
   const pagination = leadsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
 
+  const normalizeLeadSource = (source) => {
+    const s = (source || '').trim()
+    if (s === 'Call') return 'IVR'
+    if (s === 'Add') return 'Walk-in'
+    if (s === 'Facebook' || s === 'Insta') return 'Meta Ads'
+    return s
+  }
+
   // Transform backend data to frontend format
   const transformedLeads = useMemo(() => {
     return leads.map((lead) => ({
@@ -191,7 +199,7 @@ const Leads = () => {
       email: lead.email,
       subject: lead.subject,
       message: lead.message,
-      source: lead.source,
+      source: normalizeLeadSource(lead.source),
       status: lead.status,
       branch: lead.branch?.name || lead.branch || 'Unassigned',
       branchId: lead.branch?._id || lead.branch?.id || null,
@@ -260,14 +268,11 @@ const Leads = () => {
       render: (source) => {
         const colors = {
           Website: 'purple',
-          Call: 'gold',
           IVR: 'purple',
           WhatsApp: 'green',
-          Facebook: 'blue',
-          Insta: 'pink',
+          'Meta Ads': 'blue',
           'Walk-in': 'geekblue',
           Referral: 'magenta',
-          Add: 'orange',
           Import: 'cyan',
           Other: 'default',
         }
@@ -275,14 +280,11 @@ const Leads = () => {
       },
       filters: [
         { text: 'Website', value: 'Website' },
-        { text: 'Call', value: 'Call' },
         { text: 'IVR', value: 'IVR' },
         { text: 'WhatsApp', value: 'WhatsApp' },
-        { text: 'Facebook', value: 'Facebook' },
-        { text: 'Insta', value: 'Insta' },
+        { text: 'Meta Ads', value: 'Meta Ads' },
         { text: 'Walk-in', value: 'Walk-in' },
         { text: 'Referral', value: 'Referral' },
-        { text: 'Add', value: 'Add' },
         { text: 'Import', value: 'Import' },
         { text: 'Other', value: 'Other' },
       ],
@@ -447,7 +449,7 @@ const Leads = () => {
     setCallLeadMeta(null)
     form.resetFields()
     form.setFieldsValue({
-      source: 'Add',
+      source: 'Walk-in',
       status: 'New',
     })
     setIsModalVisible(true)
@@ -464,7 +466,7 @@ const Leads = () => {
       whatsapp: record.whatsapp,
       subject: record.subject,
       message: record.message,
-      source: record.source,
+      source: normalizeLeadSource(record.source),
       status: record.status,
       branch: record.branchId,
       appointment_date: record.appointment_date ? dayjs(record.appointment_date) : null,
@@ -537,7 +539,7 @@ const Leads = () => {
         whatsapp: values.whatsapp?.trim() || values.phone.trim(),
         subject: values.subject?.trim() || '',
         message: values.message?.trim() || '',
-        source: callLeadMeta ? 'IVR' : values.source,
+        source: callLeadMeta ? 'IVR' : normalizeLeadSource(values.source),
         status: values.status || 'New',
         branch: values.branch || null,
         appointment_date: values.appointment_date ? values.appointment_date.format('YYYY-MM-DD') : null,
@@ -837,14 +839,11 @@ const Leads = () => {
             />
             <Select className="ds-filter-fixed" placeholder="Filter by Source" allowClear value={filterSource} onChange={setFilterSource}>
               <Option value="Website">Website</Option>
-              <Option value="Call">Call</Option>
               <Option value="IVR">IVR</Option>
               <Option value="WhatsApp">WhatsApp</Option>
-              <Option value="Facebook">Facebook</Option>
-              <Option value="Insta">Insta</Option>
+              <Option value="Meta Ads">Meta Ads</Option>
               <Option value="Walk-in">Walk-in</Option>
               <Option value="Referral">Referral</Option>
-              <Option value="Add">Add</Option>
               <Option value="Import">Import</Option>
               <Option value="Other">Other</Option>
             </Select>
@@ -971,7 +970,7 @@ const Leads = () => {
           layout="vertical"
           onFinish={handleSubmit}
           initialValues={{
-            source: 'Add',
+            source: 'Walk-in',
             status: 'New',
           }}
         >
@@ -1108,12 +1107,9 @@ const Leads = () => {
               >
                 <Select placeholder="Source">
                   <Option value="Website">Website</Option>
-                  <Option value="Add">Add</Option>
-                  <Option value="Call">Call</Option>
                   <Option value="IVR">IVR</Option>
                   <Option value="WhatsApp">WhatsApp</Option>
-                  <Option value="Facebook">Facebook</Option>
-                  <Option value="Insta">Insta</Option>
+                  <Option value="Meta Ads">Meta Ads</Option>
                   <Option value="Walk-in">Walk-in</Option>
                   <Option value="Referral">Referral</Option>
                   <Option value="Import">Import</Option>
