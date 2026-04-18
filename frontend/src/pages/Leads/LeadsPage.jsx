@@ -74,6 +74,9 @@ import { SPA_PACKAGES, slotTimesWithCurrent } from '../../constants/appointments
 const { RangePicker } = DatePicker
 const { Option } = Select
 
+/** Must match `ASSIGNED_TO_UNASSIGNED_PARAM` in backend leadController (getLeads / export). */
+const FILTER_ASSIGNED_UNASSIGNED = '__unassigned__'
+
 const Leads = () => {
   const { message: messageApi } = App.useApp()
   const { isMobile } = useResponsive()
@@ -104,6 +107,7 @@ const Leads = () => {
   const [searchText, setSearchText] = useState('')
   const [filterSource, setFilterSource] = useState(null)
   const [filterStatus, setFilterStatus] = useState(null)
+  const [filterAssignedTo, setFilterAssignedTo] = useState(null)
   const [filterBranches, setFilterBranches] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -142,6 +146,7 @@ const Leads = () => {
     search: searchText || undefined,
     source: filterSource || undefined,
     status: filterStatus || undefined,
+    assignedTo: filterAssignedTo || undefined,
     branch: filterBranches.length ? filterBranches : undefined,
     page: currentPage,
     limit: pageSize,
@@ -151,6 +156,7 @@ const Leads = () => {
   const { data: branchesData } = useGetBranchesQuery()
   const { data: usersData } = useGetUsersQuery()
   const { data: meData } = useGetMeQuery()
+  const myUserId = meData?.user?._id || meData?.user?.id || null
   const { data: campaignsData } = useGetCampaignsQuery()
   const [makeCall, { isLoading: callLoading }] = useMakeCallMutation()
 
@@ -324,6 +330,15 @@ const Leads = () => {
       dataIndex: 'assignedTo',
       key: 'assignedTo',
       ellipsis: true,
+      sorter: (a, b) => {
+        const label = (v) => {
+          const s = String(v ?? 'Unassigned').trim()
+          if (!s || s === 'undefined' || s === 'null' || s === 'Unassigned') return 'Unassigned'
+          return s
+        }
+        return label(a.assignedTo).localeCompare(label(b.assignedTo), undefined, { sensitivity: 'base' })
+      },
+      sortDirections: ['ascend', 'descend'],
       render: (assignedTo) => {
         if (!assignedTo || assignedTo === 'undefined' || assignedTo === 'null' || assignedTo === 'Unassigned') {
           return 'Unassigned'
@@ -575,6 +590,7 @@ const Leads = () => {
     setSearchText('')
     setFilterSource(null)
     setFilterStatus(null)
+    setFilterAssignedTo(null)
     setFilterBranches([])
     setCurrentPage(1)
   }
@@ -774,6 +790,7 @@ const Leads = () => {
       const result = await triggerExport({
         status: filterStatus || undefined,
         source: filterSource || undefined,
+        assignedTo: filterAssignedTo || undefined,
         branch: filterBranches.length ? filterBranches : undefined,
         search: searchText?.trim() || undefined,
       }).unwrap()
@@ -853,6 +870,23 @@ const Leads = () => {
               <Option value="Follow-Up">Follow-Up</Option>
               <Option value="Converted">Converted</Option>
               <Option value="Lost">Lost</Option>
+            </Select>
+            <Select
+              className="ds-filter-fixed"
+              placeholder="Agent (all)"
+              allowClear
+              showSearch
+              optionFilterProp="children"
+              value={filterAssignedTo}
+              onChange={(v) => setFilterAssignedTo(v ?? null)}
+              style={{ minWidth: 200 }}
+            >
+              <Option value={FILTER_ASSIGNED_UNASSIGNED}>Unassigned</Option>
+              {users.map((user) => (
+                <Option key={user._id || user.id} value={user._id || user.id}>
+                  {user.name}
+                </Option>
+              ))}
             </Select>
             <Select
               className="ds-filter-fixed"

@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import CallLog from "../models/CallLog.js";
 import User from "../models/User.js";
+import { normalizeOzonetelAgentId } from "../utils/ozonetelFields.js";
 import {
   createOrUpdateLeadFromCall,
   syncLeadToAskEva,
@@ -77,7 +78,7 @@ const extractFields = (p) => {
       p[get("Status", "DialStatus", "CustomerStatus")] || "",
 
     agentName: p[get("AgentName", "agentName")] || "",
-    agentId: p[get("AgentID", "agentId")] || "",
+    agentId: normalizeOzonetelAgentId(p[get("AgentID", "agentId")] || ""),
 
     type: p[get("Type", "CallType")] || "Inbound",
 

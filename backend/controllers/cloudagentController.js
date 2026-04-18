@@ -2,6 +2,7 @@ import axios from 'axios'
 import CallLog from '../models/CallLog.js'
 import OzonetelSettings from '../models/OzonetelSettings.js'
 import { applyCallLogBranchScope } from '../utils/branchAccess.js'
+import { normalizeOzonetelAgentId, formatCallStatusLabel } from '../utils/ozonetelFields.js'
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -159,9 +160,16 @@ export const getCallLogs = async (req, res) => {
       CallLog.countDocuments(filter),
     ])
 
+    const callLogs = logs.map((doc) => {
+      const o = doc.toObject ? doc.toObject({ virtuals: true }) : { ...doc }
+      o.agentId = normalizeOzonetelAgentId(o.agentId)
+      o.callStatus = formatCallStatusLabel(o.callStatus)
+      return o
+    })
+
     res.json({
       success: true,
-      callLogs: logs,
+      callLogs,
       pagination: {
         page: parseInt(page, 10),
         limit: parseInt(limit, 10),

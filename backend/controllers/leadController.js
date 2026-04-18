@@ -11,6 +11,20 @@ import { applyBranchScope, canAccessBranch, getAccessibleBranchIds, leadBranchMa
 
 const DEFAULT_BRANCH_NAME = 'HO - Tambaram'
 
+/** Query param value for "no assigned user" (matches Mongo `assignedTo: null`). */
+const ASSIGNED_TO_UNASSIGNED_PARAM = '__unassigned__'
+
+function applyAssignedToLeadFilter(query, assignedToRaw) {
+  if (assignedToRaw === undefined || assignedToRaw === null) return
+  const t = String(assignedToRaw).trim()
+  if (!t) return
+  if (t === ASSIGNED_TO_UNASSIGNED_PARAM || t === 'unassigned') {
+    query.assignedTo = null
+    return
+  }
+  query.assignedTo = t
+}
+
 async function getDefaultLeadBranch() {
   return Branch.findOne({ name: DEFAULT_BRANCH_NAME })
 }
@@ -496,9 +510,7 @@ export const getLeads = async (req, res) => {
       applyBranchScope(query, req.user, 'branch')
     }
 
-    if (assignedTo) {
-      query.assignedTo = assignedTo
-    }
+    applyAssignedToLeadFilter(query, assignedTo)
 
     // Filter by appointment date for appointment bookings view
     const appointmentDateFrom = req.query.appointmentDateFrom
@@ -988,7 +1000,7 @@ export const exportLeads = async (req, res) => {
     if (source) query.source = source
     const exportBranchMatch = leadBranchMatchFromParam(branch)
     if (exportBranchMatch) Object.assign(query, exportBranchMatch)
-    if (assignedTo) query.assignedTo = assignedTo
+    applyAssignedToLeadFilter(query, assignedTo)
     if (search && search.trim()) {
       const term = search.trim()
       query.$or = [
