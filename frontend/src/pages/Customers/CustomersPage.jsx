@@ -34,6 +34,8 @@ import {
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
   useGetCustomerTimelineQuery,
+  useAddCustomerTimelineNoteMutation,
+  useUpdateCustomerTimelineNoteMutation,
 } from '../../store/api/customerApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 
@@ -49,6 +51,8 @@ const Customers = () => {
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [form] = Form.useForm()
   const [timelineNotesDraft, setTimelineNotesDraft] = useState('')
+  const [editingTimelineNoteId, setEditingTimelineNoteId] = useState(null)
+  const [editingTimelineNoteText, setEditingTimelineNoteText] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [filterSearch, setFilterSearch] = useState('')
   const [filterBranches, setFilterBranches] = useState([])
@@ -75,6 +79,8 @@ const Customers = () => {
 
   const [createCustomer, { isLoading: createLoading }] = useCreateCustomerMutation()
   const [updateCustomer, { isLoading: updateLoading }] = useUpdateCustomerMutation()
+  const [addTimelineNote, { isLoading: addingNote }] = useAddCustomerTimelineNoteMutation()
+  const [updateTimelineNote, { isLoading: updatingNote }] = useUpdateCustomerTimelineNoteMutation()
 
   const {
     data: timelineResp,
@@ -86,18 +92,15 @@ const Customers = () => {
 
   const timelineCustomer = timelineResp?.customer || selectedCustomer
   const timelineLeads = timelineResp?.leads || []
+  const timelineNotes = timelineResp?.timelineNotes || []
 
   useEffect(() => {
-    if (isTimelineVisible && selectedCustomer) {
-      setTimelineNotesDraft(selectedCustomer.notes || '')
+    if (!isTimelineVisible) {
+      setTimelineNotesDraft('')
+      setEditingTimelineNoteId(null)
+      setEditingTimelineNoteText('')
     }
-  }, [isTimelineVisible, selectedCustomer])
-
-  useEffect(() => {
-    if (timelineResp?.customer && isTimelineVisible) {
-      setTimelineNotesDraft(timelineResp.customer.notes || '')
-    }
-  }, [timelineResp, isTimelineVisible])
+  }, [isTimelineVisible])
 
   const handleApplyFilters = () => {
     setAppliedSearch(filterSearch.trim())
@@ -253,13 +256,51 @@ const Customers = () => {
     }
   }
 
-  const timelineData = timelineCustomer
-    ? [
-        { color: 'blue', children: `Customer profile — last updated ${timelineCustomer.lastInteraction || '—'}` },
-        { color: 'green', children: `Leads linked (conversions): ${timelineCustomer.totalLeads ?? 0}` },
-        { color: 'orange', children: `Calls (matched phone): ${timelineCustomer.totalCalls ?? 0}` },
-      ]
-    : []
+  const timelineData = useMemo(() => {
+    if (!timelineCustomer) return []
+    const items = [
+      { color: 'blue', children: `Customer profile — last updated ${timelineCustomer.lastInteraction || '—'}` },
+      { color: 'green', children: `Leads linked (conversions): ${timelineCustomer.totalLeads ?? 0}` },
+      { color: 'orange', children: `Calls (matched phone): ${timelineCustomer.totalCalls ?? 0}` },
+    ]
+    const legacy = String(timelineCustomer.notes || '').trim()
+    if (legacy) {
+      items.push({
+        color: 'purple',
+        children: (
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Legacy Notes</div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{legacy}</div>
+          </div>
+        ),
+      })
+    }
+    if ((timelineNotes || []).length) {
+      items.push({
+        color: 'purple',
+        children: (
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Timeline Notes</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[...timelineNotes]
+                .slice()
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                .map((n) => (
+                  <div key={n._id} style={{ padding: 0 }}>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{n.text}</div>
+                    <div className="mgmt-muted" style={{ marginTop: 6 }}>
+                      {n.performedBy || 'User'} •{' '}
+                      {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ),
+      })
+    }
+    return items
+  }, [timelineCustomer, timelineNotes])
 
   const appointmentColumns = [
     { title: 'Status', dataIndex: 'status', key: 'status', width: 110, render: (v) => v || '-' },
@@ -286,18 +327,43 @@ const Customers = () => {
 
   const allAppointments = useMemo(() => timelineLeads || [], [timelineLeads])
 
-  const handleSaveTimelineNotes = async () => {
+  const handleAddTimelineNote = async () => {
     try {
       if (!selectedCustomer?._id) return
-      await updateCustomer({
-        id: selectedCustomer._id,
-        notes: timelineNotesDraft,
-      }).unwrap()
-      message.success('Notes saved')
-      refetch()
+      const text = String(timelineNotesDraft || '').trim()
+      if (!text) {
+        message.warning('Enter a note')
+        return
+      }
+      await addTimelineNote({ id: selectedCustomer._id, text }).unwrap()
+      message.success('Note added')
+      setTimelineNotesDraft('')
       refetchTimeline()
     } catch (e) {
-      message.error(e?.data?.message || e?.message || 'Failed to save notes')
+      message.error(e?.data?.message || e?.message || 'Failed to add note')
+    }
+  }
+
+  const openEditTimelineNote = (note) => {
+    setEditingTimelineNoteId(note?._id || null)
+    setEditingTimelineNoteText(note?.text || '')
+  }
+
+  const handleSaveEditedTimelineNote = async () => {
+    try {
+      if (!selectedCustomer?._id || !editingTimelineNoteId) return
+      const text = String(editingTimelineNoteText || '').trim()
+      if (!text) {
+        message.warning('Enter a note')
+        return
+      }
+      await updateTimelineNote({ id: selectedCustomer._id, noteId: editingTimelineNoteId, text }).unwrap()
+      message.success('Note updated')
+      setEditingTimelineNoteId(null)
+      setEditingTimelineNoteText('')
+      refetchTimeline()
+    } catch (e) {
+      message.error(e?.data?.message || e?.message || 'Failed to update note')
     }
   }
 
@@ -573,15 +639,41 @@ const Customers = () => {
                       <div style={{ marginTop: 4 }}>
                         <TextArea
                           rows={5}
-                          placeholder="Add notes about this customer (timeline notes)."
+                          placeholder="Type a note and click Add Note. Notes are saved one-by-one."
                           value={timelineNotesDraft}
                           onChange={(e) => setTimelineNotesDraft(e.target.value)}
                         />
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-                          <Button onClick={() => setTimelineNotesDraft(timelineCustomer?.notes || '')}>Reset</Button>
-                          <Button type="primary" onClick={handleSaveTimelineNotes} loading={updateLoading}>
-                            Save Notes
+                          <Button onClick={() => setTimelineNotesDraft('')}>Clear</Button>
+                          <Button type="primary" onClick={handleAddTimelineNote} loading={addingNote}>
+                            Add Note
                           </Button>
+                        </div>
+
+                        <div style={{ marginTop: 16 }}>
+                          {(timelineNotes || []).length === 0 ? (
+                            <div className="mgmt-muted">No notes yet</div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {[...timelineNotes]
+                                .slice()
+                                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                                .map((n) => (
+                                  <div key={n._id} style={{ padding: 10, border: '1px solid #f0f0f0', borderRadius: 8 }}>
+                                    <div style={{ whiteSpace: 'pre-wrap' }}>{n.text}</div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 6 }}>
+                                      <div className="mgmt-muted">
+                                        {n.performedBy || 'User'} •{' '}
+                                        {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
+                                      </div>
+                                      <Button size="small" onClick={() => openEditTimelineNote(n)}>
+                                        Edit
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ),
@@ -591,6 +683,36 @@ const Customers = () => {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title="Edit Note"
+        open={!!editingTimelineNoteId}
+        onCancel={() => {
+          setEditingTimelineNoteId(null)
+          setEditingTimelineNoteText('')
+        }}
+        footer={null}
+        width={isMobile ? '95%' : 600}
+      >
+        <TextArea
+          rows={5}
+          value={editingTimelineNoteText}
+          onChange={(e) => setEditingTimelineNoteText(e.target.value)}
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+          <Button
+            onClick={() => {
+              setEditingTimelineNoteId(null)
+              setEditingTimelineNoteText('')
+            }}
+          >
+            Cancel
+          </Button>
+          <Button type="primary" onClick={handleSaveEditedTimelineNote} loading={updatingNote}>
+            Save
+          </Button>
+        </div>
       </Modal>
     </PageLayout>
   )

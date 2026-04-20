@@ -19,6 +19,22 @@ export const customerApi = apiSlice.injectEndpoints({
       query: (id) => `/customers/${id}/timeline`,
       providesTags: (result, error, id) => [{ type: 'Customer', id }],
     }),
+    addCustomerTimelineNote: builder.mutation({
+      query: ({ id, text }) => ({
+        url: `/customers/${id}/timeline-notes`,
+        method: 'POST',
+        body: { text },
+      }),
+      invalidatesTags: (result, error, { id }) => [{ type: 'Customer', id }, 'Customer'],
+    }),
+    updateCustomerTimelineNote: builder.mutation({
+      query: ({ id, noteId, text }) => ({
+        url: `/customers/${id}/timeline-notes/${noteId}`,
+        method: 'PUT',
+        body: { text },
+      }),
+      invalidatesTags: (result, error, { id }) => [{ type: 'Customer', id }, 'Customer'],
+    }),
     createCustomer: builder.mutation({
       query: (body) => ({ url: '/customers', method: 'POST', body }),
       invalidatesTags: ['Customer'],
@@ -41,6 +57,8 @@ export const customerApi = apiSlice.injectEndpoints({
 export const {
   useGetCustomersQuery,
   useGetCustomerTimelineQuery,
+  useAddCustomerTimelineNoteMutation,
+  useUpdateCustomerTimelineNoteMutation,
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
   useConvertLeadToCustomerMutation,

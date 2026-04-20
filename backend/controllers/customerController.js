@@ -95,6 +95,13 @@ export const getCustomerTimeline = async (req, res) => {
         ...(customer.toObject ? customer.toObject() : customer),
         totalCalls: calls,
       }),
+      timelineNotes: (customer.timelineNoteEntries || []).map((n) => ({
+        _id: n._id,
+        text: n.text,
+        performedBy: n.performedBy,
+        createdAt: n.createdAt,
+        updatedAt: n.updatedAt,
+      })),
       stats: {
         totalAppointments: leads.length,
         completedAppointments: completed.length,
@@ -104,6 +111,85 @@ export const getCustomerTimeline = async (req, res) => {
     })
   } catch (e) {
     console.error('[Customers] getCustomerTimeline', e)
+    res.status(500).json({ success: false, message: e.message || 'Server error' })
+  }
+}
+
+export const addCustomerTimelineNote = async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Valid customer id is required' })
+    }
+    const text = String(req.body?.text || '').trim()
+    if (!text) {
+      return res.status(400).json({ success: false, message: 'Note text is required' })
+    }
+    if (text.length > 2000) {
+      return res.status(400).json({ success: false, message: 'Note must be 2000 characters or less' })
+    }
+
+    const customer = await Customer.findById(id)
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer not found' })
+    }
+    const user = req.user
+    if (!canAccessBranch(user, customer.branch)) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
+    }
+
+    const performedBy = req.user?.name || 'User'
+    customer.timelineNoteEntries = customer.timelineNoteEntries || []
+    customer.timelineNoteEntries.push({ text, performedBy })
+    customer.lastInteraction = new Date()
+    await customer.save()
+
+    res.status(201).json({
+      success: true,
+      message: 'Note added',
+      note: customer.timelineNoteEntries[customer.timelineNoteEntries.length - 1],
+    })
+  } catch (e) {
+    console.error('[Customers] addCustomerTimelineNote', e)
+    res.status(500).json({ success: false, message: e.message || 'Server error' })
+  }
+}
+
+export const updateCustomerTimelineNote = async (req, res) => {
+  try {
+    const { id, noteId } = req.params
+    if (!id || !mongoose.Types.ObjectId.isValid(id) || !noteId || !mongoose.Types.ObjectId.isValid(noteId)) {
+      return res.status(400).json({ success: false, message: 'Valid customer id and note id are required' })
+    }
+    const text = String(req.body?.text || '').trim()
+    if (!text) {
+      return res.status(400).json({ success: false, message: 'Note text is required' })
+    }
+    if (text.length > 2000) {
+      return res.status(400).json({ success: false, message: 'Note must be 2000 characters or less' })
+    }
+
+    const customer = await Customer.findById(id)
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer not found' })
+    }
+    const user = req.user
+    if (!canAccessBranch(user, customer.branch)) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
+    }
+
+    const entry = customer.timelineNoteEntries?.id(noteId)
+    if (!entry) {
+      return res.status(404).json({ success: false, message: 'Note not found' })
+    }
+    entry.text = text
+    entry.performedBy = req.user?.name || entry.performedBy || 'User'
+    customer.lastInteraction = new Date()
+    await customer.save()
+
+    res.json({ success: true, message: 'Note updated', note: entry })
+  } catch (e) {
+    console.error('[Customers] updateCustomerTimelineNote', e)
     res.status(500).json({ success: false, message: e.message || 'Server error' })
   }
 }

@@ -1429,7 +1429,7 @@ const Reports = () => {
         const pieSum = pieData.reduce((a, x) => a + (x.value || 0), 0)
         return (
           <>
-            <Row gutter={[16, 16]}>
+            <Row gutter={[16, 16]} className="reports-chart-row">
               <Col span={24}>
                 <p className="reports-range-hint" style={{ marginBottom: 0 }}>
                   Calls with <strong>start time</strong> in range: {meta?.dateFrom} → {meta?.dateTo}
@@ -1605,7 +1605,7 @@ const Reports = () => {
         const dist = rep.distribution || []
         const pieData = dist.filter((d) => d.value > 0)
         return (
-          <Row gutter={[16, 16]}>
+          <Row gutter={[16, 16]} className="reports-chart-row">
             <Col xs={24} lg={12}>
               <Card className="mgmt-card" title={<span className="mgmt-card-title-text">Leads by phone (in range)</span>}>
                 {pieData.length === 0 ? (

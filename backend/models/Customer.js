@@ -1,5 +1,13 @@
 import mongoose from 'mongoose'
 
+const customerNoteEntrySchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true, trim: true },
+    performedBy: { type: String, default: 'User' },
+  },
+  { timestamps: true }
+)
+
 const customerSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -19,6 +27,7 @@ const customerSchema = new mongoose.Schema(
     totalChats: { type: Number, default: 0 },
     lastInteraction: { type: Date, default: Date.now },
     notes: { type: String, default: '' },
+    timelineNoteEntries: [customerNoteEntrySchema],
   },
   { timestamps: true }
 )

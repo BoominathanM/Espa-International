@@ -251,6 +251,14 @@
   margin-bottom: 24px;
 }
 
+/* 5-card stats row: equal columns on lg+, 2-col on sm/md, 1-col on xs */
+@media (min-width: 992px) {
+  .dashboard-stats-row > .ant-col {
+    flex: 0 0 20% !important;
+    max-width: 20% !important;
+  }
+}
+
 .dashboard-select-clear {
   color: var(--text-muted);
 }

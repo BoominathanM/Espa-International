@@ -79,6 +79,7 @@ export const getDashboard = async (req, res) => {
       callsMissed,
       appointmentsToday,
       totalAgents,
+      frontOfficeAgents,
       leadTrendRaw,
       sourceDistributionRaw,
       branchActivityRaw,
@@ -105,6 +106,19 @@ export const getDashboard = async (req, res) => {
       }),
       User.countDocuments({
         status: 'active',
+        role: { $ne: 'front office' },
+        ...(branchFilterForLeads.branch
+          ? {
+              $or: [
+                { branch: branchFilterForLeads.branch },
+                { branches: branchFilterForLeads.branch },
+              ],
+            }
+          : {}),
+      }),
+      User.countDocuments({
+        status: 'active',
+        role: 'front office',
         ...(branchFilterForLeads.branch
           ? {
               $or: [
@@ -310,6 +324,7 @@ export const getDashboard = async (req, res) => {
           callsMissed,
           appointmentsToday,
           totalAgents,
+          frontOfficeAgents,
           offlineAgents: 0,
         },
         leadTrend: last7,

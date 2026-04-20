@@ -6,6 +6,7 @@ import {
   TeamOutlined,
   ArrowUpOutlined,
   CalendarOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
 import {
   LineChart,
@@ -148,6 +149,7 @@ const Dashboard = () => {
   const callsReceived = stats.callsReceived ?? 0
   const callsMissed = stats.callsMissed ?? 0
   const totalAgents = stats.totalAgents ?? 0
+  const frontOfficeAgents = stats.frontOfficeAgents ?? 0
   const offlineAgents = stats.offlineAgents ?? 0
   const appointmentsToday = stats.appointmentsToday ?? 0
 
@@ -210,8 +212,8 @@ const Dashboard = () => {
           </Row>
 
           <AnimatedWrapper variant="fadeUp">
-            <Row gutter={[16, 16]} className="dashboard-row">
-              <Col xs={24} sm={12} md={12} lg={6} xl={6}>
+            <Row gutter={[16, 16]} className="dashboard-row dashboard-stats-row">
+              <Col xs={24} sm={12} md={8}>
                 <Card hoverable onClick={() => navigate('/leads')} className="dashboard-card dashboard-card--interactive">
                   <Statistic
                     title={<span className="dashboard-stat-title">Today&apos;s Leads</span>}
@@ -222,7 +224,7 @@ const Dashboard = () => {
                   <div className="dashboard-stat-spacer" />
                 </Card>
               </Col>
-              <Col xs={24} sm={12} md={12} lg={6} xl={6}>
+              <Col xs={24} sm={12} md={8}>
                 <Card hoverable onClick={() => navigate('/calls')} className="dashboard-card dashboard-card--interactive">
                   <Statistic
                     title={<span className="dashboard-stat-title">Calls Received</span>}
@@ -234,19 +236,27 @@ const Dashboard = () => {
                   </div>
                 </Card>
               </Col>
-              <Col xs={24} sm={12} md={12} lg={6} xl={6}>
+              <Col xs={24} sm={12} md={8}>
                 <Card className="dashboard-card dashboard-card--interactive dashboard-card--stat-green">
                   <Statistic
                     title={<span className="dashboard-stat-title">Active Agents</span>}
                     value={totalAgents}
                     prefix={<TeamOutlined />}
                   />
-                  {offlineAgents > 0 && (
-                    <div className="dashboard-stat-meta dashboard-stat-meta--muted">{offlineAgents} offline</div>
-                  )}
+                  <div className="dashboard-stat-spacer" />
                 </Card>
               </Col>
-              <Col xs={24} sm={12} md={12} lg={6} xl={6}>
+              <Col xs={24} sm={12} md={8}>
+                <Card className="dashboard-card dashboard-card--interactive">
+                  <Statistic
+                    title={<span className="dashboard-stat-title">Front Office</span>}
+                    value={frontOfficeAgents}
+                    prefix={<UserOutlined />}
+                  />
+                  <div className="dashboard-stat-meta dashboard-stat-meta--muted">Active</div>
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} md={8}>
                 <Card hoverable onClick={() => navigate('/appointment-bookings')} className="dashboard-card dashboard-card--interactive dashboard-card--stat-green">
                   <Statistic
                     title={<span className="dashboard-stat-title">Appointments</span>}
