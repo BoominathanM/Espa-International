@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
+import Customer from '../models/Customer.js'
 import Branch from '../models/Branch.js'
 import User from '../models/User.js'
 import ChatDeletionLog from '../models/ChatDeletionLog.js'
@@ -14,6 +15,86 @@ const DEFAULT_BRANCH_NAME = 'HO - Tambaram'
 
 /** Query param value for "no assigned user" (matches Mongo `assignedTo: null`). */
 const ASSIGNED_TO_UNASSIGNED_PARAM = '__unassigned__'
+
+function normalizePhoneDigits(phone) {
+  return String(phone || '').replace(/\D/g, '')
+}
+
+async function countCallsForPhone(phone) {
+  const digits = normalizePhoneDigits(phone)
+  if (digits.length < 7) return 0
+  const tail = digits.slice(-10)
+  try {
+    return await CallLog.countDocuments({
+      $or: [
+        // Primary storage field
+        { customerNumber: { $regex: tail, $options: 'i' } },
+        // Legacy field name (in case older docs stored it this way)
+        { customer_number: { $regex: tail, $options: 'i' } },
+      ],
+    })
+  } catch {
+    return 0
+  }
+}
+
+async function ensureCustomerLinkedToLead({ lead, performedBy }) {
+  if (!lead) return null
+  if (lead.customer) {
+    return Customer.findById(lead.customer)
+  }
+
+  const phoneNorm = normalizePhoneDigits(lead.phone)
+  if (!phoneNorm) return null
+  const branchId = lead.branch || null
+  const calls = await countCallsForPhone(lead.phone)
+  const waChats = lead.source === 'WhatsApp' ? 1 : 0
+  const name = `${lead.first_name} ${lead.last_name || ''}`.trim() || 'Customer'
+
+  let customer = await Customer.findOne({
+    phoneNormalized: phoneNorm,
+    branch: branchId,
+  })
+
+  if (customer) {
+    const idStr = String(lead._id)
+    if (!customer.sourceLeads.map(String).includes(idStr)) {
+      customer.sourceLeads.push(lead._id)
+    }
+    customer.totalLeads = customer.sourceLeads.length
+    customer.tags = customer.totalLeads > 1 ? ['Repeat Customer'] : ['New Customer']
+    customer.totalCalls = Math.max(customer.totalCalls || 0, calls)
+    customer.totalChats = (customer.totalChats || 0) + waChats
+    customer.lastInteraction = new Date()
+    if (name && name !== 'Customer') customer.name = name
+    await customer.save()
+  } else {
+    customer = await Customer.create({
+      name,
+      phone: lead.phone,
+      phoneNormalized: phoneNorm,
+      email: lead.email || '',
+      whatsapp: lead.whatsapp || lead.phone || '',
+      branch: branchId,
+      tags: ['New Customer'],
+      sourceLeads: [lead._id],
+      totalLeads: 1,
+      totalCalls: calls,
+      totalChats: waChats,
+      lastInteraction: new Date(),
+    })
+  }
+
+  lead.customer = customer._id
+  lead.activityLogs = lead.activityLogs || []
+  lead.activityLogs.push({
+    action: 'Converted to Customer',
+    details: `Customer record: ${customer.name} (${customer.phone})`,
+    performedBy: performedBy || 'User',
+  })
+
+  return customer
+}
 
 function applyAssignedToLeadFilter(query, assignedToRaw) {
   if (assignedToRaw === undefined || assignedToRaw === null) return
@@ -528,6 +609,17 @@ export const getLeads = async (req, res) => {
       const end = new Date(appointmentDate)
       end.setUTCHours(23, 59, 59, 999)
       query.appointment_date = { $gte: start, $lte: end }
+    }
+
+    // Filter by last interaction date range (Lead management list)
+    const lastInteractionFrom = req.query.lastInteractionFrom
+    const lastInteractionTo = req.query.lastInteractionTo
+    if (lastInteractionFrom && lastInteractionTo) {
+      const from = new Date(lastInteractionFrom)
+      from.setUTCHours(0, 0, 0, 0)
+      const to = new Date(lastInteractionTo)
+      to.setUTCHours(23, 59, 59, 999)
+      query.lastInteraction = { $gte: from, $lte: to }
     }
 
     // Search in first_name, last_name, email, phone
@@ -1405,6 +1497,13 @@ export const completeAppointment = async (req, res) => {
       performedBy: req.user?.name || 'User',
     })
     lead.lastInteraction = new Date()
+
+    // Ensure customer record + repeat customer tagging stays in sync
+    await ensureCustomerLinkedToLead({
+      lead,
+      performedBy: req.user?.name || 'User',
+    })
+
     await lead.save()
     const updated = await getPopulatedLeadById(lead._id)
     res.json({

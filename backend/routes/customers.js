@@ -5,6 +5,7 @@ import {
   createCustomer,
   updateCustomer,
   convertFromLead,
+  getCustomerTimeline,
 } from '../controllers/customerController.js'
 
 const router = express.Router()
@@ -12,6 +13,7 @@ const router = express.Router()
 router.use(authenticate)
 
 router.get('/', getCustomers)
+router.get('/:id/timeline', getCustomerTimeline)
 router.post('/', createCustomer)
 router.put('/:id', updateCustomer)
 router.post('/from-lead', convertFromLead)

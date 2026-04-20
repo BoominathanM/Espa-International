@@ -114,6 +114,7 @@ const Leads = () => {
   const [filterStatus, setFilterStatus] = useState(null)
   const [filterAssignedTo, setFilterAssignedTo] = useState(null)
   const [filterBranches, setFilterBranches] = useState([])
+  const [filterLastInteractionRange, setFilterLastInteractionRange] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   /** 'all' = every lead; 'remainder' = leads that have at least one reminder */
@@ -153,6 +154,12 @@ const Leads = () => {
     status: filterStatus || undefined,
     assignedTo: filterAssignedTo || undefined,
     branch: filterBranches.length ? filterBranches : undefined,
+    lastInteractionFrom: filterLastInteractionRange?.[0]
+      ? dayjs(filterLastInteractionRange[0]).format('YYYY-MM-DD')
+      : undefined,
+    lastInteractionTo: filterLastInteractionRange?.[1]
+      ? dayjs(filterLastInteractionRange[1]).format('YYYY-MM-DD')
+      : undefined,
     page: currentPage,
     limit: pageSize,
     hasReminders: leadsListTab === 'remainder' ? true : undefined,
@@ -580,6 +587,7 @@ const Leads = () => {
     setFilterStatus(null)
     setFilterAssignedTo(null)
     setFilterBranches([])
+    setFilterLastInteractionRange(null)
     setCurrentPage(1)
   }
 
@@ -841,6 +849,14 @@ const Leads = () => {
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               onPressEnter={handleApplyFilters}
+            />
+            <RangePicker
+              className="ds-filter-fixed"
+              value={filterLastInteractionRange}
+              onChange={setFilterLastInteractionRange}
+              allowClear
+              format="YYYY-MM-DD"
+              placeholder={['Last interaction from', 'Last interaction to']}
             />
             <Select className="ds-filter-fixed" placeholder="Filter by Source" allowClear value={filterSource} onChange={setFilterSource}>
               <Option value="Website">Website</Option>

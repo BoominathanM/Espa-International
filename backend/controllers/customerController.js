@@ -14,7 +14,12 @@ async function countCallsForPhone(phone) {
   const tail = digits.slice(-10)
   try {
     return await CallLog.countDocuments({
-      customer_number: { $regex: tail, $options: 'i' },
+      $or: [
+        // Primary storage field
+        { customerNumber: { $regex: tail, $options: 'i' } },
+        // Legacy field name (in case older docs stored it this way)
+        { customer_number: { $regex: tail, $options: 'i' } },
+      ],
     })
   } catch {
     return 0
@@ -56,6 +61,53 @@ function customerBranchFilter(req) {
   return q
 }
 
+export const getCustomerTimeline = async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Valid customer id is required' })
+    }
+
+    const customer = await Customer.findById(id).populate('branch', 'name')
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer not found' })
+    }
+
+    const user = req.user
+    if (!canAccessBranch(user, customer.branch?._id || customer.branch)) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
+    }
+
+    const leads = await Lead.find({ customer: customer._id })
+      .select(
+        'status appointment_date slot_time spa_package source completion_notes cancellation_notes rescheduleHistory appointmentNoteEntries activityLogs lastInteraction createdAt updatedAt'
+      )
+      .sort({ appointment_date: -1, updatedAt: -1 })
+      .lean()
+
+    const completed = leads.filter((l) => l.status === 'Converted')
+    const cancelled = leads.filter((l) => l.status === 'Cancelled')
+    const calls = await countCallsForPhone(customer.phone)
+
+    res.json({
+      success: true,
+      customer: formatCustomerDoc({
+        ...(customer.toObject ? customer.toObject() : customer),
+        totalCalls: calls,
+      }),
+      stats: {
+        totalAppointments: leads.length,
+        completedAppointments: completed.length,
+        cancelledAppointments: cancelled.length,
+      },
+      leads,
+    })
+  } catch (e) {
+    console.error('[Customers] getCustomerTimeline', e)
+    res.status(500).json({ success: false, message: e.message || 'Server error' })
+  }
+}
+
 export const getCustomers = async (req, res) => {
   try {
     const filter = customerBranchFilter(req)
@@ -66,6 +118,15 @@ export const getCustomers = async (req, res) => {
         { phone: { $regex: s, $options: 'i' } },
         { email: { $regex: s, $options: 'i' } },
       ]
+    }
+    const lastInteractionFrom = req.query.lastInteractionFrom
+    const lastInteractionTo = req.query.lastInteractionTo
+    if (lastInteractionFrom && lastInteractionTo) {
+      const from = new Date(lastInteractionFrom)
+      from.setUTCHours(0, 0, 0, 0)
+      const to = new Date(lastInteractionTo)
+      to.setUTCHours(23, 59, 59, 999)
+      filter.lastInteraction = { $gte: from, $lte: to }
     }
     const customers = await Customer.find(filter).populate('branch', 'name').sort({ updatedAt: -1 }).lean()
     res.json({

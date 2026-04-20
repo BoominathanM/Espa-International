@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   Table,
   Button,
@@ -14,6 +14,7 @@ import {
   Select,
   Spin,
   Empty,
+  DatePicker,
 } from 'antd'
 import {
   SearchOutlined,
@@ -32,11 +33,13 @@ import {
   useGetCustomersQuery,
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
+  useGetCustomerTimelineQuery,
 } from '../../store/api/customerApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 
 const { TextArea } = Input
 const { Option } = Select
+const { RangePicker } = DatePicker
 
 const Customers = () => {
   const { message } = App.useApp()
@@ -45,11 +48,14 @@ const Customers = () => {
   const [isTimelineVisible, setIsTimelineVisible] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [form] = Form.useForm()
+  const [timelineNotesDraft, setTimelineNotesDraft] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [filterSearch, setFilterSearch] = useState('')
   const [filterBranches, setFilterBranches] = useState([])
+  const [filterLastInteractionRange, setFilterLastInteractionRange] = useState(null)
   const [appliedSearch, setAppliedSearch] = useState('')
   const [appliedBranchIds, setAppliedBranchIds] = useState([])
+  const [appliedLastInteractionRange, setAppliedLastInteractionRange] = useState(null)
 
   const { data: branchesData } = useGetBranchesQuery()
   const branches = branchesData?.branches || []
@@ -58,8 +64,10 @@ const Customers = () => {
     () => ({
       search: appliedSearch || undefined,
       branch: appliedBranchIds.length ? appliedBranchIds : undefined,
+      lastInteractionFrom: appliedLastInteractionRange?.[0] || undefined,
+      lastInteractionTo: appliedLastInteractionRange?.[1] || undefined,
     }),
-    [appliedSearch, appliedBranchIds]
+    [appliedSearch, appliedBranchIds, appliedLastInteractionRange]
   )
 
   const { data, isLoading, refetch } = useGetCustomersQuery(queryParams)
@@ -68,16 +76,49 @@ const Customers = () => {
   const [createCustomer, { isLoading: createLoading }] = useCreateCustomerMutation()
   const [updateCustomer, { isLoading: updateLoading }] = useUpdateCustomerMutation()
 
+  const {
+    data: timelineResp,
+    isLoading: timelineLoading,
+    isFetching: timelineFetching,
+    error: timelineError,
+    refetch: refetchTimeline,
+  } = useGetCustomerTimelineQuery(selectedCustomer?._id, { skip: !selectedCustomer?._id || !isTimelineVisible })
+
+  const timelineCustomer = timelineResp?.customer || selectedCustomer
+  const timelineLeads = timelineResp?.leads || []
+
+  useEffect(() => {
+    if (isTimelineVisible && selectedCustomer) {
+      setTimelineNotesDraft(selectedCustomer.notes || '')
+    }
+  }, [isTimelineVisible, selectedCustomer])
+
+  useEffect(() => {
+    if (timelineResp?.customer && isTimelineVisible) {
+      setTimelineNotesDraft(timelineResp.customer.notes || '')
+    }
+  }, [timelineResp, isTimelineVisible])
+
   const handleApplyFilters = () => {
     setAppliedSearch(filterSearch.trim())
     setAppliedBranchIds(filterBranches)
+    setAppliedLastInteractionRange(
+      filterLastInteractionRange?.[0] && filterLastInteractionRange?.[1]
+        ? [
+            filterLastInteractionRange[0].format('YYYY-MM-DD'),
+            filterLastInteractionRange[1].format('YYYY-MM-DD'),
+          ]
+        : null
+    )
   }
 
   const handleClearFilters = () => {
     setFilterSearch('')
     setFilterBranches([])
+    setFilterLastInteractionRange(null)
     setAppliedSearch('')
     setAppliedBranchIds([])
+    setAppliedLastInteractionRange(null)
   }
 
   const columns = [
@@ -212,14 +253,53 @@ const Customers = () => {
     }
   }
 
-  const timelineData = selectedCustomer
+  const timelineData = timelineCustomer
     ? [
-        { color: 'blue', children: `Customer profile — last updated ${selectedCustomer.lastInteraction || '—'}` },
-        { color: 'green', children: `Leads linked (conversions): ${selectedCustomer.totalLeads ?? 0}` },
-        { color: 'orange', children: `Calls (matched phone): ${selectedCustomer.totalCalls ?? 0}` },
-        { color: 'purple', children: `Chat estimate: ${selectedCustomer.totalChats ?? 0}` },
+        { color: 'blue', children: `Customer profile — last updated ${timelineCustomer.lastInteraction || '—'}` },
+        { color: 'green', children: `Leads linked (conversions): ${timelineCustomer.totalLeads ?? 0}` },
+        { color: 'orange', children: `Calls (matched phone): ${timelineCustomer.totalCalls ?? 0}` },
       ]
     : []
+
+  const appointmentColumns = [
+    { title: 'Status', dataIndex: 'status', key: 'status', width: 110, render: (v) => v || '-' },
+    {
+      title: 'Date',
+      dataIndex: 'appointment_date',
+      key: 'appointment_date',
+      render: (v) => (v ? new Date(v).toLocaleDateString() : '-'),
+    },
+    { title: 'Slot', dataIndex: 'slot_time', key: 'slot_time', render: (v) => v || '-' },
+    { title: 'Package', dataIndex: 'spa_package', key: 'spa_package', render: (v) => v || '-' },
+    {
+      title: 'Completion Notes',
+      dataIndex: 'completion_notes',
+      key: 'completion_notes',
+      render: (v) => (v ? String(v) : '-'),
+    },
+  ]
+
+  const completedAppointments = useMemo(
+    () => (timelineLeads || []).filter((l) => l.status === 'Converted'),
+    [timelineLeads]
+  )
+
+  const allAppointments = useMemo(() => timelineLeads || [], [timelineLeads])
+
+  const handleSaveTimelineNotes = async () => {
+    try {
+      if (!selectedCustomer?._id) return
+      await updateCustomer({
+        id: selectedCustomer._id,
+        notes: timelineNotesDraft,
+      }).unwrap()
+      message.success('Notes saved')
+      refetch()
+      refetchTimeline()
+    } catch (e) {
+      message.error(e?.data?.message || e?.message || 'Failed to save notes')
+    }
+  }
 
   const tabItems = [
     {
@@ -325,6 +405,14 @@ const Customers = () => {
               onChange={(e) => setFilterSearch(e.target.value)}
               onPressEnter={handleApplyFilters}
             />
+            <RangePicker
+              className="ds-filter-fixed"
+              value={filterLastInteractionRange}
+              onChange={setFilterLastInteractionRange}
+              allowClear
+              format="YYYY-MM-DD"
+              placeholder={['Last interaction from', 'Last interaction to']}
+            />
             <Select
               className="ds-filter-fixed"
               mode="multiple"
@@ -408,16 +496,99 @@ const Customers = () => {
         open={isTimelineVisible}
         onCancel={() => setIsTimelineVisible(false)}
         footer={null}
-        width={isMobile ? '95%' : 600}
+        width={isMobile ? '95%' : 1000}
       >
         {selectedCustomer && (
           <div>
-            <h3 className="mgmt-section-heading">{selectedCustomer.name}</h3>
-            <Timeline items={timelineData} />
-            <div className="mgmt-muted" style={{ marginTop: 24 }}>
-              <h4 className="mgmt-subheading">Notes</h4>
-              <TextArea rows={3} placeholder="Use Edit customer to update profile." readOnly />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <h3 className="mgmt-section-heading" style={{ marginBottom: 0 }}>
+                {timelineCustomer?.name || selectedCustomer.name}
+              </h3>
+              <Button onClick={() => refetchTimeline()} loading={timelineFetching} disabled={timelineLoading}>
+                Refresh
+              </Button>
             </div>
+
+            {timelineError ? (
+              <div className="mgmt-muted" style={{ marginTop: 12 }}>
+                Failed to load timeline. You can still edit notes below.
+              </div>
+            ) : timelineLoading ? (
+              <div className="ds-loading-block">
+                <Spin />
+              </div>
+            ) : (
+              <Tabs
+                className="mgmt-tabs"
+                items={[
+                  {
+                    key: 'summary',
+                    label: 'Summary',
+                    children: <Timeline items={timelineData} />,
+                  },
+                  {
+                    key: 'appointments',
+                    label: `Appointments (${allAppointments.length})`,
+                    children: (
+                      <Tabs
+                        items={[
+                          {
+                            key: 'completed',
+                            label: `Completed (${completedAppointments.length})`,
+                            children: (
+                              <Table
+                                columns={appointmentColumns}
+                                dataSource={completedAppointments}
+                                rowKey="_id"
+                                pagination={{ pageSize: 5 }}
+                                size={isMobile ? 'small' : 'middle'}
+                                scroll={{ x: 'max-content' }}
+                                locale={{ emptyText: 'No completed appointments yet' }}
+                              />
+                            ),
+                          },
+                          {
+                            key: 'all',
+                            label: `All (${allAppointments.length})`,
+                            children: (
+                              <Table
+                                columns={appointmentColumns}
+                                dataSource={allAppointments}
+                                rowKey="_id"
+                                pagination={{ pageSize: 5 }}
+                                size={isMobile ? 'small' : 'middle'}
+                                scroll={{ x: 'max-content' }}
+                                locale={{ emptyText: 'No appointments linked yet' }}
+                              />
+                            ),
+                          },
+                        ]}
+                      />
+                    ),
+                  },
+                  {
+                    key: 'notes',
+                    label: 'Timeline Notes',
+                    children: (
+                      <div style={{ marginTop: 4 }}>
+                        <TextArea
+                          rows={5}
+                          placeholder="Add notes about this customer (timeline notes)."
+                          value={timelineNotesDraft}
+                          onChange={(e) => setTimelineNotesDraft(e.target.value)}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                          <Button onClick={() => setTimelineNotesDraft(timelineCustomer?.notes || '')}>Reset</Button>
+                          <Button type="primary" onClick={handleSaveTimelineNotes} loading={updateLoading}>
+                            Save Notes
+                          </Button>
+                        </div>
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+            )}
           </div>
         )}
       </Modal>

@@ -8,10 +8,16 @@ export const customerApi = apiSlice.injectEndpoints({
         const q = new URLSearchParams()
         if (params.search) q.append('search', params.search)
         appendBranchQueryParams(q, params.branch)
+        if (params.lastInteractionFrom) q.append('lastInteractionFrom', params.lastInteractionFrom)
+        if (params.lastInteractionTo) q.append('lastInteractionTo', params.lastInteractionTo)
         const qs = q.toString()
         return `/customers${qs ? `?${qs}` : ''}`
       },
       providesTags: ['Customer'],
+    }),
+    getCustomerTimeline: builder.query({
+      query: (id) => `/customers/${id}/timeline`,
+      providesTags: (result, error, id) => [{ type: 'Customer', id }],
     }),
     createCustomer: builder.mutation({
       query: (body) => ({ url: '/customers', method: 'POST', body }),
@@ -34,6 +40,7 @@ export const customerApi = apiSlice.injectEndpoints({
 
 export const {
   useGetCustomersQuery,
+  useGetCustomerTimelineQuery,
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
   useConvertLeadToCustomerMutation,
