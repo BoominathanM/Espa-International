@@ -70,6 +70,11 @@ import dayjs from 'dayjs'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import MotionButton from '../../components/MotionButton'
 import { SPA_PACKAGES, slotTimesWithCurrent } from '../../constants/appointments'
+import {
+  normalizeLeadSourceDisplay,
+  leadSourceTagColor,
+  leadSourceToDbEnumValue,
+} from '../../utils/leadSourceNormalize'
 
 const { RangePicker } = DatePicker
 const { Option } = Select
@@ -184,14 +189,6 @@ const Leads = () => {
   const users = usersData?.users || []
   const pagination = leadsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
 
-  const normalizeLeadSource = (source) => {
-    const s = (source || '').trim()
-    if (s === 'Call') return 'IVR'
-    if (s === 'Add') return 'Walk-in'
-    if (s === 'Facebook' || s === 'Insta') return 'Meta Ads'
-    return s
-  }
-
   // Transform backend data to frontend format
   const transformedLeads = useMemo(() => {
     return leads.map((lead) => ({
@@ -205,7 +202,7 @@ const Leads = () => {
       email: lead.email,
       subject: lead.subject,
       message: lead.message,
-      source: normalizeLeadSource(lead.source),
+      source: normalizeLeadSourceDisplay(lead.source),
       status: lead.status,
       branch: lead.branch?.name || lead.branch || 'Unassigned',
       branchId: lead.branch?._id || lead.branch?.id || null,
@@ -272,17 +269,8 @@ const Leads = () => {
       dataIndex: 'source',
       key: 'source',
       render: (source) => {
-        const colors = {
-          Website: 'purple',
-          IVR: 'purple',
-          WhatsApp: 'green',
-          'Meta Ads': 'blue',
-          'Walk-in': 'geekblue',
-          Referral: 'magenta',
-          Import: 'cyan',
-          Other: 'default',
-        }
-        return <Tag color={colors[source] || 'default'}>{source}</Tag>
+        const label = normalizeLeadSourceDisplay(source)
+        return <Tag color={leadSourceTagColor(source)}>{label}</Tag>
       },
       filters: [
         { text: 'Website', value: 'Website' },
@@ -294,7 +282,7 @@ const Leads = () => {
         { text: 'Import', value: 'Import' },
         { text: 'Other', value: 'Other' },
       ],
-      onFilter: (value, record) => record.source === value,
+      onFilter: (value, record) => normalizeLeadSourceDisplay(record.source) === value,
     },
     {
       title: 'Branch',
@@ -481,7 +469,7 @@ const Leads = () => {
       whatsapp: record.whatsapp,
       subject: record.subject,
       message: record.message,
-      source: normalizeLeadSource(record.source),
+      source: normalizeLeadSourceDisplay(record.source),
       status: record.status,
       branch: record.branchId,
       appointment_date: record.appointment_date ? dayjs(record.appointment_date) : null,
@@ -554,7 +542,7 @@ const Leads = () => {
         whatsapp: values.whatsapp?.trim() || values.phone.trim(),
         subject: values.subject?.trim() || '',
         message: values.message?.trim() || '',
-        source: callLeadMeta ? 'IVR' : normalizeLeadSource(values.source),
+        source: callLeadMeta ? 'IVR' : leadSourceToDbEnumValue(values.source),
         status: values.status || 'New',
         branch: values.branch || null,
         appointment_date: values.appointment_date ? values.appointment_date.format('YYYY-MM-DD') : null,
@@ -1225,7 +1213,12 @@ const Leads = () => {
                   <p className="leads-detail-row"><strong className="leads-detail-label">WhatsApp:</strong> {selectedLead.whatsapp || 'N/A'}</p>
                 </div>
                 <div>
-                  <p className="leads-detail-row"><strong className="leads-detail-label">Source:</strong> <Tag color="purple">{selectedLead.source || 'N/A'}</Tag></p>
+                  <p className="leads-detail-row">
+                    <strong className="leads-detail-label">Source:</strong>{' '}
+                    <Tag color={leadSourceTagColor(selectedLead.source)}>
+                      {normalizeLeadSourceDisplay(selectedLead.source) || 'N/A'}
+                    </Tag>
+                  </p>
                   <p className="leads-detail-row"><strong className="leads-detail-label">Status:</strong> <Tag color={
                     selectedLead.status === 'New' ? 'blue' :
                       selectedLead.status === 'In Progress' ? 'orange' :

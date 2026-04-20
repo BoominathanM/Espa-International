@@ -46,6 +46,7 @@ import { useGetBranchesQuery } from '../../store/api/branchApi'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
 import { exportReportToPdf } from '../../utils/reportsPdfExport'
+import { normalizeLeadSourceDisplay, leadSourceTagColor } from '../../utils/leadSourceNormalize'
 import './reports-page.css'
 
 const { RangePicker } = DatePicker
@@ -82,6 +83,11 @@ function takeUniqueSheetName(desired, used) {
 
 function sortLocale(a, b) {
   return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
+}
+
+function reportSourceCell(source) {
+  const s = normalizeLeadSourceDisplay(source)
+  return <Tag color={leadSourceTagColor(source)}>{s}</Tag>
 }
 
 /** Match backend normalizeOzonetelAgentId for export grouping. */
@@ -318,7 +324,7 @@ const leadDetailsColumns = [
   { title: 'Email', dataIndex: 'email', key: 'email', ellipsis: true },
   { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 112 },
   { title: 'WhatsApp', dataIndex: 'whatsapp', key: 'whatsapp', width: 112 },
-  { title: 'Source', dataIndex: 'source', key: 'source', width: 96 },
+  { title: 'Source', dataIndex: 'source', key: 'source', width: 96, render: (s) => reportSourceCell(s) },
   { title: 'Status', dataIndex: 'status', key: 'status', width: 104 },
   { title: 'Branch', dataIndex: 'branch', key: 'branch', width: 96 },
   { title: 'Assigned', dataIndex: 'assignedTo', key: 'assignedTo', width: 108 },
@@ -333,6 +339,7 @@ const appointmentReportColumns = [
   { title: 'Date', dataIndex: 'date', key: 'date', width: 110 },
   { title: 'Customer', dataIndex: 'customer', key: 'customer', ellipsis: true },
   { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 120 },
+  { title: 'Source', dataIndex: 'source', key: 'source', width: 100, render: (s) => reportSourceCell(s) },
   {
     title: 'Status',
     dataIndex: 'status',
@@ -468,7 +475,7 @@ const agentAssignedLeadsColumns = [
   { title: 'Lead name', dataIndex: 'leadName', key: 'leadName', ellipsis: true },
   { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 112 },
   { title: 'Email', dataIndex: 'email', key: 'email', ellipsis: true },
-  { title: 'Source', dataIndex: 'source', key: 'source', width: 96 },
+  { title: 'Source', dataIndex: 'source', key: 'source', width: 96, render: (s) => reportSourceCell(s) },
   { title: 'Status', dataIndex: 'status', key: 'status', width: 104 },
   { title: 'Branch', dataIndex: 'branch', key: 'branch', width: 96 },
 ]
@@ -685,6 +692,7 @@ const Reports = () => {
                     Date: r.date,
                     Customer: r.customer,
                     Phone: r.phone,
+                    Source: r.source,
                     Status: r.status,
                     Slot: r.slot,
                     Package: r.package,
@@ -1135,6 +1143,9 @@ const Reports = () => {
                       </PieChart>
                     </ResponsiveContainer>
                   )}
+                  <p className="reports-footnote" style={{ marginTop: 12, marginBottom: 0 }}>
+                    Chart counts merge legacy values: Call with IVR, Add / walk-in with Walk-in, Facebook / Insta with Meta Ads.
+                  </p>
                 </Card>
               </Col>
             </Row>
@@ -1325,7 +1336,7 @@ const Reports = () => {
                 dataSource={aptTable}
                 pagination={{ pageSize: 15 }}
                 locale={{ emptyText: 'No appointments in this date range' }}
-                scroll={{ x: 900 }}
+                scroll={{ x: 1020 }}
               />
             </Card>
           </>

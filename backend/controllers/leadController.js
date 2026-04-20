@@ -8,6 +8,7 @@ import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
 import { syncAskEvaAppointmentsToDb } from '../services/askevaAppointmentSyncService.js'
 import { applyBranchScope, canAccessBranch, getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
+import { applyCanonicalSourceToLeadQuery, normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
 
 const DEFAULT_BRANCH_NAME = 'HO - Tambaram'
 
@@ -499,7 +500,7 @@ export const getLeads = async (req, res) => {
     }
 
     if (source) {
-      query.source = source
+      applyCanonicalSourceToLeadQuery(query, source)
     }
 
     const branchMatch = leadBranchMatchFromParam(branch)
@@ -997,7 +998,9 @@ export const exportLeads = async (req, res) => {
     // Build query (same as getLeads for consistency)
     const query = {}
     if (status) query.status = status
-    if (source) query.source = source
+    if (source) {
+      applyCanonicalSourceToLeadQuery(query, source)
+    }
     const exportBranchMatch = leadBranchMatchFromParam(branch)
     if (exportBranchMatch) Object.assign(query, exportBranchMatch)
     applyAssignedToLeadFilter(query, assignedTo)
@@ -1030,7 +1033,7 @@ export const exportLeads = async (req, res) => {
         WhatsApp: lead.whatsapp || '',
         Subject: lead.subject || '',
         Message: lead.message || '',
-        Source: lead.source || '',
+        Source: normalizeLeadSourceForReport(lead.source),
         Status: lead.status || '',
         Branch: lead.branch?.name || '',
         'Appointment Date': lead.appointment_date ? lead.appointment_date.toISOString().split('T')[0] : '',
@@ -1056,7 +1059,7 @@ export const exportLeads = async (req, res) => {
         lead.whatsapp,
         lead.subject,
         lead.message,
-        lead.source,
+        normalizeLeadSourceForReport(lead.source),
         lead.status,
         lead.branch?.name,
         lead.appointment_date ? lead.appointment_date.toISOString().split('T')[0] : '',

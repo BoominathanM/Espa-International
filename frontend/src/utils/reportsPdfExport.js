@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { normalizeLeadSourceDisplay } from './leadSourceNormalize'
 
 const MARGIN = 40
 /** Limit rows per large table so the browser can finish generating the PDF. */
@@ -303,7 +304,7 @@ export function exportReportToPdf({ reportType, report, meta, dateFrom, dateTo }
             pdfStr(r.name),
             pdfStr(r.email),
             pdfStr(r.phone),
-            pdfStr(r.source),
+            pdfStr(normalizeLeadSourceDisplay(r.source)),
             pdfStr(r.status),
             pdfStr(r.branch),
             pdfStr(r.assignedTo),
@@ -339,12 +340,13 @@ export function exportReportToPdf({ reportType, report, meta, dateFrom, dateTo }
         startY = tableOrNote(
           doc,
           startY,
-          ['S.No.', 'Date', 'Customer', 'Phone', 'Status', 'Slot', 'Package', 'Branch', 'Assigned'],
+          ['S.No.', 'Date', 'Customer', 'Phone', 'Source', 'Status', 'Slot', 'Package', 'Branch', 'Assigned'],
           slice.map((r) => [
             String(r.sno),
             pdfStr(r.date),
             pdfStr(r.customer),
             pdfStr(r.phone),
+            pdfStr(normalizeLeadSourceDisplay(r.source)),
             pdfStr(r.status),
             pdfStr(r.slot),
             pdfStr(r.package),
@@ -440,7 +442,7 @@ export function exportReportToPdf({ reportType, report, meta, dateFrom, dateTo }
               pdfStr(r.leadName),
               pdfStr(r.phone),
               pdfStr(r.email),
-              pdfStr(r.source),
+              pdfStr(normalizeLeadSourceDisplay(r.source)),
               pdfStr(r.status),
               pdfStr(r.branch),
             ]),
@@ -636,7 +638,7 @@ export function exportReportToPdf({ reportType, report, meta, dateFrom, dateTo }
             pdfStr(r.name),
             pdfStr(r.email),
             pdfStr(r.phone),
-            pdfStr(r.source),
+            pdfStr(normalizeLeadSourceDisplay(r.source)),
             pdfStr(r.status),
             pdfStr(r.branch),
             pdfStr(r.assignedTo),

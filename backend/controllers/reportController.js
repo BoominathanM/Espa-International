@@ -3,6 +3,7 @@ import CallLog from '../models/CallLog.js'
 import User from '../models/User.js'
 import { getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
 import { normalizeOzonetelAgentId, bucketCallStatus, formatCallStatusLabel } from '../utils/ozonetelFields.js'
+import { normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
 
 function buildLeadBranchFilter(req) {
   const { branch: branchParam } = req.query
@@ -39,14 +40,18 @@ function parseRange(req) {
 }
 
 const SOURCE_COLORS = {
-  Call: '#D4AF37',
+  IVR: '#531dab',
+  'Walk-in': '#2f54eb',
+  'Meta Ads': '#1877F2',
   WhatsApp: '#25D366',
-  Facebook: '#1877F2',
-  Insta: '#E4405F',
   Website: '#722ed1',
-  Add: '#D4AF37',
+  Referral: '#eb2f96',
   Import: '#9B59B6',
   Other: '#888888',
+  Call: '#531dab',
+  Add: '#2f54eb',
+  Facebook: '#1877F2',
+  Insta: '#E4405F',
 }
 
 /**
@@ -211,11 +216,18 @@ export const getReports = async (req, res) => {
         }
       })
 
-    const sourceDistribution = sourceAgg.map((r) => ({
-      name: r._id || 'Other',
-      value: r.count,
-      color: SOURCE_COLORS[r._id] || SOURCE_COLORS.Other,
-    }))
+    const sourceMerged = new Map()
+    for (const row of sourceAgg) {
+      const key = normalizeLeadSourceForReport(row._id)
+      sourceMerged.set(key, (sourceMerged.get(key) || 0) + (row.count || 0))
+    }
+    const sourceDistribution = [...sourceMerged.entries()]
+      .map(([name, value]) => ({
+        name,
+        value,
+        color: SOURCE_COLORS[name] || SOURCE_COLORS.Other,
+      }))
+      .sort((a, b) => b.value - a.value)
 
     const agentCalls = await CallLog.aggregate([
       {
@@ -343,6 +355,7 @@ export const getReports = async (req, res) => {
       date: l.appointment_date ? new Date(l.appointment_date).toISOString().split('T')[0] : '-',
       customer: `${(l.first_name || '').trim()} ${(l.last_name || '').trim()}`.trim() || '-',
       phone: l.phone || l.whatsapp || '-',
+      source: normalizeLeadSourceForReport(l.source),
       status: l.status,
       slot: l.slot_time || '-',
       package: l.spa_package || '-',
@@ -367,7 +380,7 @@ export const getReports = async (req, res) => {
       email: l.email || '',
       phone: l.phone || '',
       whatsapp: l.whatsapp || '',
-      source: l.source || '',
+      source: normalizeLeadSourceForReport(l.source),
       status: l.status || '',
       branch: l.branch?.name || '-',
       assignedTo: l.assignedTo?.name || '-',
@@ -468,7 +481,7 @@ export const getReports = async (req, res) => {
       leadName: `${(l.first_name || '').trim()} ${(l.last_name || '').trim()}`.trim() || '-',
       phone: l.phone || '',
       email: l.email || '',
-      source: l.source || '',
+      source: normalizeLeadSourceForReport(l.source),
       status: l.status || '',
       branch: l.branch?.name || '-',
     }))
