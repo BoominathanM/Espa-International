@@ -36,13 +36,15 @@ import './dashboard-page.css'
 const { Option } = Select
 
 const SOURCE_TAG = {
-  Call: 'gold',
+  IVR: 'gold',
   WhatsApp: 'green',
   Facebook: 'blue',
   Insta: 'magenta',
   Website: 'purple',
-  Add: 'gold',
+  'Walk-in': 'gold',
+  'Meta Ads': 'blue',
   Import: 'default',
+  Other: 'default',
 }
 
 const STATUS_TAG = {

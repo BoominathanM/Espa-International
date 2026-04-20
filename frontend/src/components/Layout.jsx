@@ -319,13 +319,9 @@ const Layout = ({ children }) => {
             <span className="app-sidebar-logo-letter">E</span>
           ) : (
             <img
-              src="/espalogo.png"
+              src={isDark ? '/espalogo.png' : '/whiteespa.png'}
               alt="ESPA Logo"
               className="app-sidebar-logo-img"
-              onError={(e) => {
-                e.target.classList.add('app-sidebar-logo-img--hidden')
-                e.target.nextSibling.classList.add('app-sidebar-logo-fallback--visible')
-              }}
             />
           )}
           <span className="app-sidebar-logo-fallback">ESPA CRM</span>
@@ -346,7 +342,7 @@ const Layout = ({ children }) => {
     <AntLayout style={{ minHeight: '100vh' }}>
       {useDrawer ? (
         <Drawer
-          title={<img src="/espalogo.png" alt="ESPA Logo" className="app-drawer-logo" onError={(e) => { e.target.classList.add('app-sidebar-logo-img--hidden') }} />}
+          title={<img src={isDark ? '/espalogo.png' : '/whiteespa.png'} alt="ESPA Logo" className="app-drawer-logo" />}
           placement="left"
           onClose={() => setMobileMenuVisible(false)}
           open={mobileMenuVisible}

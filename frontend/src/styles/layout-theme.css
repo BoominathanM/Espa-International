@@ -183,6 +183,10 @@
   object-fit: contain;
 }
 
+[data-theme='light'] .app-sidebar-logo-img {
+  max-height: 100px;
+}
+
 .app-sidebar-logo-fallback {
   font-size: 20px;
   font-weight: bold;

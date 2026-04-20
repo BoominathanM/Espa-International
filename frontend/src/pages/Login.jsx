@@ -87,13 +87,9 @@ const Login = () => {
       <Card className="login-card">
         <div className="login-page__logo-wrap">
           <img
-            src="/espalogo.png"
+            src={isDark ? '/espalogo.png' : '/whiteespa.png'}
             alt="ESPA International Logo"
             className="login-page__logo"
-            onError={(e) => {
-              e.target.style.display = 'none'
-              if (e.target.nextSibling) e.target.nextSibling.style.display = 'block'
-            }}
           />
         </div>
         <Form name="login" onFinish={onFinish} autoComplete="off" size="large">

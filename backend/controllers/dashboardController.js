@@ -3,6 +3,7 @@ import CallLog from '../models/CallLog.js'
 import User from '../models/User.js'
 import Branch from '../models/Branch.js'
 import { getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
+import { normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
 
 /**
  * Build base filter for leads/calls based on branch and optional date.
@@ -244,22 +245,29 @@ export const getDashboard = async (req, res) => {
     })
 
     const sourceMap = {
-      Call: '--chart-pie-call',
+      IVR: '--chart-pie-call',
       WhatsApp: '--chart-pie-wa',
       Facebook: '--chart-pie-fb',
       Insta: '--chart-pie-insta',
       Website: '--chart-pie-web',
-      Add: '--chart-pie-call',
-      Import: '--chart-pie-web',
       'Walk-in': '--chart-pie-call',
+      'Meta Ads': '--chart-pie-fb',
+      Import: '--chart-pie-web',
       Referral: '--chart-pie-fb',
       Other: '--chart-pie-web',
     }
-    const sourceData = sourceDistributionRaw.map((r) => ({
-      name: r._id || 'Other',
-      value: r.count,
-      fillVar: sourceMap[r._id] || '--chart-pie-web',
-    }))
+    const mergedSourceCounts = {}
+    for (const r of sourceDistributionRaw || []) {
+      const name = normalizeLeadSourceForReport(r?._id)
+      mergedSourceCounts[name] = (mergedSourceCounts[name] || 0) + (r?.count || 0)
+    }
+    const sourceData = Object.entries(mergedSourceCounts)
+      .map(([name, value]) => ({
+        name,
+        value,
+        fillVar: sourceMap[name] || '--chart-pie-web',
+      }))
+      .sort((a, b) => b.value - a.value)
 
     const topAgentsData = agentPerformanceRaw.map((r, i) => ({
       key: String(i + 1),
@@ -275,7 +283,7 @@ export const getDashboard = async (req, res) => {
       key: (l._id || i).toString(),
       name: [l.first_name, l.last_name].filter(Boolean).join(' ') || '-',
       mobile: l.phone || '-',
-      source: l.source || '-',
+      source: normalizeLeadSourceForReport(l.source || ''),
       status: l.status || '-',
       branch: l.branch?.name || '-',
       agent: l.assignedTo?.name || '-',
