@@ -80,6 +80,7 @@ const Dashboard = () => {
   const branchData = dashboard?.branchActivity ?? []
   const agentPerformanceData = dashboard?.agentPerformance ?? []
   const topAgentsData = dashboard?.topAgents ?? []
+  const liveAgents = dashboard?.liveAgents ?? []
   const alerts = dashboard?.alerts ?? [{ type: 'info', message: 'No pending alerts' }]
 
   const allRecentLeads = useMemo(() => (dashboard?.recentLeads ?? []).map((l) => ({ ...l, date: l.date ? dayjs(l.date) : null })), [dashboard?.recentLeads])
@@ -116,22 +117,24 @@ const Dashboard = () => {
   }, [branchesData])
 
   const columns = [
-    { title: 'Name', dataIndex: 'name', key: 'name' },
-    { title: 'Mobile', dataIndex: 'mobile', key: 'mobile' },
+    { title: 'Name', dataIndex: 'name', key: 'name', sorter: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }) },
+    { title: 'Mobile', dataIndex: 'mobile', key: 'mobile', sorter: (a, b) => String(a.mobile || '').localeCompare(String(b.mobile || ''), undefined, { sensitivity: 'base' }) },
     {
       title: 'Source',
       dataIndex: 'source',
       key: 'source',
       render: (source) => <Tag color={SOURCE_TAG[source]}>{source}</Tag>,
+      sorter: (a, b) => String(a.source || '').localeCompare(String(b.source || ''), undefined, { sensitivity: 'base' }),
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
       render: (status) => <Tag color={STATUS_TAG[status]}>{status}</Tag>,
+      sorter: (a, b) => String(a.status || '').localeCompare(String(b.status || ''), undefined, { sensitivity: 'base' }),
     },
-    { title: 'Branch', dataIndex: 'branch', key: 'branch' },
-    { title: 'Agent', dataIndex: 'agent', key: 'agent' },
+    { title: 'Branch', dataIndex: 'branch', key: 'branch', sorter: (a, b) => String(a.branch || '').localeCompare(String(b.branch || ''), undefined, { sensitivity: 'base' }) },
+    { title: 'Agent', dataIndex: 'agent', key: 'agent', sorter: (a, b) => String(a.agent || '').localeCompare(String(b.agent || ''), undefined, { sensitivity: 'base' }) },
   ]
 
   if (dashboardError) {
@@ -152,6 +155,49 @@ const Dashboard = () => {
   const frontOfficeAgents = stats.frontOfficeAgents ?? 0
   const offlineAgents = stats.offlineAgents ?? 0
   const appointmentsToday = stats.appointmentsToday ?? 0
+  const liveAgentsCount = stats.liveAgentsCount ?? 0
+
+  const liveAgentColumns = [
+    {
+      title: 'Agent',
+      dataIndex: 'name',
+      key: 'name',
+      sorter: (a, b) =>
+        String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }),
+    },
+    {
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email',
+     
+      ellipsis: true,
+      sorter: (a, b) =>
+        String(a.email || '').localeCompare(String(b.email || ''), undefined, { sensitivity: 'base' }),
+    },
+    {
+      title: 'Role',
+      dataIndex: 'role',
+      key: 'role',
+      
+      sorter: (a, b) =>
+        String(a.role || '').localeCompare(String(b.role || ''), undefined, { sensitivity: 'base' }),
+    },
+    {
+      title: 'Actions',
+      dataIndex: 'actions',
+      key: 'actions',
+      
+      sorter: (a, b) => (Number(a.actions) || 0) - (Number(b.actions) || 0),
+    },
+    {
+      title: 'Last activity',
+      dataIndex: 'lastActionAt',
+      key: 'lastActionAt',
+      width: 190,
+      render: (v) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
+      sorter: (a, b) => dayjs(a.lastActionAt || 0).valueOf() - dayjs(b.lastActionAt || 0).valueOf(),
+    },
+  ]
 
   return (
     <PageLayout className="dashboard-page">
@@ -264,6 +310,16 @@ const Dashboard = () => {
                     prefix={<CalendarOutlined />}
                   />
                   <div className="dashboard-stat-meta dashboard-stat-meta--muted">Today</div>
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} md={8}>
+                <Card className="dashboard-card dashboard-card--interactive">
+                  <Statistic
+                    title={<span className="dashboard-stat-title">Live Agents</span>}
+                    value={liveAgentsCount}
+                    prefix={<TeamOutlined />}
+                  />
+                  <div className="dashboard-stat-meta dashboard-stat-meta--muted">Last 30 mins (lead create/edit)</div>
                 </Card>
               </Col>
             </Row>
@@ -397,6 +453,27 @@ const Dashboard = () => {
                     pagination={false}
                     size="small"
                     scroll={{ x: 'max-content', y: chartHeight }}
+                  />
+                </div>
+              </Card>
+            </Col>
+          </Row>
+
+          <Row gutter={[16, 16]} className="dashboard-row">
+            <Col span={24}>
+              <Card
+                title={<span className="dashboard-card-title">Live Agents (last 30 mins)</span>}
+                className="dashboard-card dashboard-card--chart dashboard-card--table"
+              >
+                <div className="dashboard-table-wrap">
+                  <Table
+                    dataSource={liveAgents}
+                    columns={liveAgentColumns}
+                    rowKey="key"
+                    pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'] }}
+                    size="small"
+                    scroll={{ x: 'max-content' }}
+                    locale={{ emptyText: 'No lead create/edit activity in the last 30 minutes' }}
                   />
                 </div>
               </Card>

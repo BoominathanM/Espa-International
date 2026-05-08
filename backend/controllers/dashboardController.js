@@ -73,6 +73,8 @@ export const getDashboard = async (req, res) => {
       ],
     }
 
+    const liveSince = new Date(Date.now() - 30 * 60 * 1000)
+
     const [
       todayLeads,
       callsReceived,
@@ -80,6 +82,7 @@ export const getDashboard = async (req, res) => {
       appointmentsToday,
       totalAgents,
       frontOfficeAgents,
+      liveAgentsRaw,
       leadTrendRaw,
       sourceDistributionRaw,
       branchActivityRaw,
@@ -128,6 +131,46 @@ export const getDashboard = async (req, res) => {
             }
           : {}),
       }),
+      // Live agents: any user who created/updated a lead in the last 30 minutes (Lead management activity)
+      Lead.aggregate([
+        { $match: branchFilterForLeads },
+        { $unwind: '$activityLogs' },
+        {
+          $match: {
+            'activityLogs.action': { $in: ['Lead Created', 'Lead Updated'] },
+            'activityLogs.createdAt': { $gte: liveSince },
+          },
+        },
+        {
+          $group: {
+            _id: '$activityLogs.performedBy',
+            actions: { $sum: 1 },
+            lastActionAt: { $max: '$activityLogs.createdAt' },
+          },
+        },
+        { $sort: { lastActionAt: -1 } },
+        { $limit: 50 },
+        {
+          $lookup: {
+            from: 'users',
+            localField: '_id',
+            foreignField: 'name',
+            as: 'user',
+          },
+        },
+        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            performedBy: '$_id',
+            actions: 1,
+            lastActionAt: 1,
+            userId: '$user._id',
+            email: '$user.email',
+            role: '$user.role',
+            status: '$user.status',
+          },
+        },
+      ]),
       Lead.aggregate([
         { $match: branchFilterForLeads },
         {
@@ -304,6 +347,20 @@ export const getDashboard = async (req, res) => {
       date: l.createdAt,
     }))
 
+    const liveAgents = (liveAgentsRaw || [])
+      .map((r) => ({
+        key: String(r.userId || r.performedBy || ''),
+        name: r.performedBy || 'Unknown',
+        email: r.email || '-',
+        role: r.role || '-',
+        status: r.status || '-',
+        actions: r.actions || 0,
+        lastActionAt: r.lastActionAt || null,
+      }))
+      .filter((r) => String(r.name || '').trim())
+
+    const liveAgentsCount = new Set(liveAgents.map((a) => String(a.name).trim().toLowerCase())).size
+
     const alerts = []
     if (callsMissed > 0) {
       alerts.push({ type: 'error', message: `${callsMissed} missed call${callsMissed > 1 ? 's' : ''} need attention` })
@@ -326,6 +383,7 @@ export const getDashboard = async (req, res) => {
           totalAgents,
           frontOfficeAgents,
           offlineAgents: 0,
+          liveAgentsCount,
         },
         leadTrend: last7,
         sourceDistribution: sourceData,
@@ -338,6 +396,7 @@ export const getDashboard = async (req, res) => {
         })),
         topAgents: topAgentsData,
         recentLeads,
+        liveAgents,
         alerts,
       },
     })

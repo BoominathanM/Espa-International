@@ -85,6 +85,30 @@ function sortLocale(a, b) {
   return String(a).localeCompare(String(b), undefined, { sensitivity: 'base' })
 }
 
+function safeNum(v) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+function sortYmdOrText(a, b) {
+  // Most report tables use 'YYYY-MM-DD' strings; fall back to locale.
+  const da = dayjs(String(a || ''), ['YYYY-MM-DD', 'DD/MM/YYYY', 'MMM DD, YYYY'], true)
+  const db = dayjs(String(b || ''), ['YYYY-MM-DD', 'DD/MM/YYYY', 'MMM DD, YYYY'], true)
+  if (da.isValid() && db.isValid()) return da.valueOf() - db.valueOf()
+  if (da.isValid() && !db.isValid()) return -1
+  if (!da.isValid() && db.isValid()) return 1
+  return sortLocale(a || '', b || '')
+}
+
+function sortDateTimeOrText(a, b) {
+  const da = dayjs(String(a || ''))
+  const db = dayjs(String(b || ''))
+  if (da.isValid() && db.isValid()) return da.valueOf() - db.valueOf()
+  if (da.isValid() && !db.isValid()) return -1
+  if (!da.isValid() && db.isValid()) return 1
+  return sortLocale(a || '', b || '')
+}
+
 function reportSourceCell(source) {
   const s = normalizeLeadSourceDisplay(source)
   return <Tag color={leadSourceTagColor(source)}>{s}</Tag>
@@ -305,41 +329,42 @@ function buildBranchCombinedSheetAoA(perfRow, leadRows, orphanBranchLabel) {
 }
 
 const leadReportColumns = [
-  { title: 'Date', dataIndex: 'date', key: 'date' },
-  { title: 'Total Leads', dataIndex: 'total', key: 'total' },
-  { title: 'Converted', dataIndex: 'converted', key: 'converted' },
-  { title: 'Lost', dataIndex: 'lost', key: 'lost' },
+  { title: 'Date', dataIndex: 'date', key: 'date', sorter: (a, b) => sortYmdOrText(a.date, b.date) },
+  { title: 'Total Leads', dataIndex: 'total', key: 'total', sorter: (a, b) => safeNum(a.total) - safeNum(b.total) },
+  { title: 'Converted', dataIndex: 'converted', key: 'converted', sorter: (a, b) => safeNum(a.converted) - safeNum(b.converted) },
+  { title: 'Lost', dataIndex: 'lost', key: 'lost', sorter: (a, b) => safeNum(a.lost) - safeNum(b.lost) },
   {
     title: 'Conversion Rate',
     dataIndex: 'rate',
     key: 'rate',
     render: (rate) => `${rate}%`,
+    sorter: (a, b) => safeNum(a.rate) - safeNum(b.rate),
   },
 ]
 
 const leadDetailsColumns = [
   { title: 'S.No.', dataIndex: 'sno', key: 'sno', width: 56 },
-  { title: 'Created', dataIndex: 'createdDate', key: 'createdDate', width: 104 },
-  { title: 'Name', dataIndex: 'name', key: 'name', ellipsis: true },
-  { title: 'Email', dataIndex: 'email', key: 'email', ellipsis: true },
-  { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 112 },
-  { title: 'WhatsApp', dataIndex: 'whatsapp', key: 'whatsapp', width: 112 },
-  { title: 'Source', dataIndex: 'source', key: 'source', width: 96, render: (s) => reportSourceCell(s) },
-  { title: 'Status', dataIndex: 'status', key: 'status', width: 104 },
-  { title: 'Branch', dataIndex: 'branch', key: 'branch', width: 96 },
-  { title: 'Assigned', dataIndex: 'assignedTo', key: 'assignedTo', width: 108 },
-  { title: 'Appt date', dataIndex: 'appointmentDate', key: 'appointmentDate', width: 104 },
-  { title: 'Slot', dataIndex: 'slot', key: 'slot', width: 88 },
-  { title: 'Package', dataIndex: 'spaPackage', key: 'spaPackage', ellipsis: true },
-  { title: 'Subject', dataIndex: 'subject', key: 'subject', ellipsis: true },
+  { title: 'Created', dataIndex: 'createdDate', key: 'createdDate', width: 104, sorter: (a, b) => sortYmdOrText(a.createdDate, b.createdDate) },
+  { title: 'Name', dataIndex: 'name', key: 'name', ellipsis: true, sorter: (a, b) => sortLocale(a.name || '', b.name || '') },
+  { title: 'Email', dataIndex: 'email', key: 'email', ellipsis: true, sorter: (a, b) => sortLocale(a.email || '', b.email || '') },
+  { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 112, sorter: (a, b) => sortLocale(a.phone || '', b.phone || '') },
+  { title: 'WhatsApp', dataIndex: 'whatsapp', key: 'whatsapp', width: 112, sorter: (a, b) => sortLocale(a.whatsapp || '', b.whatsapp || '') },
+  { title: 'Source', dataIndex: 'source', key: 'source', width: 96, render: (s) => reportSourceCell(s), sorter: (a, b) => sortLocale(a.source || '', b.source || '') },
+  { title: 'Status', dataIndex: 'status', key: 'status', width: 104, sorter: (a, b) => sortLocale(a.status || '', b.status || '') },
+  { title: 'Branch', dataIndex: 'branch', key: 'branch', width: 96, sorter: (a, b) => sortLocale(a.branch || '', b.branch || '') },
+  { title: 'Assigned', dataIndex: 'assignedTo', key: 'assignedTo', width: 108, sorter: (a, b) => sortLocale(a.assignedTo || '', b.assignedTo || '') },
+  { title: 'Appt date', dataIndex: 'appointmentDate', key: 'appointmentDate', width: 104, sorter: (a, b) => sortYmdOrText(a.appointmentDate, b.appointmentDate) },
+  { title: 'Slot', dataIndex: 'slot', key: 'slot', width: 88, sorter: (a, b) => sortLocale(a.slot || '', b.slot || '') },
+  { title: 'Package', dataIndex: 'spaPackage', key: 'spaPackage', ellipsis: true, sorter: (a, b) => sortLocale(a.spaPackage || '', b.spaPackage || '') },
+  { title: 'Subject', dataIndex: 'subject', key: 'subject', ellipsis: true, sorter: (a, b) => sortLocale(a.subject || '', b.subject || '') },
 ]
 
 const appointmentReportColumns = [
   { title: 'S.No.', dataIndex: 'sno', key: 'sno', width: 60 },
-  { title: 'Date', dataIndex: 'date', key: 'date', width: 110 },
-  { title: 'Customer', dataIndex: 'customer', key: 'customer', ellipsis: true },
-  { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 120 },
-  { title: 'Source', dataIndex: 'source', key: 'source', width: 100, render: (s) => reportSourceCell(s) },
+  { title: 'Date', dataIndex: 'date', key: 'date', width: 110, sorter: (a, b) => sortYmdOrText(a.date, b.date) },
+  { title: 'Customer', dataIndex: 'customer', key: 'customer', ellipsis: true, sorter: (a, b) => sortLocale(a.customer || '', b.customer || '') },
+  { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 120, sorter: (a, b) => sortLocale(a.phone || '', b.phone || '') },
+  { title: 'Source', dataIndex: 'source', key: 'source', width: 100, render: (s) => reportSourceCell(s), sorter: (a, b) => sortLocale(a.source || '', b.source || '') },
   {
     title: 'Status',
     dataIndex: 'status',
@@ -364,11 +389,12 @@ const appointmentReportColumns = [
       }
       return <Tag color={colors[s] || 'default'}>{labels[s] || s}</Tag>
     },
+    sorter: (a, b) => sortLocale(a.status || '', b.status || ''),
   },
-  { title: 'Slot', dataIndex: 'slot', key: 'slot', width: 130 },
-  { title: 'Package', dataIndex: 'package', key: 'package', ellipsis: true },
-  { title: 'Branch', dataIndex: 'branch', key: 'branch', width: 100 },
-  { title: 'Assigned To', dataIndex: 'assignedTo', key: 'assignedTo', width: 100 },
+  { title: 'Slot', dataIndex: 'slot', key: 'slot', width: 130, sorter: (a, b) => sortLocale(a.slot || '', b.slot || '') },
+  { title: 'Package', dataIndex: 'package', key: 'package', ellipsis: true, sorter: (a, b) => sortLocale(a.package || '', b.package || '') },
+  { title: 'Branch', dataIndex: 'branch', key: 'branch', width: 100, sorter: (a, b) => sortLocale(a.branch || '', b.branch || '') },
+  { title: 'Assigned To', dataIndex: 'assignedTo', key: 'assignedTo', width: 100, sorter: (a, b) => sortLocale(a.assignedTo || '', b.assignedTo || '') },
 ]
 
 const callTypeCell = {
@@ -381,20 +407,20 @@ const callTypeCell = {
 
 const callDetailsColumns = [
   { title: 'S.No.', dataIndex: 'sno', key: 'sno', width: 56 },
-  { title: 'Start', dataIndex: 'startTime', key: 'startTime', width: 152 },
-  { title: 'End', dataIndex: 'endTime', key: 'endTime', width: 152 },
-  { title: 'Duration', dataIndex: 'duration', key: 'duration', width: 72 },
-  { title: 'Customer #', dataIndex: 'customerNumber', key: 'customerNumber', width: 120 },
+  { title: 'Start', dataIndex: 'startTime', key: 'startTime', width: 152, sorter: (a, b) => sortDateTimeOrText(a.startTime, b.startTime) },
+  { title: 'End', dataIndex: 'endTime', key: 'endTime', width: 152, sorter: (a, b) => sortDateTimeOrText(a.endTime, b.endTime) },
+  { title: 'Duration', dataIndex: 'duration', key: 'duration', width: 72, sorter: (a, b) => safeNum(a.durationSec) - safeNum(b.durationSec) },
+  { title: 'Customer #', dataIndex: 'customerNumber', key: 'customerNumber', width: 120, sorter: (a, b) => sortLocale(a.customerNumber || '', b.customerNumber || '') },
   callTypeCell,
-  { title: 'Call status', dataIndex: 'callStatus', key: 'callStatus', width: 100 },
-  { title: 'Agent name (Ozonetel)', dataIndex: 'agentName', key: 'agentName', ellipsis: true },
-  { title: 'Ozonetel agent ID', dataIndex: 'agentId', key: 'agentId', width: 112 },
-  { title: 'CRM name', dataIndex: 'crmAgentName', key: 'crmAgentName', ellipsis: true },
-  { title: 'CRM email', dataIndex: 'crmAgentEmail', key: 'crmAgentEmail', ellipsis: true },
-  { title: 'CRM role', dataIndex: 'crmAgentRole', key: 'crmAgentRole', width: 88 },
-  { title: 'CRM Ozonetel ID', dataIndex: 'crmCloudAgentId', key: 'crmCloudAgentId', width: 112 },
-  { title: 'Branches', dataIndex: 'branches', key: 'branches', ellipsis: true },
-  { title: 'Call ref', dataIndex: 'callRef', key: 'callRef', width: 120 },
+  { title: 'Call status', dataIndex: 'callStatus', key: 'callStatus', width: 100, sorter: (a, b) => sortLocale(a.callStatus || '', b.callStatus || '') },
+  { title: 'Agent name (Ozonetel)', dataIndex: 'agentName', key: 'agentName', ellipsis: true, sorter: (a, b) => sortLocale(a.agentName || '', b.agentName || '') },
+  { title: 'Ozonetel agent ID', dataIndex: 'agentId', key: 'agentId', width: 112, sorter: (a, b) => sortLocale(a.agentId || '', b.agentId || '') },
+  { title: 'CRM name', dataIndex: 'crmAgentName', key: 'crmAgentName', ellipsis: true, sorter: (a, b) => sortLocale(a.crmAgentName || '', b.crmAgentName || '') },
+  { title: 'CRM email', dataIndex: 'crmAgentEmail', key: 'crmAgentEmail', ellipsis: true, sorter: (a, b) => sortLocale(a.crmAgentEmail || '', b.crmAgentEmail || '') },
+  { title: 'CRM role', dataIndex: 'crmAgentRole', key: 'crmAgentRole', width: 88, sorter: (a, b) => sortLocale(a.crmAgentRole || '', b.crmAgentRole || '') },
+  { title: 'CRM Ozonetel ID', dataIndex: 'crmCloudAgentId', key: 'crmCloudAgentId', width: 112, sorter: (a, b) => sortLocale(a.crmCloudAgentId || '', b.crmCloudAgentId || '') },
+  { title: 'Branches', dataIndex: 'branches', key: 'branches', ellipsis: true, sorter: (a, b) => sortLocale(a.branches || '', b.branches || '') },
+  { title: 'Call ref', dataIndex: 'callRef', key: 'callRef', width: 120, sorter: (a, b) => sortLocale(a.callRef || '', b.callRef || '') },
   {
     title: 'Recording',
     dataIndex: 'recordingUrl',
@@ -414,20 +440,20 @@ const callDetailsColumns = [
 /** Agent performance table: agent + call type first; Excel export stacks Summary → leads → calls on one tab per agent. */
 const agentCallsReportColumns = [
   { title: 'S.No.', dataIndex: 'sno', key: 'sno', width: 56 },
-  { title: 'Agent name (Ozonetel)', dataIndex: 'agentName', key: 'agentName', ellipsis: true },
-  { title: 'Ozonetel agent ID', dataIndex: 'agentId', key: 'agentId', width: 112 },
-  { title: 'CRM name', dataIndex: 'crmAgentName', key: 'crmAgentName', ellipsis: true },
-  { title: 'CRM email', dataIndex: 'crmAgentEmail', key: 'crmAgentEmail', ellipsis: true },
-  { title: 'CRM role', dataIndex: 'crmAgentRole', key: 'crmAgentRole', width: 88 },
-  { title: 'CRM Ozonetel ID', dataIndex: 'crmCloudAgentId', key: 'crmCloudAgentId', width: 112 },
+  { title: 'Agent name (Ozonetel)', dataIndex: 'agentName', key: 'agentName', ellipsis: true, sorter: (a, b) => sortLocale(a.agentName || '', b.agentName || '') },
+  { title: 'Ozonetel agent ID', dataIndex: 'agentId', key: 'agentId', width: 112, sorter: (a, b) => sortLocale(a.agentId || '', b.agentId || '') },
+  { title: 'CRM name', dataIndex: 'crmAgentName', key: 'crmAgentName', ellipsis: true, sorter: (a, b) => sortLocale(a.crmAgentName || '', b.crmAgentName || '') },
+  { title: 'CRM email', dataIndex: 'crmAgentEmail', key: 'crmAgentEmail', ellipsis: true, sorter: (a, b) => sortLocale(a.crmAgentEmail || '', b.crmAgentEmail || '') },
+  { title: 'CRM role', dataIndex: 'crmAgentRole', key: 'crmAgentRole', width: 88, sorter: (a, b) => sortLocale(a.crmAgentRole || '', b.crmAgentRole || '') },
+  { title: 'CRM Ozonetel ID', dataIndex: 'crmCloudAgentId', key: 'crmCloudAgentId', width: 112, sorter: (a, b) => sortLocale(a.crmCloudAgentId || '', b.crmCloudAgentId || '') },
   callTypeCell,
-  { title: 'Call status', dataIndex: 'callStatus', key: 'callStatus', width: 100 },
-  { title: 'Start', dataIndex: 'startTime', key: 'startTime', width: 152 },
-  { title: 'End', dataIndex: 'endTime', key: 'endTime', width: 152 },
-  { title: 'Duration', dataIndex: 'duration', key: 'duration', width: 72 },
-  { title: 'Customer #', dataIndex: 'customerNumber', key: 'customerNumber', width: 120 },
-  { title: 'Branches', dataIndex: 'branches', key: 'branches', ellipsis: true },
-  { title: 'Call ref', dataIndex: 'callRef', key: 'callRef', width: 120 },
+  { title: 'Call status', dataIndex: 'callStatus', key: 'callStatus', width: 100, sorter: (a, b) => sortLocale(a.callStatus || '', b.callStatus || '') },
+  { title: 'Start', dataIndex: 'startTime', key: 'startTime', width: 152, sorter: (a, b) => sortDateTimeOrText(a.startTime, b.startTime) },
+  { title: 'End', dataIndex: 'endTime', key: 'endTime', width: 152, sorter: (a, b) => sortDateTimeOrText(a.endTime, b.endTime) },
+  { title: 'Duration', dataIndex: 'duration', key: 'duration', width: 72, sorter: (a, b) => safeNum(a.durationSec) - safeNum(b.durationSec) },
+  { title: 'Customer #', dataIndex: 'customerNumber', key: 'customerNumber', width: 120, sorter: (a, b) => sortLocale(a.customerNumber || '', b.customerNumber || '') },
+  { title: 'Branches', dataIndex: 'branches', key: 'branches', ellipsis: true, sorter: (a, b) => sortLocale(a.branches || '', b.branches || '') },
+  { title: 'Call ref', dataIndex: 'callRef', key: 'callRef', width: 120, sorter: (a, b) => sortLocale(a.callRef || '', b.callRef || '') },
   {
     title: 'Recording',
     dataIndex: 'recordingUrl',
@@ -445,16 +471,17 @@ const agentCallsReportColumns = [
 ]
 
 const branchPerformanceColumns = [
-  { title: 'Branch', dataIndex: 'name', key: 'name', ellipsis: true },
-  { title: 'Leads', dataIndex: 'leads', key: 'leads', width: 88 },
-  { title: 'Converted', dataIndex: 'converted', key: 'converted', width: 96 },
-  { title: 'Lost', dataIndex: 'lost', key: 'lost', width: 80 },
+  { title: 'Branch', dataIndex: 'name', key: 'name', ellipsis: true, sorter: (a, b) => sortLocale(a.name || '', b.name || '') },
+  { title: 'Leads', dataIndex: 'leads', key: 'leads', width: 88, sorter: (a, b) => safeNum(a.leads) - safeNum(b.leads) },
+  { title: 'Converted', dataIndex: 'converted', key: 'converted', width: 96, sorter: (a, b) => safeNum(a.converted) - safeNum(b.converted) },
+  { title: 'Lost', dataIndex: 'lost', key: 'lost', width: 80, sorter: (a, b) => safeNum(a.lost) - safeNum(b.lost) },
   {
     title: 'Conv. %',
     dataIndex: 'conversionRate',
     key: 'conversionRate',
     width: 88,
     render: (v) => `${v ?? 0}%`,
+    sorter: (a, b) => safeNum(a.conversionRate) - safeNum(b.conversionRate),
   },
   {
     title: 'Revenue index (₹)',
@@ -462,22 +489,23 @@ const branchPerformanceColumns = [
     key: 'revenue',
     width: 140,
     render: (v) => (v != null ? Number(v).toLocaleString('en-IN') : '—'),
+    sorter: (a, b) => safeNum(a.revenue) - safeNum(b.revenue),
   },
 ]
 
 const agentAssignedLeadsColumns = [
   { title: 'S.No.', dataIndex: 'sno', key: 'sno', width: 56 },
-  { title: 'Agent name', dataIndex: 'assignedAgent', key: 'assignedAgent', ellipsis: true },
-  { title: 'Agent email', dataIndex: 'assignedEmail', key: 'assignedEmail', ellipsis: true },
-  { title: 'Agent role', dataIndex: 'assignedRole', key: 'assignedRole', width: 88 },
-  { title: 'Agent Ozonetel ID', dataIndex: 'assignedOzonetelId', key: 'assignedOzonetelId', width: 120 },
-  { title: 'Created', dataIndex: 'createdDate', key: 'createdDate', width: 104 },
-  { title: 'Lead name', dataIndex: 'leadName', key: 'leadName', ellipsis: true },
-  { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 112 },
-  { title: 'Email', dataIndex: 'email', key: 'email', ellipsis: true },
-  { title: 'Source', dataIndex: 'source', key: 'source', width: 96, render: (s) => reportSourceCell(s) },
-  { title: 'Status', dataIndex: 'status', key: 'status', width: 104 },
-  { title: 'Branch', dataIndex: 'branch', key: 'branch', width: 96 },
+  { title: 'Agent name', dataIndex: 'assignedAgent', key: 'assignedAgent', ellipsis: true, sorter: (a, b) => sortLocale(a.assignedAgent || '', b.assignedAgent || '') },
+  { title: 'Agent email', dataIndex: 'assignedEmail', key: 'assignedEmail', ellipsis: true, sorter: (a, b) => sortLocale(a.assignedEmail || '', b.assignedEmail || '') },
+  { title: 'Agent role', dataIndex: 'assignedRole', key: 'assignedRole', width: 88, sorter: (a, b) => sortLocale(a.assignedRole || '', b.assignedRole || '') },
+  { title: 'Agent Ozonetel ID', dataIndex: 'assignedOzonetelId', key: 'assignedOzonetelId', width: 120, sorter: (a, b) => sortLocale(a.assignedOzonetelId || '', b.assignedOzonetelId || '') },
+  { title: 'Created', dataIndex: 'createdDate', key: 'createdDate', width: 104, sorter: (a, b) => sortYmdOrText(a.createdDate, b.createdDate) },
+  { title: 'Lead name', dataIndex: 'leadName', key: 'leadName', ellipsis: true, sorter: (a, b) => sortLocale(a.leadName || '', b.leadName || '') },
+  { title: 'Phone', dataIndex: 'phone', key: 'phone', width: 112, sorter: (a, b) => sortLocale(a.phone || '', b.phone || '') },
+  { title: 'Email', dataIndex: 'email', key: 'email', ellipsis: true, sorter: (a, b) => sortLocale(a.email || '', b.email || '') },
+  { title: 'Source', dataIndex: 'source', key: 'source', width: 96, render: (s) => reportSourceCell(s), sorter: (a, b) => sortLocale(a.source || '', b.source || '') },
+  { title: 'Status', dataIndex: 'status', key: 'status', width: 104, sorter: (a, b) => sortLocale(a.status || '', b.status || '') },
+  { title: 'Branch', dataIndex: 'branch', key: 'branch', width: 96, sorter: (a, b) => sortLocale(a.branch || '', b.branch || '') },
 ]
 
 const Reports = () => {

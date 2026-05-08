@@ -1086,9 +1086,7 @@ const Leads = () => {
               <Form.Item
                 name="appointment_date"
                 label="Appointment date"
-                rules={[
-                  { required: true, message: 'Required' },
-                ]}
+                
               >
                 <DatePicker
                   style={{ width: '100%' }}
@@ -1101,7 +1099,7 @@ const Leads = () => {
               <Form.Item
                 name="spa_package"
                 label="Spa package"
-                rules={[{ required: true, message: 'Required' }]}
+             
               >
                 <Select
                   placeholder="Select package first"
@@ -1119,7 +1117,7 @@ const Leads = () => {
               <Form.Item
                 name="slot_time"
                 label="Slot time"
-                rules={[{ required: true, message: 'Required' }]}
+               
               >
                 <Select
                   placeholder={

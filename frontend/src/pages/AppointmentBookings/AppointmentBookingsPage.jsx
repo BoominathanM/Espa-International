@@ -82,6 +82,8 @@ const APPOINTMENT_TAB_STATUS = {
   feedbacks: [],
 }
 
+const ALL_APPOINTMENT_STATUSES = ['New', 'In Progress', 'Follow-Up', 'Converted', 'Cancelled']
+
 function appointmentDisplayId(lead) {
   if (!lead?._id) return '-'
   const id = String(lead._id)
@@ -642,15 +644,30 @@ const AppointmentBookingsPage = () => {
   const [filterBranches, setFilterBranches] = useState([])
   const [filterSource, setFilterSource] = useState(undefined)
   const [filterSlot, setFilterSlot] = useState(undefined)
+  const [filterStatuses, setFilterStatuses] = useState([])
   const [listPage, setListPage] = useState(1)
 
   const dateStr = selectedDate.format('YYYY-MM-DD')
 
+  const queryBranch = filterBranches.length ? filterBranches : undefined
+
   const { data: leadsData, isLoading: leadsLoading, refetch: refetchLeads } = useGetLeadsQuery({
     appointmentDate: dateStr,
-    branch: filterBranches.length ? filterBranches : undefined,
+    source: filterSource || undefined,
+    branch: queryBranch,
     page: 1,
     limit: 500,
+  })
+
+  const monthFrom = useMemo(() => calendarMonth.startOf('month').format('YYYY-MM-DD'), [calendarMonth])
+  const monthTo = useMemo(() => calendarMonth.endOf('month').format('YYYY-MM-DD'), [calendarMonth])
+  const { data: monthLeadsData } = useGetLeadsQuery({
+    appointmentDateFrom: monthFrom,
+    appointmentDateTo: monthTo,
+    source: filterSource || undefined,
+    branch: queryBranch,
+    page: 1,
+    limit: 1000,
   })
 
   const { data: branchesData } = useGetBranchesQuery()
@@ -660,6 +677,7 @@ const AppointmentBookingsPage = () => {
 
   const branches = branchesData?.branches || []
   const leads = leadsData?.leads || []
+  const monthLeads = monthLeadsData?.leads || []
 
   const filteredByTab = useMemo(() => {
     const statuses = APPOINTMENT_TAB_STATUS[listTab]
@@ -667,22 +685,37 @@ const AppointmentBookingsPage = () => {
     return leads.filter((l) => statuses.includes(l.status))
   }, [leads, listTab])
 
-  const attributeFiltered = useMemo(() => {
+  const calendarBaseFiltered = useMemo(() => {
+    return leads.filter((l) => {
+      if (filterBranches.length) {
+        const bid = String(l.branch?._id || l.branch || '')
+        if (!filterBranches.some((id) => String(id) === bid)) return false
+      }
+      if (filterSource && l.source !== filterSource) return false
+      if (filterStatuses.length && !filterStatuses.includes(l.status)) return false
+      if (filterSlot && (l.slot_time || '') !== filterSlot) return false
+      return true
+    })
+  }, [leads, filterBranches, filterSource, filterSlot, filterStatuses])
+
+  const listAttributeFiltered = useMemo(() => {
     return filteredByTab.filter((l) => {
       if (filterBranches.length) {
         const bid = String(l.branch?._id || l.branch || '')
         if (!filterBranches.some((id) => String(id) === bid)) return false
       }
       if (filterSource && l.source !== filterSource) return false
+      if (filterStatuses.length && !filterStatuses.includes(l.status)) return false
       if (filterSlot && (l.slot_time || '') !== filterSlot) return false
       return true
     })
-  }, [filteredByTab, filterBranches, filterSource, filterSlot])
+  }, [filteredByTab, filterBranches, filterSource, filterSlot, filterStatuses])
 
   const searchFiltered = useMemo(() => {
-    if (!searchText.trim()) return attributeFiltered
+    const base = activeView === 'calendar' ? calendarBaseFiltered : listAttributeFiltered
+    if (!searchText.trim()) return base
     const q = searchText.toLowerCase()
-    return attributeFiltered.filter(
+    return base.filter(
       (l) =>
         (l.first_name && l.first_name.toLowerCase().includes(q)) ||
         (l.last_name && l.last_name.toLowerCase().includes(q)) ||
@@ -690,7 +723,12 @@ const AppointmentBookingsPage = () => {
         (l.phone && String(l.phone).includes(q)) ||
         (l._id && String(l._id).toLowerCase().includes(q))
     )
-  }, [attributeFiltered, searchText])
+  }, [activeView, calendarBaseFiltered, listAttributeFiltered, searchText])
+
+  const calendarLeadsFiltered = useMemo(() => {
+    if (activeView !== 'calendar') return leads
+    return searchFiltered
+  }, [activeView, leads, searchFiltered])
 
   const handleApplyAppointmentFilters = () => {
     setListPage(1)
@@ -701,16 +739,18 @@ const AppointmentBookingsPage = () => {
     setFilterBranches([])
     setFilterSource(undefined)
     setFilterSlot(undefined)
+    setFilterStatuses([])
     setListPage(1)
   }
 
   const summaryCounts = useMemo(() => {
-    const total = leads.length
-    const closed = leads.filter((l) => l.status === 'Converted').length
-    const current = leads.filter((l) => ['New', 'In Progress'].includes(l.status)).length
-    const cancelled = leads.filter((l) => l.status === 'Cancelled').length
+    const base = activeView === 'calendar' ? calendarLeadsFiltered : leads
+    const total = base.length
+    const closed = base.filter((l) => l.status === 'Converted').length
+    const current = base.filter((l) => ['New', 'In Progress'].includes(l.status)).length
+    const cancelled = base.filter((l) => l.status === 'Cancelled').length
     return { total, closed, current, cancelled }
-  }, [leads])
+  }, [activeView, calendarLeadsFiltered, leads])
 
   const handleSyncAskEva = async () => {
     try {
@@ -878,16 +918,16 @@ const AppointmentBookingsPage = () => {
 
   const leadsByPackageSlot = useMemo(() => {
     const m = Object.fromEntries(ALL_SLOT_TIMES_CHRONO.map((t) => [t, []]))
-    leads.forEach((l) => {
+    calendarLeadsFiltered.forEach((l) => {
       const s = l.slot_time
       if (s != null && s !== '' && Object.prototype.hasOwnProperty.call(m, s)) m[s].push(l)
     })
     return m
-  }, [leads])
+  }, [calendarLeadsFiltered])
 
   const unscheduledSlotGroups = useMemo(() => {
     const map = {}
-    leads.forEach((l) => {
+    calendarLeadsFiltered.forEach((l) => {
       const slot = l.slot_time || 'Other'
       if (!map[slot]) map[slot] = []
       map[slot].push(l)
@@ -907,7 +947,29 @@ const AppointmentBookingsPage = () => {
       return String(a.slot).localeCompare(String(b.slot))
     })
     return groups.filter((g) => !g.range || !isWithinPackageScheduleHours(g.range))
-  }, [leads])
+  }, [calendarLeadsFiltered])
+
+  const hasAppointmentsByDay = useMemo(() => {
+    const set = new Set()
+    monthLeads.forEach((l) => {
+      if (!l?.appointment_date) return
+      if (filterStatuses.length && !filterStatuses.includes(l.status)) return
+      if (filterSlot && (l.slot_time || '') !== filterSlot) return
+      const d = dayjs(l.appointment_date)
+      if (!d.isValid()) return
+      set.add(d.format('YYYY-MM-DD'))
+    })
+    return set
+  }, [monthLeads, filterSlot, filterStatuses])
+
+  const calendarCellRender = (current, info) => {
+    if (info.type !== 'date') return info.originNode
+    const dayKey = current.format('YYYY-MM-DD')
+    const showDot = hasAppointmentsByDay.has(dayKey)
+    // AntD versions differ in whether `originNode` already includes the date label.
+    // To avoid duplicate date numbers, only inject our dot overlay here.
+    return <>{showDot && <span className="appt-cal-dot" />}</>
+  }
 
   if (detailLeadId) {
     return (
@@ -931,15 +993,13 @@ const AppointmentBookingsPage = () => {
         title="Appointment Bookings"
         extra={
           <Space wrap>
-            {activeView === 'list' && (
-              <Button
-                icon={showFilters ? <UpOutlined /> : <DownOutlined />}
-                onClick={() => setShowFilters(!showFilters)}
-                size={isMobile ? 'small' : 'middle'}
-              >
-                {showFilters ? 'Hide Filters' : 'Show Filters'}
-              </Button>
-            )}
+            <Button
+              icon={showFilters ? <UpOutlined /> : <DownOutlined />}
+              onClick={() => setShowFilters(!showFilters)}
+              size={isMobile ? 'small' : 'middle'}
+            >
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </Button>
             <Button
               icon={<SyncOutlined />}
               onClick={handleSyncAskEva}
@@ -995,7 +1055,7 @@ const AppointmentBookingsPage = () => {
           : 'Search and filter appointments. Click a row or use the menu to view or edit.'}
       </p>
 
-      {activeView === 'list' && showFilters && (
+      {showFilters && (
         <ContentCard compact className="appt-filters-card">
           <div className="appt-filters-row ds-filters-row--responsive">
             <Input
@@ -1041,6 +1101,22 @@ const AppointmentBookingsPage = () => {
             </Select>
             <Select
               className="ds-filter-fixed"
+              mode="multiple"
+              allowClear
+              maxTagCount="responsive"
+              placeholder="Filter by Status"
+              value={filterStatuses}
+              onChange={setFilterStatuses}
+              style={{ minWidth: 180 }}
+            >
+              {ALL_APPOINTMENT_STATUSES.map((s) => (
+                <Option key={s} value={s}>
+                  {uiAppointmentStatus(s).label}
+                </Option>
+              ))}
+            </Select>
+            <Select
+              className="ds-filter-fixed"
               placeholder="Filter by slot"
               allowClear
               value={filterSlot}
@@ -1080,6 +1156,7 @@ const AppointmentBookingsPage = () => {
                   setSelectedDate(d)
                 }}
                 onChange={(d) => setCalendarMonth(d)}
+                cellRender={calendarCellRender}
                 headerRender={({ value, onChange }) => (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <Button type="text" icon={<LeftOutlined />} onClick={() => onChange(value.subtract(1, 'month'))} className="appt-btn-text-gold" />
