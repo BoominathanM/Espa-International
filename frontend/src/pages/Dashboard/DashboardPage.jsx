@@ -219,7 +219,7 @@ const Dashboard = () => {
                 size={isMobile ? 'small' : 'middle'}
                 loading={!branchesData}
                 placeholder="Branches (all if empty)"
-                style={{ minWidth: isMobile ? 160 : 220 }}
+                style={{ minWidth: isMobile ? "100%" : 300 }}
               >
                 {branchOptions.map((opt) => (
                   <Option key={opt.value} value={opt.value}>

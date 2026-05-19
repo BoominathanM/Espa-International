@@ -2,6 +2,7 @@ import axios from 'axios'
 import CallLog from '../models/CallLog.js'
 import OzonetelSettings from '../models/OzonetelSettings.js'
 import { applyCallLogBranchScope } from '../utils/branchAccess.js'
+import { parseIstDateRange } from '../utils/istDateRange.js'
 import { normalizeOzonetelAgentId, formatCallStatusLabel } from '../utils/ozonetelFields.js'
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -108,10 +109,12 @@ export const getCampaigns = async (req, res) => {
  */
 export const getCallLogs = async (req, res) => {
   try {
-    const { page = 1, limit = 50, type, status, agentId, search } = req.query
+    const { page = 1, limit = 50, type, status, agentId, search, callDateFrom, callDateTo } = req.query
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * Math.min(100, Math.max(1, parseInt(limit, 10)))
 
     const filter = {}
+    const andConditions = []
+
     if (type && String(type).trim()) {
       const normalizedType = String(type).trim()
       filter.type = { $regex: `^${escapeRegExp(normalizedType)}$`, $options: 'i' }
@@ -141,11 +144,38 @@ export const getCallLogs = async (req, res) => {
     }
     if (agentId) filter.agentId = agentId
     if (search && search.trim()) {
-      filter.$or = [
-        { customerNumber: { $regex: search.trim(), $options: 'i' } },
-        { callId: { $regex: search.trim(), $options: 'i' } },
-        { monitorUCID: { $regex: search.trim(), $options: 'i' } },
-      ]
+      andConditions.push({
+        $or: [
+          { customerNumber: { $regex: search.trim(), $options: 'i' } },
+          { callId: { $regex: search.trim(), $options: 'i' } },
+          { monitorUCID: { $regex: search.trim(), $options: 'i' } },
+        ],
+      })
+    }
+
+    if (callDateFrom && callDateTo) {
+      const istRange = parseIstDateRange(callDateFrom, callDateTo)
+      const from = istRange?.from
+      const to = istRange?.to
+      if (from && to) {
+        andConditions.push({
+          $or: [
+            { startTime: { $gte: from, $lte: to } },
+            {
+              $and: [
+                { $or: [{ startTime: null }, { startTime: { $exists: false } }] },
+                { createdAt: { $gte: from, $lte: to } },
+              ],
+            },
+          ],
+        })
+      }
+    }
+
+    if (andConditions.length === 1) {
+      Object.assign(filter, andConditions[0])
+    } else if (andConditions.length > 1) {
+      filter.$and = andConditions
     }
 
     applyCallLogBranchScope(filter, req)

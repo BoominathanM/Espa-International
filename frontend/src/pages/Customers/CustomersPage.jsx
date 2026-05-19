@@ -487,7 +487,7 @@ const Customers = () => {
               placeholder="Branches (all if empty)"
               value={filterBranches}
               onChange={setFilterBranches}
-              style={{ minWidth: 200 }}
+              style={{ minWidth: 300 }}
             >
               {branches.map((b) => (
                 <Option key={b._id} value={b._id}>

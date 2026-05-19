@@ -9,6 +9,7 @@ import {
   Modal,
   Spin,
   App,
+  DatePicker,
 } from 'antd'
 import {
   PlayCircleOutlined,
@@ -28,6 +29,19 @@ import dayjs from 'dayjs'
 import './CallsPage.css'
 
 const { Option } = Select
+const { RangePicker } = DatePicker
+
+/** Match backend/Ozonetel IST display (UTC+5:30) without dayjs utc plugin. */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
+
+const formatCallDateTime = (value) => {
+  if (!value) return '-'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '-'
+  const ist = new Date(d.getTime() + IST_OFFSET_MS)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth() + 1)}-${pad(ist.getUTCDate())} ${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}`
+}
 
 const formatDuration = (seconds) => {
   if (seconds == null || seconds === 0) return '00:00'
@@ -78,6 +92,7 @@ const Calls = () => {
   const [filterType, setFilterType] = useState(undefined)
   const [filterStatus, setFilterStatus] = useState(undefined)
   const [filterBranches, setFilterBranches] = useState([])
+  const [filterCallDateRange, setFilterCallDateRange] = useState(null)
   const [searchInput, setSearchInput] = useState('')
   const [searchText, setSearchText] = useState('')
   const [callPage, setCallPage] = useState(1)
@@ -96,6 +111,14 @@ const Calls = () => {
     status: filterStatus || undefined,
     search: searchText?.trim() || undefined,
     branch: filterBranches.length ? filterBranches : undefined,
+    callDateFrom:
+      filterCallDateRange?.[0] && filterCallDateRange?.[1]
+        ? dayjs(filterCallDateRange[0]).format('YYYY-MM-DD')
+        : undefined,
+    callDateTo:
+      filterCallDateRange?.[0] && filterCallDateRange?.[1]
+        ? dayjs(filterCallDateRange[1]).format('YYYY-MM-DD')
+        : undefined,
   })
 
   const { data: branchesData } = useGetBranchesQuery()
@@ -119,7 +142,7 @@ const Calls = () => {
       branch: getBranchDisplay(log),
       status: normalizeCallRecordStatus(log.call_status || '-'),
       recordingUrl: log.recording_url,
-      date: log.start_time ? dayjs(log.start_time).format('YYYY-MM-DD HH:mm') : dayjs(log.createdAt).format('YYYY-MM-DD HH:mm'),
+      date: log.start_time ? formatCallDateTime(log.start_time) : formatCallDateTime(log.createdAt),
       leadLinked: !!log.lead,
       leadId: log.lead?._id,
       leadStatus: log.lead?.status || '',
@@ -275,6 +298,21 @@ const Calls = () => {
     setFilterBranches(value || [])
   }
 
+  const handleFilterCallDateRangeChange = (dates) => {
+    setCallPage(1)
+    setFilterCallDateRange(dates)
+  }
+
+  const handleClearFilters = () => {
+    setCallPage(1)
+    setFilterType(undefined)
+    setFilterStatus(undefined)
+    setFilterBranches([])
+    setFilterCallDateRange(null)
+    setSearchInput('')
+    setSearchText('')
+  }
+
   const handleRefreshCalls = async () => {
     try {
       await refetchCalls()
@@ -341,7 +379,7 @@ const Calls = () => {
               onChange={handleFilterBranchesChange}
               maxTagCount="responsive"
               optionFilterProp="children"
-              style={{ minWidth: isMobile ? 140 : 200 }}
+              style={{ minWidth: isMobile ? "100%" : 300 }}
               size={isMobile ? 'small' : 'middle'}
             >
               {branchOptions.map((opt) => (
@@ -365,6 +403,14 @@ const Calls = () => {
       {showFilters && (
         <ContentCard staggerIndex={0} compact>
           <div className="ds-filters-row ds-filters-row--responsive">
+            <RangePicker
+              className="ds-filter-fixed"
+              value={filterCallDateRange}
+              onChange={handleFilterCallDateRangeChange}
+              allowClear
+              format="YYYY-MM-DD"
+              placeholder={['Call date from', 'Call date to']}
+            />
             <Select className="ds-filter-fixed" placeholder="Filter by Type" allowClear value={filterType} onChange={handleFilterTypeChange}>
               <Option value="Inbound">Inbound</Option>
               <Option value="Outbound">Outbound</Option>
@@ -373,6 +419,7 @@ const Calls = () => {
               <Option value="Answered">Answered</Option>
               <Option value="Missed">Missed</Option>
             </Select>
+            <Button onClick={handleClearFilters}>Clear filters</Button>
           </div>
         </ContentCard>
       )}

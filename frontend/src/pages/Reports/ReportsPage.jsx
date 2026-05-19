@@ -1723,7 +1723,7 @@ const Reports = () => {
               onChange={setReportType}
               className="ds-report-toolbar-select"
               size={isMobile ? 'small' : 'middle'}
-              style={{ minWidth: 200 }}
+              style={{ minWidth: 300 }}
             >
               <Option value="lead">Lead performance</Option>
               <Option value="appointment">Appointment performance</Option>

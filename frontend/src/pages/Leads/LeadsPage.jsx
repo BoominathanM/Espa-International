@@ -556,7 +556,7 @@ const Leads = () => {
         slot_time: values.slot_time || '',
         spa_package: values.spa_package || '',
         assignedTo: values.assignedTo || null,
-        notes: values.notes?.trim() || '',
+        notes: values.notes.trim(),
         ...(callLeadMeta || {}),
       }
 
@@ -900,7 +900,7 @@ const Leads = () => {
               placeholder="Branches (all if empty)"
               value={filterBranches}
               onChange={setFilterBranches}
-              style={{ minWidth: 200 }}
+              style={{ minWidth: 300 }}
             >
               {branches.map((branch) => (
                 <Option key={branch._id || branch.id} value={branch._id || branch.id}>
@@ -1176,8 +1176,15 @@ const Leads = () => {
               </Form.Item>
             </Col>
             <Col span={24}>
-              <Form.Item name="notes" label="Notes">
-                <Input.TextArea rows={3} placeholder="Internal notes" />
+              <Form.Item
+                name="notes"
+                label="Notes"
+                rules={[
+                  { required: true, message: 'Required' },
+                  { whitespace: true, message: 'Required' },
+                ]}
+              >
+                <Input.TextArea rows={3} placeholder="Internal notes (required)" />
               </Form.Item>
             </Col>
           </Row>

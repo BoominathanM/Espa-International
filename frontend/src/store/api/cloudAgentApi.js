@@ -17,7 +17,7 @@ export const cloudAgentApi = apiSlice.injectEndpoints({
     }),
     getCallLogs: builder.query({
       query: (params = {}) => {
-        const { page, limit, type, status, agentId, search, branch } = params
+        const { page, limit, type, status, agentId, search, branch, callDateFrom, callDateTo } = params
         const queryParams = new URLSearchParams()
         if (page) queryParams.append('page', page)
         if (limit) queryParams.append('limit', limit)
@@ -25,6 +25,8 @@ export const cloudAgentApi = apiSlice.injectEndpoints({
         if (status) queryParams.append('status', status)
         if (agentId) queryParams.append('agentId', agentId)
         if (search) queryParams.append('search', search)
+        if (callDateFrom) queryParams.append('callDateFrom', callDateFrom)
+        if (callDateTo) queryParams.append('callDateTo', callDateTo)
         appendBranchQueryParams(queryParams, branch)
         const qs = queryParams.toString()
         return `/cloudagent/call-logs${qs ? `?${qs}` : ''}`
