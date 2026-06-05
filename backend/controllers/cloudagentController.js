@@ -1,11 +1,45 @@
 import axios from 'axios'
 import CallLog from '../models/CallLog.js'
+import User from '../models/User.js'
 import OzonetelSettings from '../models/OzonetelSettings.js'
 import { applyCallLogBranchScope } from '../utils/branchAccess.js'
 import { parseIstDateRange } from '../utils/istDateRange.js'
 import { normalizeOzonetelAgentId, formatCallStatusLabel } from '../utils/ozonetelFields.js'
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Match Ozonetel agentId on CallLog (exact + numeric leading-zero variants). */
+const buildAgentIdMatch = (agentIdRaw) => {
+  const key = normalizeOzonetelAgentId(agentIdRaw)
+  if (!key) return null
+  const conditions = [{ agentId: key }]
+  if (/^\d+$/.test(key)) {
+    const normKey = key.replace(/^0+/, '') || '0'
+    conditions.push({ agentId: new RegExp(`^0*${escapeRegExp(normKey)}$`) })
+  }
+  return conditions.length === 1 ? conditions[0] : { $or: conditions }
+}
+
+const buildAgentUserFilter = async (agentUserId) => {
+  if (!agentUserId || !String(agentUserId).trim()) return null
+  const user = await User.findById(String(agentUserId).trim())
+    .select('name cloudAgentAgentId status')
+    .lean()
+  if (!user || user.status !== 'active') return { _id: { $exists: false } }
+
+  const orConditions = []
+  const ozId = normalizeOzonetelAgentId(user.cloudAgentAgentId)
+  if (ozId) {
+    const idMatch = buildAgentIdMatch(ozId)
+    if (idMatch) orConditions.push(idMatch)
+  }
+  const name = String(user.name || '').trim()
+  if (name) {
+    orConditions.push({ agentName: new RegExp(`^${escapeRegExp(name)}$`, 'i') })
+  }
+  if (!orConditions.length) return { _id: { $exists: false } }
+  return orConditions.length === 1 ? orConditions[0] : { $or: orConditions }
+}
 
 async function getCloudAgentConfig() {
   try {
@@ -109,15 +143,21 @@ export const getCampaigns = async (req, res) => {
  */
 export const getCallLogs = async (req, res) => {
   try {
-    const { page = 1, limit = 50, type, status, agentId, search, callDateFrom, callDateTo } = req.query
+    const { page = 1, limit = 50, type, status, agentId, agentUserId, search, callDateFrom, callDateTo } = req.query
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * Math.min(100, Math.max(1, parseInt(limit, 10)))
 
     const filter = {}
     const andConditions = []
 
     if (type && String(type).trim()) {
-      const normalizedType = String(type).trim()
-      filter.type = { $regex: `^${escapeRegExp(normalizedType)}$`, $options: 'i' }
+      const normalizedType = String(type).trim().toLowerCase()
+      if (normalizedType === 'inbound') {
+        filter.type = { $regex: '^in\\s*-?\\s*bound$', $options: 'i' }
+      } else if (normalizedType === 'manual') {
+        filter.type = { $in: [/^manual$/i, /^outbound$/i] }
+      } else {
+        filter.type = { $regex: `^${escapeRegExp(String(type).trim())}$`, $options: 'i' }
+      }
     }
     if (status && String(status).trim()) {
       const normalizedStatus = String(status).trim().toLowerCase()
@@ -142,7 +182,13 @@ export const getCallLogs = async (req, res) => {
         filter.callStatus = { $regex: `^${escapeRegExp(String(status).trim())}$`, $options: 'i' }
       }
     }
-    if (agentId) filter.agentId = agentId
+    if (agentUserId && String(agentUserId).trim()) {
+      const agentUserFilter = await buildAgentUserFilter(agentUserId)
+      if (agentUserFilter) andConditions.push(agentUserFilter)
+    } else if (agentId && String(agentId).trim()) {
+      const idMatch = buildAgentIdMatch(agentId)
+      if (idMatch) andConditions.push(idMatch)
+    }
     if (search && search.trim()) {
       andConditions.push({
         $or: [

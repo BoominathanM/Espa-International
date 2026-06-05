@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -24,6 +24,7 @@ import { useResponsive } from '../../hooks/useResponsive'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import { useGetCallLogsQuery } from '../../store/api/cloudAgentApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
+import { useGetUsersQuery } from '../../store/api/userApi'
 import { useMergeCallAudioMutation } from '../../store/api/leadApi'
 import dayjs from 'dayjs'
 import './CallsPage.css'
@@ -65,6 +66,27 @@ const getBranchDisplay = (log) => {
   return names.length ? names.join(', ') : null
 }
 
+/** Ozonetel sends InBound / Manual (not always Inbound / Outbound). Matches cloudagentController type filter. */
+const normalizeCallType = (raw) => {
+  const s = String(raw ?? '').trim()
+  if (!s) return '-'
+  if (/^in[\s-]?bound$/i.test(s)) return 'Inbound'
+  if (/^manual$/i.test(s)) return 'Manual'
+  if (/^outbound$/i.test(s)) return 'Manual'
+  return s
+}
+
+const getCallTypeTagColor = (type) => {
+  if (type === 'Inbound') return 'green'
+  if (type === 'Manual') return 'blue'
+  return 'default'
+}
+
+const CALL_TYPE_FILTER_OPTIONS = [
+  { value: 'Inbound', label: 'Inbound' },
+  { value: 'Manual', label: 'Manual (outbound)' },
+]
+
 /** Aligns provider spellings with CRM labels (Answered / Missed). Matches cloudagentController status filter. */
 const normalizeCallRecordStatus = (raw) => {
   const s = String(raw ?? '').trim()
@@ -91,6 +113,7 @@ const Calls = () => {
   const [showFilters, setShowFilters] = useState(false)
   const [filterType, setFilterType] = useState(undefined)
   const [filterStatus, setFilterStatus] = useState(undefined)
+  const [filterAgent, setFilterAgent] = useState(undefined)
   const [filterBranches, setFilterBranches] = useState([])
   const [filterCallDateRange, setFilterCallDateRange] = useState(null)
   const [searchInput, setSearchInput] = useState('')
@@ -98,6 +121,19 @@ const Calls = () => {
   const [callPage, setCallPage] = useState(1)
   const [callPageSize, setCallPageSize] = useState(10)
   const [mergeCallAudio, { isLoading: mergeAudioLoading }] = useMergeCallAudioMutation()
+  const recordingAudioRef = useRef(null)
+
+  const stopRecordingPlayback = useCallback(() => {
+    const audio = recordingAudioRef.current
+    if (!audio) return
+    audio.pause()
+    audio.currentTime = 0
+  }, [])
+
+  const handleCloseRecording = useCallback(() => {
+    stopRecordingPlayback()
+    setIsRecordingVisible(false)
+  }, [stopRecordingPlayback])
 
   const {
     data: callLogsData,
@@ -109,6 +145,7 @@ const Calls = () => {
     limit: callPageSize,
     type: filterType || undefined,
     status: filterStatus || undefined,
+    agentUserId: filterAgent || undefined,
     search: searchText?.trim() || undefined,
     branch: filterBranches.length ? filterBranches : undefined,
     callDateFrom:
@@ -122,10 +159,26 @@ const Calls = () => {
   })
 
   const { data: branchesData } = useGetBranchesQuery()
+  const { data: usersData } = useGetUsersQuery()
   const branchOptions = useMemo(() => {
     const list = branchesData?.branches ?? []
     return list.map((b) => ({ value: b._id || b.id, label: b.name }))
   }, [branchesData])
+  const agentOptions = useMemo(() => {
+    const list = (usersData?.users ?? []).filter((u) => u.status === 'active')
+    return list
+      .map((u) => {
+        const id = u._id || u.id
+        const name = String(u.name || '').trim() || 'Unnamed'
+        const ozId = String(u.cloudAgentAgentId || '').trim()
+        return {
+          value: id,
+          label: ozId ? `${name} (${ozId})` : name,
+          sortKey: name.toLowerCase(),
+        }
+      })
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+  }, [usersData])
 
   const callLogs = callLogsData?.callLogs || []
   const pagination = callLogsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
@@ -134,7 +187,7 @@ const Calls = () => {
     return callLogs.map((log) => ({
       key: log._id,
       _id: log._id,
-      type: log.call_type || 'Outbound',
+      type: normalizeCallType(log.call_type),
       phoneNumber: log.customer_number || '-',
       duration: formatDuration(log.duration_seconds),
       durationSeconds: log.duration_seconds,
@@ -156,12 +209,9 @@ const Calls = () => {
       dataIndex: 'type',
       key: 'type',
       render: (type) => (
-        <Tag color={type === 'Inbound' ? 'green' : 'blue'}>{type}</Tag>
+        <Tag color={getCallTypeTagColor(type)}>{type}</Tag>
       ),
-      filters: [
-        { text: 'Inbound', value: 'Inbound' },
-        { text: 'Outbound', value: 'Outbound' },
-      ],
+      filters: CALL_TYPE_FILTER_OPTIONS.map((opt) => ({ text: opt.label, value: opt.value })),
       onFilter: (value, record) => record.type === value,
     },
     {
@@ -293,6 +343,11 @@ const Calls = () => {
     setFilterStatus(value)
   }
 
+  const handleFilterAgentChange = (value) => {
+    setCallPage(1)
+    setFilterAgent(value)
+  }
+
   const handleFilterBranchesChange = (value) => {
     setCallPage(1)
     setFilterBranches(value || [])
@@ -307,6 +362,7 @@ const Calls = () => {
     setCallPage(1)
     setFilterType(undefined)
     setFilterStatus(undefined)
+    setFilterAgent(undefined)
     setFilterBranches([])
     setFilterCallDateRange(null)
     setSearchInput('')
@@ -349,6 +405,12 @@ const Calls = () => {
 
     return () => clearTimeout(timeoutId)
   }, [searchInput])
+
+  useEffect(() => {
+    if (!isRecordingVisible) {
+      stopRecordingPlayback()
+    }
+  }, [isRecordingVisible, stopRecordingPlayback])
 
   return (
     <PageLayout className="mgmt-page">
@@ -412,12 +474,30 @@ const Calls = () => {
               placeholder={['Call date from', 'Call date to']}
             />
             <Select className="ds-filter-fixed" placeholder="Filter by Type" allowClear value={filterType} onChange={handleFilterTypeChange}>
-              <Option value="Inbound">Inbound</Option>
-              <Option value="Outbound">Outbound</Option>
+              {CALL_TYPE_FILTER_OPTIONS.map((opt) => (
+                <Option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </Option>
+              ))}
             </Select>
             <Select className="ds-filter-fixed" placeholder="Filter by Status" allowClear value={filterStatus} onChange={handleFilterStatusChange}>
               <Option value="Answered">Answered</Option>
               <Option value="Missed">Missed</Option>
+            </Select>
+            <Select
+              className="ds-filter-fixed"
+              placeholder="Filter by Agent"
+              allowClear
+              showSearch
+              optionFilterProp="children"
+              value={filterAgent}
+              onChange={handleFilterAgentChange}
+            >
+              {agentOptions.map((opt) => (
+                <Option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </Option>
+              ))}
             </Select>
             <Button onClick={handleClearFilters}>Clear filters</Button>
           </div>
@@ -474,7 +554,9 @@ const Calls = () => {
       <Modal
         title="Call Recording"
         open={isRecordingVisible}
-        onCancel={() => setIsRecordingVisible(false)}
+        onCancel={handleCloseRecording}
+        afterClose={stopRecordingPlayback}
+        destroyOnClose
         footer={null}
         width={isMobile ? '95%' : 600}
       >
@@ -491,7 +573,12 @@ const Calls = () => {
             </p>
             {selectedCall.recordingUrl ? (
               <div style={{ marginTop: 16 }}>
-                <audio controls style={{ width: '100%' }}>
+                <audio
+                  ref={recordingAudioRef}
+                  key={selectedCall._id}
+                  controls
+                  style={{ width: '100%' }}
+                >
                   <source src={selectedCall.recordingUrl} type="audio/mpeg" />
                   Your browser does not support the audio element.
                 </audio>

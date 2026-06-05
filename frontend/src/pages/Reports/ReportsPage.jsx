@@ -1709,7 +1709,7 @@ const Reports = () => {
                 className="ds-report-toolbar-select"
                 size={isMobile ? 'small' : 'middle'}
                 placeholder="Branches (all if empty)"
-                style={{ minWidth: isMobile ? 160 : 220 }}
+                style={{ minWidth: isMobile ? 160 : 300 }}
               >
                 {branches.map((b) => (
                   <Option key={b._id} value={b._id}>

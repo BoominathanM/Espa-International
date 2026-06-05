@@ -56,6 +56,7 @@ import {
   useSyncAskEvaAppointmentsMutation,
 } from '../../store/api/leadApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
+import { useGetUsersQuery } from '../../store/api/userApi'
 import dayjs from 'dayjs'
 import './AppointmentBookingsPage.css'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
@@ -73,6 +74,15 @@ import {
 } from '../../constants/appointments'
 
 const { Option } = Select
+
+const FILTER_ASSIGNED_UNASSIGNED = '__unassigned__'
+
+const getAssignedToId = (lead) => {
+  if (!lead?.assignedTo) return null
+  if (typeof lead.assignedTo === 'object') return lead.assignedTo._id || lead.assignedTo.id || null
+  const s = String(lead.assignedTo).trim()
+  return s && s !== 'undefined' && s !== 'null' ? s : null
+}
 
 const APPOINTMENT_TAB_STATUS = {
   current: ['New', 'In Progress'],
@@ -645,6 +655,7 @@ const AppointmentBookingsPage = () => {
   const [filterSource, setFilterSource] = useState(undefined)
   const [filterSlot, setFilterSlot] = useState(undefined)
   const [filterStatuses, setFilterStatuses] = useState([])
+  const [filterAssignedTo, setFilterAssignedTo] = useState(undefined)
   const [listPage, setListPage] = useState(1)
 
   const dateStr = selectedDate.format('YYYY-MM-DD')
@@ -655,6 +666,7 @@ const AppointmentBookingsPage = () => {
     appointmentDate: dateStr,
     source: filterSource || undefined,
     branch: queryBranch,
+    assignedTo: filterAssignedTo || undefined,
     page: 1,
     limit: 500,
   })
@@ -666,18 +678,30 @@ const AppointmentBookingsPage = () => {
     appointmentDateTo: monthTo,
     source: filterSource || undefined,
     branch: queryBranch,
+    assignedTo: filterAssignedTo || undefined,
     page: 1,
     limit: 1000,
   })
 
   const { data: branchesData } = useGetBranchesQuery()
+  const { data: usersData } = useGetUsersQuery()
   const [createLead, { isLoading: createLoading }] = useCreateLeadMutation()
   const [updateLead, { isLoading: updateLoading }] = useUpdateLeadMutation()
   const [syncAskEvaAppointments, { isLoading: syncAskEvaLoading }] = useSyncAskEvaAppointmentsMutation()
 
   const branches = branchesData?.branches || []
+  const users = (usersData?.users || []).filter((u) => u.status === 'active')
   const leads = leadsData?.leads || []
   const monthLeads = monthLeadsData?.leads || []
+
+  const matchesAgentFilter = useMemo(() => {
+    return (lead) => {
+      if (!filterAssignedTo) return true
+      const aid = getAssignedToId(lead)
+      if (filterAssignedTo === FILTER_ASSIGNED_UNASSIGNED) return !aid
+      return String(aid) === String(filterAssignedTo)
+    }
+  }, [filterAssignedTo])
 
   const filteredByTab = useMemo(() => {
     const statuses = APPOINTMENT_TAB_STATUS[listTab]
@@ -694,9 +718,10 @@ const AppointmentBookingsPage = () => {
       if (filterSource && l.source !== filterSource) return false
       if (filterStatuses.length && !filterStatuses.includes(l.status)) return false
       if (filterSlot && (l.slot_time || '') !== filterSlot) return false
+      if (!matchesAgentFilter(l)) return false
       return true
     })
-  }, [leads, filterBranches, filterSource, filterSlot, filterStatuses])
+  }, [leads, filterBranches, filterSource, filterSlot, filterStatuses, matchesAgentFilter])
 
   const listAttributeFiltered = useMemo(() => {
     return filteredByTab.filter((l) => {
@@ -707,9 +732,10 @@ const AppointmentBookingsPage = () => {
       if (filterSource && l.source !== filterSource) return false
       if (filterStatuses.length && !filterStatuses.includes(l.status)) return false
       if (filterSlot && (l.slot_time || '') !== filterSlot) return false
+      if (!matchesAgentFilter(l)) return false
       return true
     })
-  }, [filteredByTab, filterBranches, filterSource, filterSlot, filterStatuses])
+  }, [filteredByTab, filterBranches, filterSource, filterSlot, filterStatuses, matchesAgentFilter])
 
   const searchFiltered = useMemo(() => {
     const base = activeView === 'calendar' ? calendarBaseFiltered : listAttributeFiltered
@@ -740,6 +766,7 @@ const AppointmentBookingsPage = () => {
     setFilterSource(undefined)
     setFilterSlot(undefined)
     setFilterStatuses([])
+    setFilterAssignedTo(undefined)
     setListPage(1)
   }
 
@@ -791,6 +818,7 @@ const AppointmentBookingsPage = () => {
       preferredAppointmentDate: record.appointment_date ? dayjs(record.appointment_date) : null,
       preferredSlotTime: record.slot_time,
       description: record.message || '',
+      assignedTo: getAssignedToId(record) || undefined,
     })
     setNewAppointmentOpen(true)
   }
@@ -811,6 +839,7 @@ const AppointmentBookingsPage = () => {
           : null,
         slot_time: values.preferredSlotTime || '',
         message: (values.description || '').trim(),
+        assignedTo: values.assignedTo,
         source: 'Add',
         status: 'New',
       }
@@ -955,12 +984,13 @@ const AppointmentBookingsPage = () => {
       if (!l?.appointment_date) return
       if (filterStatuses.length && !filterStatuses.includes(l.status)) return
       if (filterSlot && (l.slot_time || '') !== filterSlot) return
+      if (!matchesAgentFilter(l)) return
       const d = dayjs(l.appointment_date)
       if (!d.isValid()) return
       set.add(d.format('YYYY-MM-DD'))
     })
     return set
-  }, [monthLeads, filterSlot, filterStatuses])
+  }, [monthLeads, filterSlot, filterStatuses, matchesAgentFilter])
 
   const calendarCellRender = (current, info) => {
     if (info.type !== 'date') return info.originNode
@@ -1080,6 +1110,26 @@ const AppointmentBookingsPage = () => {
               {branches.map((b) => (
                 <Option key={b._id || b.id} value={b._id || b.id}>
                   {b.name}
+                </Option>
+              ))}
+            </Select>
+            <Select
+              className="ds-filter-fixed"
+              placeholder="Agent (all)"
+              allowClear
+              showSearch
+              optionFilterProp="children"
+              value={filterAssignedTo}
+              onChange={(v) => {
+                setFilterAssignedTo(v)
+                setListPage(1)
+              }}
+              style={{ minWidth: 180 }}
+            >
+              <Option value={FILTER_ASSIGNED_UNASSIGNED}>Unassigned</Option>
+              {users.map((user) => (
+                <Option key={user._id || user.id} value={user._id || user.id}>
+                  {user.name}
                 </Option>
               ))}
             </Select>
@@ -1451,6 +1501,19 @@ const AppointmentBookingsPage = () => {
                 {branches.map((b) => (
                   <Option key={b._id || b.id} value={b._id || b.id}>
                     {b.name}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item
+              name="assignedTo"
+              label="Agent"
+              rules={[{ required: true, message: 'Please select an agent' }]}
+            >
+              <Select placeholder="Select agent" showSearch optionFilterProp="children" style={{ borderRadius: 6 }}>
+                {users.map((user) => (
+                  <Option key={user._id || user.id} value={user._id || user.id}>
+                    {user.name} ({user.email})
                   </Option>
                 ))}
               </Select>
