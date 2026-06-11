@@ -1,7 +1,8 @@
 import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
 import User from '../models/User.js'
-import { getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
+import { applyCallLogBranchScope, getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
+import { parseIstDateRange } from '../utils/istDateRange.js'
 import { normalizeOzonetelAgentId, bucketCallStatus, formatCallStatusLabel } from '../utils/ozonetelFields.js'
 import { normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
 
@@ -39,6 +40,93 @@ function parseRange(req) {
   return { from, to, start, end }
 }
 
+/** Same call date + branch scope as GET /api/cloudagent/call-logs (IST day, CallLog.branches). */
+function buildCallLogReportFilter(req, from, to) {
+  const filter = {}
+  const andConditions = []
+
+  const istRange = parseIstDateRange(from, to)
+  if (istRange?.from && istRange?.to) {
+    andConditions.push({
+      $or: [
+        { startTime: { $gte: istRange.from, $lte: istRange.to } },
+        {
+          $and: [
+            { $or: [{ startTime: null }, { startTime: { $exists: false } }] },
+            { createdAt: { $gte: istRange.from, $lte: istRange.to } },
+          ],
+        },
+      ],
+    })
+  }
+
+  if (andConditions.length === 1) {
+    Object.assign(filter, andConditions[0])
+  } else if (andConditions.length > 1) {
+    filter.$and = andConditions
+  }
+
+  applyCallLogBranchScope(filter, req)
+  return filter
+}
+
+const EXPORT_DETAIL_CAP = 15000
+const SUMMARY_DETAIL_CAP = 500
+
+/** Which DB work to run for the active report tab (avoids loading every section on every request). */
+function resolveReportNeeds(reportTypeRaw) {
+  const t = String(reportTypeRaw || 'lead').trim().toLowerCase()
+  if (t === 'all') {
+    return {
+      leadCore: true,
+      leadDetails: true,
+      appointment: true,
+      agentCore: true,
+      agentDetails: true,
+      callCore: true,
+      callDetails: true,
+      branch: true,
+      repeat: true,
+    }
+  }
+  return {
+    leadCore: t === 'lead',
+    leadDetails: t === 'lead' || t === 'branch',
+    appointment: t === 'appointment',
+    agentCore: t === 'agent',
+    agentDetails: t === 'agent',
+    callCore: t === 'call',
+    callDetails: t === 'call',
+    branch: t === 'branch',
+    repeat: t === 'repeat',
+    // Agent tab needs call counts grouped by agent name
+    callStatsForAgent: t === 'agent',
+  }
+}
+
+async function aggregateCallLogStats(callLogFilter) {
+  const [facet] = await CallLog.aggregate([
+    { $match: callLogFilter },
+    {
+      $facet: {
+        byType: [{ $group: { _id: '$type', count: { $sum: 1 } } }],
+        byStatus: [{ $group: { _id: '$callStatus', count: { $sum: 1 } } }],
+        total: [{ $count: 'n' }],
+        byAgent: [
+          { $match: { agentName: { $nin: ['', null] } } },
+          { $group: { _id: '$agentName', calls: { $sum: 1 } } },
+        ],
+      },
+    },
+  ])
+  return {
+    callTypeAgg: facet?.byType || [],
+    callStatusAgg: facet?.byStatus || [],
+    totalCallsInRange: facet?.total?.[0]?.n || 0,
+    agentCalls: facet?.byAgent || [],
+  }
+}
+
 const SOURCE_COLORS = {
   IVR: '#531dab',
   'Walk-in': '#2f54eb',
@@ -59,17 +147,107 @@ const SOURCE_COLORS = {
  */
 export const getReports = async (req, res) => {
   try {
+    const needs = resolveReportNeeds(req.query.reportType)
+    const detailsMode = String(req.query.details || 'summary').toLowerCase() === 'export' ? 'export' : 'summary'
+    const detailCap = detailsMode === 'export' ? EXPORT_DETAIL_CAP : SUMMARY_DETAIL_CAP
+
     const branchFilter = buildLeadBranchFilter(req)
     const { start, end, from, to } = parseRange(req)
     const createdMatch = { ...branchFilter, createdAt: { $gte: start, $lte: end } }
 
-    // CallLog schema fields are camelCase: startTime, type, callStatus, agentName (not start_time / call_type / …)
-    const callTimeMatch = { startTime: { $gte: start, $lte: end } }
-    let callLeadFilter = {}
-    if (branchFilter.branch) {
-      const ids = await Lead.find({ branch: branchFilter.branch }).distinct('_id')
-      callLeadFilter = { lead: { $in: ids } }
-    }
+    const callLogFilter = buildCallLogReportFilter(req, from, to)
+    const needCallFacet = needs.callCore || needs.callStatsForAgent
+
+    const phase1 = await Promise.all([
+      needs.leadCore
+        ? Lead.aggregate([
+            { $match: createdMatch },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                converted: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
+                lost: { $sum: { $cond: [{ $eq: ['$status', 'Lost'] }, 1, 0] } },
+              },
+            },
+          ])
+        : Promise.resolve([]),
+      needs.leadCore
+        ? Lead.aggregate([
+            { $match: createdMatch },
+            {
+              $group: {
+                _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+                total: { $sum: 1 },
+                converted: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
+                lost: { $sum: { $cond: [{ $eq: ['$status', 'Lost'] }, 1, 0] } },
+              },
+            },
+            { $sort: { _id: 1 } },
+          ])
+        : Promise.resolve([]),
+      needs.leadCore
+        ? Lead.aggregate([
+            { $match: createdMatch },
+            { $group: { _id: { $ifNull: ['$source', 'Other'] }, count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ])
+        : Promise.resolve([]),
+      needs.agentCore
+        ? Lead.aggregate([
+            { $match: { ...createdMatch, assignedTo: { $ne: null } } },
+            {
+              $group: {
+                _id: '$assignedTo',
+                leads: { $sum: 1 },
+                converted: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
+              },
+            },
+            { $sort: { leads: -1 } },
+            { $limit: 20 },
+            {
+              $lookup: {
+                from: 'users',
+                localField: '_id',
+                foreignField: '_id',
+                as: 'user',
+              },
+            },
+            { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+          ])
+        : Promise.resolve([]),
+      needs.branch
+        ? Lead.aggregate([
+            { $match: createdMatch },
+            {
+              $group: {
+                _id: '$branch',
+                leads: { $sum: 1 },
+                converted: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
+                lost: { $sum: { $cond: [{ $eq: ['$status', 'Lost'] }, 1, 0] } },
+              },
+            },
+            {
+              $lookup: {
+                from: 'branches',
+                localField: '_id',
+                foreignField: '_id',
+                as: 'b',
+              },
+            },
+            { $unwind: { path: '$b', preserveNullAndEmptyArrays: true } },
+            { $sort: { leads: -1 } },
+          ])
+        : Promise.resolve([]),
+      needCallFacet ? aggregateCallLogStats(callLogFilter) : Promise.resolve(null),
+      needs.repeat
+        ? Lead.aggregate([
+            { $match: createdMatch },
+            { $match: { phone: { $nin: ['', null] } } },
+            { $group: { _id: '$phone', n: { $sum: 1 } } },
+          ])
+        : Promise.resolve([]),
+    ])
 
     const [
       totalsAgg,
@@ -77,90 +255,14 @@ export const getReports = async (req, res) => {
       sourceAgg,
       agentLeadAgg,
       branchAgg,
-      callTypeAgg,
-      callStatusAgg,
-      totalCallsInRange,
+      callStats,
       phoneBuckets,
-    ] = await Promise.all([
-      Lead.aggregate([
-        { $match: createdMatch },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: 1 },
-            converted: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
-            lost: { $sum: { $cond: [{ $eq: ['$status', 'Lost'] }, 1, 0] } },
-          },
-        },
-      ]),
-      Lead.aggregate([
-        { $match: createdMatch },
-        {
-          $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-            total: { $sum: 1 },
-            converted: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
-            lost: { $sum: { $cond: [{ $eq: ['$status', 'Lost'] }, 1, 0] } },
-          },
-        },
-        { $sort: { _id: 1 } },
-      ]),
-      Lead.aggregate([
-        { $match: createdMatch },
-        { $group: { _id: { $ifNull: ['$source', 'Other'] }, count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
-      ]),
-      Lead.aggregate([
-        { $match: { ...createdMatch, assignedTo: { $ne: null } } },
-        {
-          $group: {
-            _id: '$assignedTo',
-            leads: { $sum: 1 },
-            converted: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
-          },
-        },
-        { $sort: { leads: -1 } },
-        { $limit: 20 },
-        {
-          $lookup: {
-            from: 'users',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'user',
-          },
-        },
-        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-      ]),
-      Lead.aggregate([
-        { $match: createdMatch },
-        {
-          $group: {
-            _id: '$branch',
-            leads: { $sum: 1 },
-            converted: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
-            lost: { $sum: { $cond: [{ $eq: ['$status', 'Lost'] }, 1, 0] } },
-          },
-        },
-        {
-          $lookup: {
-            from: 'branches',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'b',
-          },
-        },
-        { $unwind: { path: '$b', preserveNullAndEmptyArrays: true } },
-        { $sort: { leads: -1 } },
-      ]),
-      CallLog.aggregate([{ $match: { ...callTimeMatch, ...callLeadFilter } }, { $group: { _id: '$type', count: { $sum: 1 } } }]),
-      CallLog.aggregate([{ $match: { ...callTimeMatch, ...callLeadFilter } }, { $group: { _id: '$callStatus', count: { $sum: 1 } } }]),
-      CallLog.countDocuments({ ...callTimeMatch, ...callLeadFilter }),
-      Lead.aggregate([
-        { $match: createdMatch },
-        { $match: { phone: { $nin: ['', null] } } },
-        { $group: { _id: '$phone', n: { $sum: 1 } } },
-      ]),
-    ])
+    ] = phase1
+
+    const callTypeAgg = callStats?.callTypeAgg || []
+    const callStatusAgg = callStats?.callStatusAgg || []
+    const totalCallsInRange = callStats?.totalCallsInRange || 0
+    const agentCallsFromFacet = callStats?.agentCalls || []
 
     const t = totalsAgg[0] || { total: 0, converted: 0, lost: 0 }
     const totalLeads = t.total || 0
@@ -229,17 +331,7 @@ export const getReports = async (req, res) => {
       }))
       .sort((a, b) => b.value - a.value)
 
-    const agentCalls = await CallLog.aggregate([
-      {
-        $match: {
-          ...callTimeMatch,
-          ...callLeadFilter,
-          agentName: { $nin: ['', null] },
-        },
-      },
-      { $group: { _id: '$agentName', calls: { $sum: 1 } } },
-    ])
-    const callsByAgent = Object.fromEntries(agentCalls.map((x) => [x._id, x.calls]))
+    const callsByAgent = Object.fromEntries(agentCallsFromFacet.map((x) => [x._id, x.calls]))
 
     const agentPerformance = agentLeadAgg.map((r) => {
       const name = r.user?.name || 'Unknown'
@@ -317,29 +409,79 @@ export const getReports = async (req, res) => {
     const newCustomers = singlePhone
     const repeatCustomers = multiLeadCount
 
-    // Appointments: filter by appointment_date in range
     const appointmentMatch = {
       ...branchFilter,
       appointment_date: { $ne: null, $gte: start, $lte: end },
     }
-    const [appointmentTotals, appointmentDetails] = await Promise.all([
-      Lead.aggregate([
-        { $match: appointmentMatch },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: 1 },
-            completed: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
-            cancelled: { $sum: { $cond: [{ $eq: ['$status', 'Cancelled'] }, 1, 0] } },
-            rescheduled: { $sum: { $cond: [{ $eq: ['$status', 'Follow-Up'] }, 1, 0] } },
-          },
-        },
-      ]),
-      Lead.find(appointmentMatch)
-        .populate('branch', 'name')
-        .populate('assignedTo', 'name')
-        .sort({ appointment_date: 1, slot_time: 1 })
-        .lean(),
+
+    const needCrmAgents = needs.callDetails || needs.agentDetails
+    const [
+      appointmentTotals,
+      appointmentDetails,
+      leadDetailsRaw,
+      crmAgents,
+      callDetailsRaw,
+      assignedLeadsForAgentRaw,
+      agentCallsByAgentRaw,
+    ] = await Promise.all([
+      needs.appointment
+        ? Lead.aggregate([
+            { $match: appointmentMatch },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                completed: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
+                cancelled: { $sum: { $cond: [{ $eq: ['$status', 'Cancelled'] }, 1, 0] } },
+                rescheduled: { $sum: { $cond: [{ $eq: ['$status', 'Follow-Up'] }, 1, 0] } },
+              },
+            },
+          ])
+        : Promise.resolve([]),
+      needs.appointment
+        ? Lead.find(appointmentMatch)
+            .populate('branch', 'name')
+            .populate('assignedTo', 'name')
+            .sort({ appointment_date: 1, slot_time: 1 })
+            .limit(detailCap + 1)
+            .lean()
+        : Promise.resolve([]),
+      needs.leadDetails
+        ? Lead.find(createdMatch)
+            .populate('branch', 'name')
+            .populate('assignedTo', 'name')
+            .sort({ createdAt: -1 })
+            .limit(detailCap + 1)
+            .lean()
+        : Promise.resolve([]),
+      needCrmAgents
+        ? User.find({ status: 'active' }).select('name email role cloudAgentAgentId').lean()
+        : Promise.resolve([]),
+      needs.callDetails
+        ? CallLog.find(callLogFilter)
+            .populate('branches', 'name')
+            .sort({ startTime: -1, createdAt: -1 })
+            .limit(detailCap + 1)
+            .lean()
+        : Promise.resolve([]),
+      needs.agentDetails
+        ? Lead.find({ ...createdMatch, assignedTo: { $ne: null } })
+            .populate('branch', 'name')
+            .populate('assignedTo', 'name email role cloudAgentAgentId')
+            .sort({ createdAt: -1 })
+            .limit(detailCap + 1)
+            .lean()
+        : Promise.resolve([]),
+      needs.agentDetails
+        ? CallLog.find({
+            ...callLogFilter,
+            agentName: { $nin: ['', null] },
+          })
+            .populate('branches', 'name')
+            .sort({ startTime: -1, createdAt: -1 })
+            .limit(detailCap + 1)
+            .lean()
+        : Promise.resolve([]),
     ])
 
     const apt = appointmentTotals[0] || { total: 0, completed: 0, cancelled: 0, rescheduled: 0 }
@@ -363,15 +505,8 @@ export const getReports = async (req, res) => {
       assignedTo: l.assignedTo?.name || '-',
     }))
 
-    const LEAD_DETAILS_EXPORT_CAP = 15000
-    const leadDetailsRaw = await Lead.find(createdMatch)
-      .populate('branch', 'name')
-      .populate('assignedTo', 'name')
-      .sort({ createdAt: -1 })
-      .limit(LEAD_DETAILS_EXPORT_CAP + 1)
-      .lean()
-    const leadDetailsTruncated = leadDetailsRaw.length > LEAD_DETAILS_EXPORT_CAP
-    const leadDetailsSlice = leadDetailsTruncated ? leadDetailsRaw.slice(0, LEAD_DETAILS_EXPORT_CAP) : leadDetailsRaw
+    const leadDetailsTruncated = leadDetailsRaw.length > detailCap
+    const leadDetailsSlice = leadDetailsTruncated ? leadDetailsRaw.slice(0, detailCap) : leadDetailsRaw
     const leadDetailsTable = leadDetailsSlice.map((l, i) => ({
       key: String(l._id),
       sno: i + 1,
@@ -389,10 +524,6 @@ export const getReports = async (req, res) => {
       spaPackage: l.spa_package || '',
       subject: l.subject || '',
     }))
-
-    const CALL_DETAILS_EXPORT_CAP = 15000
-    const AGENT_DETAIL_EXPORT_CAP = 15000
-    const crmAgents = await User.find({ status: 'active' }).select('name email role cloudAgentAgentId').lean()
     const crmByOzonetelId = new Map()
     const crmByName = new Map()
     for (const u of crmAgents) {
@@ -449,24 +580,13 @@ export const getReports = async (req, res) => {
         callRef: c.monitorUCID || c.callId || '',
       }
     }
-    const callDetailsRaw = await CallLog.find({ ...callTimeMatch, ...callLeadFilter })
-      .populate('branches', 'name')
-      .sort({ startTime: -1 })
-      .limit(CALL_DETAILS_EXPORT_CAP + 1)
-      .lean()
-    const callDetailsTruncated = callDetailsRaw.length > CALL_DETAILS_EXPORT_CAP
-    const callDetailsSlice = callDetailsTruncated ? callDetailsRaw.slice(0, CALL_DETAILS_EXPORT_CAP) : callDetailsRaw
+    const callDetailsTruncated = callDetailsRaw.length > detailCap
+    const callDetailsSlice = callDetailsTruncated ? callDetailsRaw.slice(0, detailCap) : callDetailsRaw
     const callDetailsTable = callDetailsSlice.map(mapCallLogToDetailRow)
 
-    const assignedLeadsForAgentRaw = await Lead.find({ ...createdMatch, assignedTo: { $ne: null } })
-      .populate('branch', 'name')
-      .populate('assignedTo', 'name email role cloudAgentAgentId')
-      .sort({ createdAt: -1 })
-      .limit(AGENT_DETAIL_EXPORT_CAP + 1)
-      .lean()
-    const agentAssignedLeadsTruncated = assignedLeadsForAgentRaw.length > AGENT_DETAIL_EXPORT_CAP
+    const agentAssignedLeadsTruncated = assignedLeadsForAgentRaw.length > detailCap
     const assignedLeadsForAgentSlice = agentAssignedLeadsTruncated
-      ? assignedLeadsForAgentRaw.slice(0, AGENT_DETAIL_EXPORT_CAP)
+      ? assignedLeadsForAgentRaw.slice(0, detailCap)
       : assignedLeadsForAgentRaw
     const agentAssignedLeadsTable = assignedLeadsForAgentSlice.map((l, i) => ({
       key: String(l._id),
@@ -486,19 +606,9 @@ export const getReports = async (req, res) => {
       branch: l.branch?.name || '-',
     }))
 
-    const agentCallsMatch = {
-      ...callTimeMatch,
-      ...callLeadFilter,
-      agentName: { $nin: ['', null] },
-    }
-    const agentCallsByAgentRaw = await CallLog.find(agentCallsMatch)
-      .populate('branches', 'name')
-      .sort({ startTime: -1 })
-      .limit(AGENT_DETAIL_EXPORT_CAP + 1)
-      .lean()
-    const agentCallsByAgentTruncated = agentCallsByAgentRaw.length > AGENT_DETAIL_EXPORT_CAP
+    const agentCallsByAgentTruncated = agentCallsByAgentRaw.length > detailCap
     const agentCallsByAgentSlice = agentCallsByAgentTruncated
-      ? agentCallsByAgentRaw.slice(0, AGENT_DETAIL_EXPORT_CAP)
+      ? agentCallsByAgentRaw.slice(0, detailCap)
       : agentCallsByAgentRaw
     const agentCallsTable = agentCallsByAgentSlice.map(mapCallLogToDetailRow)
 
@@ -507,13 +617,15 @@ export const getReports = async (req, res) => {
       meta: {
         dateFrom: from,
         dateTo: to,
+        reportType: req.query.reportType || 'lead',
+        detailsMode,
         leadDetailsTruncated,
-        leadDetailsCap: LEAD_DETAILS_EXPORT_CAP,
+        leadDetailsCap: detailCap,
         callDetailsTruncated,
-        callDetailsCap: CALL_DETAILS_EXPORT_CAP,
+        callDetailsCap: detailCap,
         agentAssignedLeadsTruncated,
         agentCallsByAgentTruncated,
-        agentDetailCap: AGENT_DETAIL_EXPORT_CAP,
+        agentDetailCap: detailCap,
       },
       lead: {
         stats: {

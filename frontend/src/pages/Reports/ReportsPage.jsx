@@ -41,7 +41,7 @@ import { useResponsive } from '../../hooks/useResponsive'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import { useChartThemeTokens } from '../../hooks/useChartThemeTokens'
 import { isSuperAdmin, isAdmin, isSupervisor } from '../../utils/permissions'
-import { useGetReportsQuery } from '../../store/api/reportApi'
+import { useGetReportsQuery, useLazyGetReportsQuery } from '../../store/api/reportApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
@@ -512,6 +512,7 @@ const Reports = () => {
   const { isMobile } = useResponsive()
   const [reportType, setReportType] = useState('lead')
   const [selectedBranchIds, setSelectedBranchIds] = useState([])
+  const [appliedBranchIds, setAppliedBranchIds] = useState([])
   const [dateFrom, setDateFrom] = useState(() => dayjs().subtract(29, 'day').format('YYYY-MM-DD'))
   const [dateTo, setDateTo] = useState(() => dayjs().format('YYYY-MM-DD'))
   const [rangeValue, setRangeValue] = useState(() => [dayjs().subtract(29, 'day'), dayjs()])
@@ -524,14 +525,18 @@ const Reports = () => {
 
   const reportParams = useMemo(
     () => ({
-      branch: selectedBranchIds.length ? selectedBranchIds : undefined,
+      branch: appliedBranchIds.length ? appliedBranchIds : undefined,
       dateFrom,
       dateTo,
+      reportType,
     }),
-    [selectedBranchIds, dateFrom, dateTo]
+    [appliedBranchIds, dateFrom, dateTo, reportType]
   )
 
-  const { data: reportRes, isLoading, isFetching, error, refetch } = useGetReportsQuery(reportParams)
+  const { data: reportRes, isLoading, isFetching, error, refetch } = useGetReportsQuery(reportParams, {
+    refetchOnMountOrArgChange: true,
+  })
+  const [fetchExportReport] = useLazyGetReportsQuery()
 
   const report = reportRes?.success ? reportRes : null
   const meta = report?.meta
@@ -549,18 +554,30 @@ const Reports = () => {
     }
     setDateFrom(rangeValue[0].format('YYYY-MM-DD'))
     setDateTo(rangeValue[1].format('YYYY-MM-DD'))
+    setAppliedBranchIds(selectedBranchIds)
     message.success('Report updated')
   }
 
   const handleExport = useCallback(
-    (format) => {
+    async (format) => {
       if (!report) {
         message.warning('Load a report first')
         return
       }
+      let exportReport = report
+      let exportMeta = meta
+      try {
+        const full = await fetchExportReport({ ...reportParams, details: 'export' }).unwrap()
+        if (full?.success) {
+          exportReport = full
+          exportMeta = full.meta
+        }
+      } catch (e) {
+        console.warn('Full export fetch failed, using on-screen data', e)
+      }
       if (format === 'pdf') {
         try {
-          exportReportToPdf({ reportType, report, meta, dateFrom, dateTo })
+          exportReportToPdf({ reportType, report: exportReport, meta: exportMeta, dateFrom, dateTo })
           message.success('PDF downloaded')
         } catch (e) {
           console.error(e)
@@ -575,8 +592,8 @@ const Reports = () => {
 
       const appendReportInfoSheet = (wb) => {
         const rows = [
-          { Field: 'Date from', Value: meta?.dateFrom ?? dateFrom },
-          { Field: 'Date to', Value: meta?.dateTo ?? dateTo },
+          { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
+          { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
           { Field: 'Report', Value: reportType },
         ]
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Report info')
@@ -588,21 +605,21 @@ const Reports = () => {
 
         switch (reportType) {
           case 'lead': {
-            const st = report.lead?.stats || {}
-            const leadRows = report.lead?.detailsTable || []
-            const detailLeads = report.lead?.leadDetailsTable || []
-            const trend = report.lead?.performanceTrend || []
-            const sources = report.lead?.sourceDistribution || []
+            const st = exportReport.lead?.stats || {}
+            const leadRows = exportReport.lead?.detailsTable || []
+            const detailLeads = exportReport.lead?.leadDetailsTable || []
+            const trend = exportReport.lead?.performanceTrend || []
+            const sources = exportReport.lead?.sourceDistribution || []
 
             const infoRows = [
-              { Field: 'Date from', Value: meta?.dateFrom ?? dateFrom },
-              { Field: 'Date to', Value: meta?.dateTo ?? dateTo },
+              { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
+              { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
               { Field: 'Report', Value: reportType },
             ]
-            if (meta?.leadDetailsTruncated) {
+            if (exportMeta?.leadDetailsTruncated) {
               infoRows.push({
                 Field: 'Lead details note',
-                Value: `List capped at ${meta.leadDetailsCap ?? 15000} rows; narrow the date range to export fewer leads per request.`,
+                Value: `List capped at ${exportMeta.leadDetailsCap ?? 15000} rows; narrow the date range to export fewer leads per request.`,
               })
             }
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(infoRows), 'Report info')
@@ -698,8 +715,8 @@ const Reports = () => {
           }
 
           case 'appointment': {
-            const aptStats = report.lead?.appointmentStats || {}
-            const aptRows = report.lead?.appointmentDetailsTable || []
+            const aptStats = exportReport.lead?.appointmentStats || {}
+            const aptRows = exportReport.lead?.appointmentDetailsTable || []
 
             appendReportInfoSheet(wb)
 
@@ -742,13 +759,13 @@ const Reports = () => {
           }
 
           case 'agent': {
-            const perf = report.agent?.performance || []
-            const assignedRows = report.agent?.assignedLeadsTable || []
-            const agentCallRows = report.agent?.agentCallsTable || []
+            const perf = exportReport.agent?.performance || []
+            const assignedRows = exportReport.agent?.assignedLeadsTable || []
+            const agentCallRows = exportReport.agent?.agentCallsTable || []
             const sheetNamesUsed = new Set(['Report info'])
             const infoRows = [
-              { Field: 'Date from', Value: meta?.dateFrom ?? dateFrom },
-              { Field: 'Date to', Value: meta?.dateTo ?? dateTo },
+              { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
+              { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
               { Field: 'Report', Value: 'Agent performance (all agents)' },
               {
                 Field: 'Excel sheets',
@@ -756,16 +773,16 @@ const Reports = () => {
                   'One tab per agent. Each tab has Summary at the top, then Assigned leads, then Calls (same agent only). Extra tabs appear only for assignees without CRM summary or Ozonetel-only agents. Sheet names truncated to 31 characters.',
               },
             ]
-            if (meta?.agentAssignedLeadsTruncated) {
+            if (exportMeta?.agentAssignedLeadsTruncated) {
               infoRows.push({
                 Field: 'Assigned leads note',
-                Value: `List capped at ${meta?.agentDetailCap ?? 15000} rows; narrow the date range if needed.`,
+                Value: `List capped at ${exportMeta?.agentDetailCap ?? 15000} rows; narrow the date range if needed.`,
               })
             }
-            if (meta?.agentCallsByAgentTruncated) {
+            if (exportMeta?.agentCallsByAgentTruncated) {
               infoRows.push({
                 Field: 'Agent calls note',
-                Value: `Calls list capped at ${meta?.agentDetailCap ?? 15000} rows; narrow the date range if needed.`,
+                Value: `Calls list capped at ${exportMeta?.agentDetailCap ?? 15000} rows; narrow the date range if needed.`,
               })
             }
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(infoRows), 'Report info')
@@ -868,16 +885,16 @@ const Reports = () => {
           }
 
           case 'call': {
-            const { summary, totalCalls, answered, missed, callDetailsTable: callDetailRows = [] } = report.call || {}
+            const { summary, totalCalls, answered, missed, callDetailsTable: callDetailRows = [] } = exportReport.call || {}
             const infoRows = [
-              { Field: 'Date from', Value: meta?.dateFrom ?? dateFrom },
-              { Field: 'Date to', Value: meta?.dateTo ?? dateTo },
+              { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
+              { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
               { Field: 'Report', Value: reportType },
             ]
-            if (meta?.callDetailsTruncated) {
+            if (exportMeta?.callDetailsTruncated) {
               infoRows.push({
                 Field: 'Call details note',
-                Value: `List capped at ${meta?.callDetailsCap ?? 15000} rows; narrow the date range for a smaller export.`,
+                Value: `List capped at ${exportMeta?.callDetailsCap ?? 15000} rows; narrow the date range for a smaller export.`,
               })
             }
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(infoRows), 'Report info')
@@ -935,11 +952,11 @@ const Reports = () => {
           }
 
           case 'branch': {
-            const perf = report.branch?.performance || []
-            const detailLeads = report.lead?.leadDetailsTable || []
+            const perf = exportReport.branch?.performance || []
+            const detailLeads = exportReport.lead?.leadDetailsTable || []
             const branchInfoRows = [
-              { Field: 'Date from', Value: meta?.dateFrom ?? dateFrom },
-              { Field: 'Date to', Value: meta?.dateTo ?? dateTo },
+              { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
+              { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
               { Field: 'Report', Value: reportType },
               {
                 Field: 'Sheets',
@@ -947,10 +964,10 @@ const Reports = () => {
                   'One worksheet per branch: tab title includes the branch name; Summary on top, only that branch’s lead rows below.',
               },
             ]
-            if (meta?.leadDetailsTruncated) {
+            if (exportMeta?.leadDetailsTruncated) {
               branchInfoRows.push({
                 Field: 'Lead details note',
-                Value: `API list capped at ${meta.leadDetailsCap ?? 15000} rows total; per-branch sheets may be incomplete. Narrow the date range for a full export.`,
+                Value: `API list capped at ${exportMeta.leadDetailsCap ?? 15000} rows total; per-branch sheets may be incomplete. Narrow the date range for a full export.`,
               })
             }
             const sheetNamesUsed = new Set(['Report info'])
@@ -1003,7 +1020,7 @@ const Reports = () => {
           }
 
           case 'repeat': {
-            const rep = report.repeat || {}
+            const rep = exportReport.repeat || {}
             const dist = rep.distribution || []
             appendReportInfoSheet(wb)
             const summaryRows = [
@@ -1040,11 +1057,11 @@ const Reports = () => {
         message.error('Export failed')
       }
     },
-    [report, dateFrom, dateTo, reportType, meta]
+    [report, reportParams, fetchExportReport, dateFrom, dateTo, reportType, meta]
   )
 
   const renderReportContent = () => {
-    if (isLoading && !report) {
+    if ((isLoading || isFetching) && !report) {
       return (
         <div className="reports-loading-wrap">
           <Spin size="large" />
@@ -1460,7 +1477,7 @@ const Reports = () => {
             <Row gutter={[16, 16]} className="reports-chart-row">
               <Col span={24}>
                 <p className="reports-range-hint" style={{ marginBottom: 0 }}>
-                  Calls with <strong>start time</strong> in range: {meta?.dateFrom} → {meta?.dateTo}
+                  Calls in IST date range (same scope as Call Records): {meta?.dateFrom} → {meta?.dateTo}
                   {isFetching ? ' (updating…)' : ''}
                 </p>
               </Col>
