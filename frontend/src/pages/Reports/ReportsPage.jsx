@@ -1749,13 +1749,13 @@ const Reports = () => {
               <Option value="branch">Branch performance</Option>
               <Option value="repeat">Repeat customer stats</Option>
             </Select>
-            <Button
+            {/* <Button
               icon={showFilters ? <UpOutlined /> : <DownOutlined />}
               onClick={() => setShowFilters(!showFilters)}
               size={isMobile ? 'small' : 'middle'}
             >
               {showFilters ? 'Hide filters' : 'Show filters'}
-            </Button>
+            </Button> */}
             <Button
               icon={<FileExcelOutlined />}
               onClick={() => handleExport('excel')}
@@ -1774,7 +1774,7 @@ const Reports = () => {
         }
       />
 
-      {showFilters && (
+     
         <ContentCard staggerIndex={0} compact>
           <div className="ds-filters-row ds-filters-row--responsive">
             <RangePicker
@@ -1788,7 +1788,7 @@ const Reports = () => {
             </Button>
           </div>
         </ContentCard>
-      )}
+    
 
       {renderReportContent()}
     </PageLayout>
