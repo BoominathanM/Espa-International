@@ -10,6 +10,7 @@ import {
   Spin,
   App,
   DatePicker,
+  Segmented,
 } from 'antd'
 import {
   PlayCircleOutlined,
@@ -18,11 +19,13 @@ import {
   ReloadOutlined,
   UpOutlined,
   DownOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { useResponsive } from '../../hooks/useResponsive'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import { useGetCallLogsQuery } from '../../store/api/cloudAgentApi'
+import { useGetTeleCMICallLogsQuery } from '../../store/api/telecmiApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
 import { useMergeCallAudioMutation } from '../../store/api/leadApi'
@@ -123,6 +126,16 @@ const Calls = () => {
   const [mergeCallAudio, { isLoading: mergeAudioLoading }] = useMergeCallAudioMutation()
   const recordingAudioRef = useRef(null)
 
+  // TeleCMI call records (CDR + click-to-call) — separate collection, own filters/pagination/modal
+  const [callsProvider, setCallsProvider] = useState('ozonetel')
+  const [telecmiFilterVariant, setTelecmiFilterVariant] = useState(undefined)
+  const [telecmiSearchInput, setTelecmiSearchInput] = useState('')
+  const [telecmiSearchText, setTelecmiSearchText] = useState('')
+  const [telecmiPage, setTelecmiPage] = useState(1)
+  const [telecmiPageSize, setTelecmiPageSize] = useState(10)
+  const [selectedTeleCMICall, setSelectedTeleCMICall] = useState(null)
+  const [isTeleCMIDetailsVisible, setIsTeleCMIDetailsVisible] = useState(false)
+
   const stopRecordingPlayback = useCallback(() => {
     const audio = recordingAudioRef.current
     if (!audio) return
@@ -157,6 +170,30 @@ const Calls = () => {
         ? dayjs(filterCallDateRange[1]).format('YYYY-MM-DD')
         : undefined,
   })
+
+  const {
+    data: telecmiCallLogsData,
+    isLoading: telecmiCallsLoading,
+    isFetching: telecmiCallsFetching,
+    refetch: refetchTeleCMICalls,
+  } = useGetTeleCMICallLogsQuery(
+    {
+      page: telecmiPage,
+      limit: telecmiPageSize,
+      variant: telecmiFilterVariant || undefined,
+      search: telecmiSearchText?.trim() || undefined,
+      branch: filterBranches.length ? filterBranches : undefined,
+      callDateFrom:
+        filterCallDateRange?.[0] && filterCallDateRange?.[1]
+          ? dayjs(filterCallDateRange[0]).format('YYYY-MM-DD')
+          : undefined,
+      callDateTo:
+        filterCallDateRange?.[0] && filterCallDateRange?.[1]
+          ? dayjs(filterCallDateRange[1]).format('YYYY-MM-DD')
+          : undefined,
+    },
+    { skip: callsProvider !== 'telecmi' }
+  )
 
   const { data: branchesData } = useGetBranchesQuery()
   const { data: usersData } = useGetUsersQuery()
@@ -202,6 +239,119 @@ const Calls = () => {
       lead: log.lead,
     }))
   }, [callLogs])
+
+  const telecmiCallLogs = telecmiCallLogsData?.callLogs || []
+  const telecmiPagination = telecmiCallLogsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
+
+  const TELECMI_TYPE_COLORS = { inbound: 'green', outbound: 'blue' }
+  const TELECMI_TYPE_LABELS = { inbound: 'Inbound', outbound: 'Outbound' }
+
+  const telecmiCalls = useMemo(() => {
+    return telecmiCallLogs.map((log) => {
+      const branchNames = Array.isArray(log.branches)
+        ? log.branches.map((b) => (typeof b === 'object' ? b?.name : '')).filter(Boolean)
+        : []
+      return {
+        key: log._id,
+        _id: log._id,
+        variant: log.variant,
+        name: log.customerName || '-',
+        phoneNumber: log.customerNumber || '-',
+        agentCode: log.agentCode || '-',
+        duration: formatDuration(log.duration),
+        recordingFile: log.recordingFile || '',
+        branch: branchNames.join(', ') || null,
+        status: log.status || '',
+        overallConversation: log.overallConversation || '',
+        date: log.callTimestamp
+          ? formatCallDateTime(log.callTimestamp)
+          : log.createdAt
+            ? formatCallDateTime(log.createdAt)
+            : '-',
+        leadLinked: !!log.lead,
+        leadId: log.lead?._id,
+      }
+    })
+  }, [telecmiCallLogs])
+
+  const telecmiColumns = [
+    {
+      title: 'Type',
+      dataIndex: 'variant',
+      key: 'variant',
+      render: (variant) => (
+        <Tag color={TELECMI_TYPE_COLORS[variant] || 'default'}>{TELECMI_TYPE_LABELS[variant] || variant}</Tag>
+      ),
+      filters: [
+        { text: 'Inbound', value: 'inbound' },
+        { text: 'Outbound', value: 'outbound' },
+      ],
+      onFilter: (value, record) => record.variant === value,
+    },
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: 'Phone Number',
+      dataIndex: 'phoneNumber',
+      key: 'phoneNumber',
+    },
+    {
+      title: 'Agent',
+      dataIndex: 'agentCode',
+      key: 'agentCode',
+    },
+    {
+      title: 'Duration',
+      dataIndex: 'duration',
+      key: 'duration',
+    },
+    {
+      title: 'Branch',
+      dataIndex: 'branch',
+      key: 'branch',
+      render: (text) => (text ? <Tag color="blue">{text}</Tag> : <span className="mgmt-muted">—</span>),
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (s) => (s ? <Tag color="cyan">{s}</Tag> : '-'),
+    },
+    {
+      title: 'Date & Time',
+      dataIndex: 'date',
+      key: 'date',
+      sorter: (a, b) => new Date(a.date) - new Date(b.date),
+    },
+    {
+      title: 'Lead Linked',
+      key: 'leadLinked',
+      render: (_, record) => (
+        <Tag color={record.leadLinked ? 'green' : 'default'}>
+          {record.leadLinked ? 'Yes' : 'No'}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, record) => (
+        <Button
+          type="link"
+          icon={<EyeOutlined />}
+          onClick={() => {
+            setSelectedTeleCMICall(record)
+            setIsTeleCMIDetailsVisible(true)
+          }}
+        >
+          View Details
+        </Button>
+      ),
+    },
+  ]
 
   const columns = [
     {
@@ -367,6 +517,10 @@ const Calls = () => {
     setFilterCallDateRange(null)
     setSearchInput('')
     setSearchText('')
+    setTelecmiPage(1)
+    setTelecmiFilterVariant(undefined)
+    setTelecmiSearchInput('')
+    setTelecmiSearchText('')
   }
 
   const handleRefreshCalls = async () => {
@@ -407,6 +561,24 @@ const Calls = () => {
   }, [searchInput])
 
   useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setTelecmiPage(1)
+      setTelecmiSearchText(telecmiSearchInput)
+    }, 350)
+
+    return () => clearTimeout(timeoutId)
+  }, [telecmiSearchInput])
+
+  const handleRefreshTeleCMICalls = async () => {
+    try {
+      await refetchTeleCMICalls()
+      messageApi.success('Call logs refreshed')
+    } catch {
+      messageApi.error('Failed to refresh call logs')
+    }
+  }
+
+  useEffect(() => {
     if (!isRecordingVisible) {
       stopRecordingPlayback()
     }
@@ -427,10 +599,14 @@ const Calls = () => {
             </Button>
             <Input
               className="calls-toolbar__search"
-              placeholder="Search by phone number"
+              placeholder={callsProvider === 'ozonetel' ? 'Search by phone number' : 'Search by name or phone number'}
               prefix={<SearchOutlined />}
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
+              value={callsProvider === 'ozonetel' ? searchInput : telecmiSearchInput}
+              onChange={(e) =>
+                callsProvider === 'ozonetel'
+                  ? setSearchInput(e.target.value)
+                  : setTelecmiSearchInput(e.target.value)
+              }
               allowClear
             />
             <Select
@@ -451,9 +627,9 @@ const Calls = () => {
               ))}
             </Select>
             <Button
-              onClick={handleRefreshCalls}
+              onClick={callsProvider === 'ozonetel' ? handleRefreshCalls : handleRefreshTeleCMICalls}
               icon={<ReloadOutlined />}
-              loading={callsFetching}
+              loading={callsProvider === 'ozonetel' ? callsFetching : telecmiCallsFetching}
               size={isMobile ? 'small' : 'middle'}
             >
               Refresh
@@ -462,7 +638,22 @@ const Calls = () => {
         }
       />
 
-      {showFilters && (
+      <div className="calls-segmented-wrap">
+        <Segmented
+          value={callsProvider}
+          onChange={(key) => {
+            setCallsProvider(key)
+            setShowFilters(false)
+          }}
+          options={[
+            { label: 'Ozonetel', value: 'ozonetel' },
+            { label: 'TeleCMI', value: 'telecmi' },
+          ]}
+          size={isMobile ? 'small' : 'middle'}
+        />
+      </div>
+
+      {showFilters && callsProvider === 'ozonetel' && (
         <ContentCard staggerIndex={0} compact>
           <div className="ds-filters-row ds-filters-row--responsive">
             <RangePicker
@@ -504,35 +695,96 @@ const Calls = () => {
         </ContentCard>
       )}
 
-      <ContentCard staggerIndex={showFilters ? 1 : 0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
-        <div className="table-responsive-wrapper">
-          {callsLoading ? (
-            <div className="ds-loading-block">
-              <Spin size="large" />
-              <p className="mgmt-loading-text">Loading call logs...</p>
-            </div>
-          ) : (
-            <Table
-              columns={columns}
-              dataSource={calls}
-              rowKey="key"
-              pagination={{
-                current: pagination.page,
-                pageSize: pagination.limit,
-                total: pagination.total,
-                showSizeChanger: true,
-                showTotal: (total) => `Total ${total} calls`,
-                onChange: (page, size) => {
-                  setCallPage(page)
-                  setCallPageSize(size)
-                },
-              }}
-              scroll={{ x: 'max-content' }}
-              size={isMobile ? 'small' : 'middle'}
+      {showFilters && callsProvider === 'telecmi' && (
+        <ContentCard staggerIndex={0} compact>
+          <div className="ds-filters-row ds-filters-row--responsive">
+            <RangePicker
+              className="ds-filter-fixed"
+              value={filterCallDateRange}
+              onChange={handleFilterCallDateRangeChange}
+              allowClear
+              format="YYYY-MM-DD"
+              placeholder={['Call date from', 'Call date to']}
             />
-          )}
-        </div>
-      </ContentCard>
+            <Select
+              className="ds-filter-fixed"
+              placeholder="Filter by Type"
+              allowClear
+              value={telecmiFilterVariant}
+              onChange={(value) => {
+                setTelecmiPage(1)
+                setTelecmiFilterVariant(value)
+              }}
+            >
+              <Option value="inbound">Inbound</Option>
+              <Option value="outbound">Outbound</Option>
+            </Select>
+            <Button onClick={handleClearFilters}>Clear filters</Button>
+          </div>
+        </ContentCard>
+      )}
+
+      {callsProvider === 'ozonetel' ? (
+        <ContentCard staggerIndex={showFilters ? 1 : 0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
+          <div className="table-responsive-wrapper">
+            {callsLoading ? (
+              <div className="ds-loading-block">
+                <Spin size="large" />
+                <p className="mgmt-loading-text">Loading call logs...</p>
+              </div>
+            ) : (
+              <Table
+                columns={columns}
+                dataSource={calls}
+                rowKey="key"
+                pagination={{
+                  current: pagination.page,
+                  pageSize: pagination.limit,
+                  total: pagination.total,
+                  showSizeChanger: true,
+                  showTotal: (total) => `Total ${total} calls`,
+                  onChange: (page, size) => {
+                    setCallPage(page)
+                    setCallPageSize(size)
+                  },
+                }}
+                scroll={{ x: 'max-content' }}
+                size={isMobile ? 'small' : 'middle'}
+              />
+            )}
+          </div>
+        </ContentCard>
+      ) : (
+        <ContentCard staggerIndex={showFilters ? 1 : 0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
+          <div className="table-responsive-wrapper">
+            {telecmiCallsLoading ? (
+              <div className="ds-loading-block">
+                <Spin size="large" />
+                <p className="mgmt-loading-text">Loading call logs...</p>
+              </div>
+            ) : (
+              <Table
+                columns={telecmiColumns}
+                dataSource={telecmiCalls}
+                rowKey="key"
+                pagination={{
+                  current: telecmiPagination.page,
+                  pageSize: telecmiPagination.limit,
+                  total: telecmiPagination.total,
+                  showSizeChanger: true,
+                  showTotal: (total) => `Total ${total} calls`,
+                  onChange: (page, size) => {
+                    setTelecmiPage(page)
+                    setTelecmiPageSize(size)
+                  },
+                }}
+                scroll={{ x: 'max-content' }}
+                size={isMobile ? 'small' : 'middle'}
+              />
+            )}
+          </div>
+        </ContentCard>
+      )}
 
       <Modal
         title="Create Lead from Call"
@@ -588,6 +840,55 @@ const Calls = () => {
               </div>
             ) : (
               <p className="mgmt-muted" style={{ marginTop: 16 }}>No recording URL available for this call.</p>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        title="TeleCMI Call Details"
+        open={isTeleCMIDetailsVisible}
+        onCancel={() => {
+          setIsTeleCMIDetailsVisible(false)
+          setSelectedTeleCMICall(null)
+        }}
+        footer={null}
+        width={isMobile ? '95%' : 600}
+      >
+        {selectedTeleCMICall && (
+          <div>
+            <p>
+              <strong>Type:</strong>{' '}
+              <Tag color={TELECMI_TYPE_COLORS[selectedTeleCMICall.variant] || 'default'}>
+                {TELECMI_TYPE_LABELS[selectedTeleCMICall.variant] || selectedTeleCMICall.variant}
+              </Tag>
+            </p>
+            <p><strong>Name:</strong> {selectedTeleCMICall.name}</p>
+            <p><strong>Phone:</strong> {selectedTeleCMICall.phoneNumber}</p>
+            {selectedTeleCMICall.agentCode && selectedTeleCMICall.agentCode !== '-' && (
+              <p><strong>Agent:</strong> {selectedTeleCMICall.agentCode}</p>
+            )}
+            {selectedTeleCMICall.duration && selectedTeleCMICall.duration !== '00:00' && (
+              <p><strong>Duration:</strong> {selectedTeleCMICall.duration}</p>
+            )}
+            {selectedTeleCMICall.recordingFile && (
+              <p>
+                <strong>Recording:</strong> {selectedTeleCMICall.recordingFile}{' '}
+                <span className="mgmt-muted" style={{ fontSize: 12 }}>(playback requires TeleCMI recording API)</span>
+              </p>
+            )}
+            {selectedTeleCMICall.branch && (
+              <p><strong>Branch:</strong> {selectedTeleCMICall.branch}</p>
+            )}
+            {selectedTeleCMICall.status && (
+              <p><strong>Status:</strong> <Tag color="cyan">{selectedTeleCMICall.status}</Tag></p>
+            )}
+            <p><strong>Date & Time:</strong> {selectedTeleCMICall.date}</p>
+            {selectedTeleCMICall.overallConversation && (
+              <div style={{ marginTop: 16 }}>
+                <strong>Notes:</strong>
+                <p style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{selectedTeleCMICall.overallConversation}</p>
+              </div>
             )}
           </div>
         )}

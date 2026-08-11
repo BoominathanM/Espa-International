@@ -14,7 +14,7 @@ Backend API server for ESPA International CRM system.
    - Create `.env` file in the backend directory
    - Add the following environment variables:
      ```
-     PORT=3001
+     PORT=3000
      MONGODB_URI=mongodb+srv://boominathanaskeva_db:Boomi%40183724@boominathan.b5yavux.mongodb.net/e-spa
      JWT_SECRET=your_jwt_secret_key_change_in_production
      NODE_ENV=development

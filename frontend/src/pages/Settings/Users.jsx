@@ -294,6 +294,8 @@ const Users = () => {
       phoneNumber: phoneNumber,
       countryCode: countryCode,
       cloudAgentAgentId: record.cloudAgentAgentId || '',
+      telecmiAgentId: record.telecmiAgentId || '',
+      telecmiAgentPassword: '',
       permissions: sanitizedPermissions,
     })
     setIsModalVisible(true)
@@ -399,6 +401,11 @@ const Users = () => {
         // Remove confirm password from form data
         delete formData.confirmPassword
         delete formData.newPassword
+
+        // Don't overwrite the stored TeleCMI agent password when the field is left blank
+        if (!values.telecmiAgentPassword) {
+          delete formData.telecmiAgentPassword
+        }
 
         await updateUser({
           id: selectedUser._id || selectedUser.id,
@@ -850,6 +857,27 @@ const Users = () => {
           >
             <Input placeholder="e.g. agent_123" />
           </Form.Item>
+
+          <Row gutter={[16, 0]}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="telecmiAgentId"
+                label="TeleCMI Agent ID"
+                extra="Optional. Required to call leads as this agent. Get this from TeleCMI Dashboard → Users/Agents."
+              >
+                <Input placeholder="e.g. 103_1111112" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="telecmiAgentPassword"
+                label="TeleCMI Agent Password"
+                extra="Leave blank to keep the existing password."
+              >
+                <Input.Password placeholder="Enter TeleCMI agent password" />
+              </Form.Item>
+            </Col>
+          </Row>
 
           <Form.Item>
             <div className={`ds-form-footer ${isMobile ? 'ds-form-footer--stack-sm' : ''}`.trim()}>

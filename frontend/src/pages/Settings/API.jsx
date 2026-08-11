@@ -15,11 +15,16 @@ import {
   useGetOzonetelSettingsQuery,
   useUpdateOzonetelSettingsMutation,
 } from '../../store/api/ozonetelSettingsApi'
+import {
+  useGetTeleCMISettingsQuery,
+  useUpdateTeleCMISettingsMutation,
+} from '../../store/api/telecmiSettingsApi'
 import { PageLayout, PageHeader } from '../../components/ds-layout'
 
 const API = () => {
   const { isMobile } = useResponsive()
   const [ozonetelForm] = Form.useForm()
+  const [telecmiForm] = Form.useForm()
   const [whatsappForm] = Form.useForm()
   const [facebookForm] = Form.useForm()
   const [websiteForm] = Form.useForm()
@@ -39,6 +44,11 @@ const API = () => {
   const { data: ozonetelData, isLoading: isLoadingOzonetel, error: ozonetelError, refetch: refetchOzonetel } = useGetOzonetelSettingsQuery(undefined, { skip: !isSuperAdminUser })
   const [updateOzonetelSettings, { isLoading: isUpdatingOzonetel }] = useUpdateOzonetelSettingsMutation()
   const ozonetelSettings = ozonetelData?.settings
+
+  // TeleCMI integration API hooks (only Super Admin can load/save)
+  const { data: telecmiData, isLoading: isLoadingTeleCMI, error: telecmiError, refetch: refetchTeleCMI } = useGetTeleCMISettingsQuery(undefined, { skip: !isSuperAdminUser })
+  const [updateTeleCMISettings, { isLoading: isUpdatingTeleCMI }] = useUpdateTeleCMISettingsMutation()
+  const telecmiSettings = telecmiData?.settings
 
   // Load website settings into form when data is available
   useEffect(() => {
@@ -64,6 +74,35 @@ const API = () => {
   const handleOzonetelSave = (values) => {
     message.success('Ozonetel API configuration saved')
     // In production, this would save to backend
+  }
+
+  // Load TeleCMI settings into form when data is available
+  useEffect(() => {
+    if (telecmiSettings) {
+      telecmiForm.setFieldsValue({
+        fromPhoneNumber: telecmiSettings.fromPhoneNumber || '',
+        webhookApiKey: telecmiSettings.webhookApiKey || '',
+        isActive: telecmiSettings.isActive !== undefined ? telecmiSettings.isActive : true,
+      })
+    }
+  }, [telecmiSettings, telecmiForm])
+
+  const handleTeleCMISave = async (values) => {
+    try {
+      const result = await updateTeleCMISettings({
+        fromPhoneNumber: (values.fromPhoneNumber || '').trim(),
+        webhookApiKey: (values.webhookApiKey || '').trim(),
+        isActive: values.isActive,
+      }).unwrap()
+
+      if (result.success) {
+        message.success('TeleCMI integration settings saved successfully')
+        refetchTeleCMI()
+      }
+    } catch (error) {
+      console.error('Save error:', error)
+      message.error(error?.data?.message || 'Failed to save settings. Please try again.')
+    }
   }
 
   const handleWhatsAppSave = async (values) => {
@@ -232,6 +271,112 @@ const API = () => {
                 </p>
                 <p style={{ color: '#ccc', margin: '8px 0 0 0', fontSize: '13px' }}>
                   In CloudAgent Campaign Settings, set &quot;URL to Push&quot; to receive call events. Users need CloudAgent Agent ID set in User Management to use Call from Leads.
+                </p>
+              </div>
+            </>
+          )}
+        </Card>
+      ),
+    },
+    {
+      key: 'telecmi',
+      label: 'TeleCMI Integration',
+      children: (
+        <Card className="mgmt-settings-card">
+          {isLoadingTeleCMI ? (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <Spin size="large" />
+              <p className="mgmt-loading-text">Loading settings...</p>
+            </div>
+          ) : telecmiError ? (
+            <Alert
+              message={telecmiError?.status === 403 ? 'Access restricted' : 'Error Loading Settings'}
+              description={telecmiError?.status === 403 ? 'Only Super Admin can view and edit TeleCMI integration settings.' : (telecmiError?.data?.message || 'Failed to load TeleCMI integration settings. Please try again.')}
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          ) : !isSuperAdminUser ? (
+            <p className="mgmt-modal-hint">Only Super Admin can configure TeleCMI integration.</p>
+          ) : (
+            <>
+              <Form
+                form={telecmiForm}
+                layout="vertical"
+                onFinish={handleTeleCMISave}
+                initialValues={{
+                  fromPhoneNumber: '',
+                  webhookApiKey: '',
+                  isActive: true,
+                }}
+              >
+                <Form.Item
+                  name="fromPhoneNumber"
+                  label="From Phone Number"
+                  help="TeleCMI outbound calling number, e.g. +917943446788"
+                >
+                  <Input placeholder="+91XXXXXXXXXX" />
+                </Form.Item>
+
+                <Form.Item
+                  name="webhookApiKey"
+                  label="Webhook API Key"
+                  help="Key TeleCMI must send back when pushing call results to our webhook"
+                >
+                  <Input.Password placeholder="Enter Webhook API Key" />
+                </Form.Item>
+
+                <Form.Item
+                  name="isActive"
+                  label="Integration Status"
+                  valuePropName="checked"
+                >
+                  <Switch checkedChildren="Active" unCheckedChildren="Inactive" />
+                </Form.Item>
+
+                <Form.Item>
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: 8,
+                    width: '100%',
+                  }}>
+                    {isSuperAdmin() && (
+                      <Button
+                        type="primary"
+                        htmlType="submit"
+                        icon={<SaveOutlined />}
+                        loading={isUpdatingTeleCMI}
+                        style={{ width: isMobile ? '100%' : 'auto' }}
+                      >
+                        Save Configuration
+                      </Button>
+                    )}
+                    {!isSuperAdmin() && (
+                      <p className="mgmt-body-text">
+                        Only Super Admin can configure API settings.
+                      </p>
+                    )}
+                  </div>
+                </Form.Item>
+              </Form>
+
+              <div style={{
+                marginTop: 24,
+                padding: 16,
+                background: '#2a2a2a',
+                borderRadius: 4,
+                border: '1px solid #444',
+              }}>
+                <h4 className="mgmt-card-title-text" style={{ marginBottom: 8 }}>Integration Information</h4>
+                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
+                  <strong>Call via Agent:</strong> <code style={{ color: '#4CAF50' }}>POST /api/telecmi/agent-call</code> (body: leadId — rings the lead&apos;s assigned staff member&apos;s TeleCMI phone, requires their TeleCMI Agent ID/Password set in Settings → Users)
+                </p>
+                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
+                  <strong>Webhook (URL to give TeleCMI):</strong> <code style={{ color: '#4CAF50' }}>https://espacrm.in/api/calls/telecmi-webhook</code>
+                </p>
+                <p style={{ color: '#ccc', margin: '8px 0 0 0', fontSize: '13px' }}>
+                  Configure TeleCMI to push call events (CDR and click-to-call lifecycle events) to the webhook above, sending the Webhook API Key as an <code style={{ color: '#4CAF50' }}>x-api-key</code> header (or Bearer token, or an <code style={{ color: '#4CAF50' }}>apiKey</code> query param). Completed calls automatically create or update a Lead and appear in Call Logs.
                 </p>
               </div>
             </>

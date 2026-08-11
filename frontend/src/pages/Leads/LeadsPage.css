@@ -406,6 +406,20 @@
   font-weight: 600;
 }
 
+/* ----- Mobile column: Call via TeleCMI ----- */
+.leads-mobile-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.leads-telecmi-agent-call-btn.ant-btn {
+  color: var(--color-success, #16a34a);
+  padding: 0 2px;
+  height: 20px;
+  line-height: 1;
+}
+
 /* ----- Call modal ----- */
 .leads-call-modal .leads-call-row {
   margin-bottom: 8px;

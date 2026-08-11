@@ -65,6 +65,7 @@ import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useConvertLeadToCustomerMutation } from '../../store/api/customerApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
 import { useGetCampaignsQuery, useMakeCallMutation } from '../../store/api/cloudAgentApi'
+import { useMakeTeleCMIAgentCallMutation } from '../../store/api/telecmiApi'
 import { useGetMeQuery } from '../../store/api/authApi'
 import { getApiBaseUrl } from '../../utils/apiConfig'
 import * as XLSX from 'xlsx'
@@ -173,6 +174,8 @@ const Leads = () => {
   const myUserId = meData?.user?._id || meData?.user?.id || null
   const { data: campaignsData } = useGetCampaignsQuery()
   const [makeCall, { isLoading: callLoading }] = useMakeCallMutation()
+  const [makeTeleCMIAgentCall] = useMakeTeleCMIAgentCallMutation()
+  const [callingViaTeleCMILeadId, setCallingViaTeleCMILeadId] = useState(null)
 
   const campaignIds = campaignsData?.campaignIds || []
   const defaultCampaign = campaignsData?.defaultCampaign || ''
@@ -265,7 +268,31 @@ const Leads = () => {
       title: 'Mobile',
       dataIndex: 'mobile',
       key: 'mobile',
-      width: 118,
+      width: 150,
+      render: (mobile, record) => (
+        <span className="leads-mobile-cell">
+          {mobile || '-'}
+          {mobile && (
+            <Button
+              type="text"
+              size="small"
+              icon={<PhoneOutlined />}
+              title={
+                record.assignedToId
+                  ? `Call via TeleCMI (rings ${record.assignedTo}'s TeleCMI phone)`
+                  : 'Assign this lead to a staff member to enable Call via TeleCMI'
+              }
+              className="leads-telecmi-agent-call-btn"
+              disabled={!record.assignedToId}
+              loading={callingViaTeleCMILeadId === record._id}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleTeleCMIAgentCall(record)
+              }}
+            />
+          )}
+        </span>
+      ),
     },
     {
       title: 'Email',
@@ -521,6 +548,33 @@ const Leads = () => {
     setIsCallModalVisible(false)
     setCallLeadRecord(null)
     setCallCampaign('')
+  }
+
+  const handleTeleCMIAgentCall = (record) => {
+    if (!record.mobile && !record.phone) {
+      messageApi.warning('No phone number for this lead')
+      return
+    }
+    if (!record.assignedToId) {
+      messageApi.warning('Assign this lead to a staff member before calling via TeleCMI')
+      return
+    }
+    Modal.confirm({
+      title: 'Call via TeleCMI',
+      content: `This will ring ${record.assignedTo}'s TeleCMI phone first, then connect to ${record.name || 'the lead'}. Continue?`,
+      okText: 'Call',
+      onOk: async () => {
+        setCallingViaTeleCMILeadId(record._id)
+        try {
+          await makeTeleCMIAgentCall({ leadId: record._id }).unwrap()
+          messageApi.success(`Calling ${record.assignedTo}'s TeleCMI phone now...`)
+        } catch (error) {
+          messageApi.error(error?.data?.message || 'Call failed')
+        } finally {
+          setCallingViaTeleCMILeadId(null)
+        }
+      },
+    })
   }
 
   const handleConfirmCall = async () => {

@@ -19,6 +19,9 @@ import whatsappRoutes from './routes/whatsapp.js'
 import ozonetelSettingsRoutes from './routes/ozonetelSettings.js'
 import ozonetelRoutes from './routes/ozonetel.js'
 import cloudAgentRoutes from './routes/cloudagent.js'
+import telecmiSettingsRoutes from './routes/telecmiSettings.js'
+import telecmiRoutes from './routes/telecmi.js'
+import telecmiWebhookRoutes from './routes/telecmiWebhook.js'
 import dashboardRoutes from './routes/dashboard.js'
 import reportRoutes from './routes/reports.js'
 import customerRoutes from './routes/customers.js'
@@ -59,7 +62,11 @@ const getCorsOrigins = () => {
 
    origins.push('https://espacrm.in')
    origins.push('http://espacrm.in')
-  
+
+  // Development server (crm.espainternational.co.in) - always allow, independent of NODE_ENV
+   origins.push('https://crm.espainternational.co.in')
+   origins.push('http://crm.espainternational.co.in')
+
   // Add production frontend URL from environment variable
   if (process.env.PRODUCTION_FRONTEND_URL) {
     const prodUrl = process.env.PRODUCTION_FRONTEND_URL.trim()
@@ -185,6 +192,9 @@ app.use('/api/whatsapp', whatsappRoutes)
 app.use('/api/ozonetel-settings', ozonetelSettingsRoutes)
 app.use('/api/ozonetel', ozonetelRoutes)
 app.use('/api/cloudagent', cloudAgentRoutes)
+app.use('/api/telecmi-settings', telecmiSettingsRoutes)
+app.use('/api/telecmi', telecmiRoutes)
+app.use('/api/calls', telecmiWebhookRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/customers', customerRoutes)

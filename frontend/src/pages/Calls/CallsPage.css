@@ -14,6 +14,10 @@
   color: inherit;
 }
 
+.calls-segmented-wrap {
+  margin-bottom: 12px;
+}
+
 .calls-toolbar {
   width: 100%;
   justify-content: flex-end;

@@ -138,7 +138,7 @@ export const getUser = async (req, res) => {
 // @access  Private (Super Admin only)
 export const createUser = async (req, res) => {
   try {
-    const { name, email, password, role, status, phone, cloudAgentAgentId, permissions } = req.body
+    const { name, email, password, role, status, phone, cloudAgentAgentId, telecmiAgentId, telecmiAgentPassword, permissions } = req.body
     const normalizedPermissions = normalizePermissions(permissions)
     const { allBranches, branchIds } = normalizeBranchSelection(req.body)
 
@@ -176,6 +176,8 @@ export const createUser = async (req, res) => {
       status: status || 'active',
       phone: phone || '',
       cloudAgentAgentId: (cloudAgentAgentId || '').trim(),
+      telecmiAgentId: (telecmiAgentId || '').trim(),
+      telecmiAgentPassword: telecmiAgentPassword || '',
       permissions: normalizedPermissions,
     })
 
@@ -245,7 +247,7 @@ export const createUser = async (req, res) => {
 // @access  Private (Super Admin only)
 export const updateUser = async (req, res) => {
   try {
-    const { name, email, password, role, status, phone, cloudAgentAgentId, permissions } = req.body
+    const { name, email, password, role, status, phone, cloudAgentAgentId, telecmiAgentId, telecmiAgentPassword, permissions } = req.body
     const normalizedPermissions = normalizePermissions(permissions)
     const { allBranches, branchIds } = normalizeBranchSelection(req.body)
 
@@ -279,6 +281,16 @@ export const updateUser = async (req, res) => {
     if (status) user.status = status
     if (phone !== undefined) user.phone = phone || ''
     if (cloudAgentAgentId !== undefined) user.cloudAgentAgentId = (cloudAgentAgentId || '').trim()
+    if (telecmiAgentId !== undefined && telecmiAgentId.trim() !== user.telecmiAgentId) {
+      user.telecmiAgentId = telecmiAgentId.trim()
+      user.telecmiAgentToken = ''
+      user.telecmiAgentTokenExpiresAt = null
+    }
+    if (telecmiAgentPassword) {
+      user.telecmiAgentPassword = telecmiAgentPassword
+      user.telecmiAgentToken = ''
+      user.telecmiAgentTokenExpiresAt = null
+    }
     if (!allBranches && branchIds.length === 0) {
       return res.status(400).json({ message: 'Select at least one branch or choose All' })
     }
