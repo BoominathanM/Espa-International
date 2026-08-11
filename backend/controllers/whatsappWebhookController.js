@@ -3,6 +3,7 @@ import Branch from '../models/Branch.js'
 import ChatDeletionLog from '../models/ChatDeletionLog.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
+import { processInboundWebhookPayload } from '../services/inboundMessageService.js'
 
 // Throttle: run full AskEva sync at most once per 90 seconds when webhook is triggered
 const WEBHOOK_SYNC_THROTTLE_MS = 90 * 1000
@@ -71,6 +72,32 @@ export const handleWebhook = async (req, res) => {
       hasData: !!data,
       dataKeys: data ? Object.keys(data) : [],
     })
+
+    // ── Inbound WhatsApp chat messages (Meta / AskEVA message events) ───────
+    // Store in Chat + ChatMessage before lead handling; leads still process if present.
+    try {
+      const inbound = await processInboundWebhookPayload(req.body)
+      if (inbound.handled) {
+        console.log('[WhatsApp Webhook] Stored inbound chat message(s)', inbound.results)
+        // If this payload is ONLY a chat message (not a lead event), acknowledge and stop
+        const eventLower = String(event || '').toLowerCase()
+        const isLeadEvent =
+          eventLower.includes('lead') ||
+          eventLower === 'leadcreation' ||
+          eventLower === 'leadupdate' ||
+          eventLower === 'leaddeletion' ||
+          eventLower === 'lead_webhook'
+        if (!isLeadEvent) {
+          return res.status(200).json({
+            success: true,
+            message: 'Inbound WhatsApp message stored',
+            results: inbound.results,
+          })
+        }
+      }
+    } catch (chatErr) {
+      console.warn('[WhatsApp Webhook] Inbound chat store error:', chatErr.message)
+    }
 
     // Handle test events gracefully (including webhook_test, test, or any test-related event)
     if (event === 'test' || event === 'webhook_test' || event === 'test_webhook') {

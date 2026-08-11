@@ -21,16 +21,15 @@ const API_BASE_URL = getApiBaseUrl()
 const baseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
   credentials: 'include', // Include cookies in requests
-  prepareHeaders: (headers, { getState, endpoint }) => {
-    // Cookies are automatically sent with credentials: 'include'
-    // No need to manually add Authorization header for cookie-based auth
-    headers.set('Content-Type', 'application/json')
+  prepareHeaders: (headers) => {
+    // Do not force Content-Type — FormData needs multipart boundary from the browser.
+    // fetchBaseQuery sets application/json automatically for plain object bodies.
     return headers
   },
 })
 
 export const apiSlice = createApi({
   baseQuery,
-  tagTypes: ['User', 'Branch', 'Auth', 'Role', 'Notification', 'LoginHistory', 'WebsiteSettings', 'WhatsAppSettings', 'OzonetelSettings', 'Lead', 'CallLog', 'Dashboard', 'Report', 'Customer'],
+  tagTypes: ['User', 'Branch', 'Auth', 'Role', 'Notification', 'LoginHistory', 'WebsiteSettings', 'WhatsAppSettings', 'OzonetelSettings', 'Lead', 'CallLog', 'Dashboard', 'Report', 'Customer', 'Chat'],
   endpoints: (builder) => ({}),
 })

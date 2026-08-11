@@ -38,6 +38,8 @@ import {
   useUpdateCustomerTimelineNoteMutation,
 } from '../../store/api/customerApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
+import CustomerDetailsModal from './CustomerDetailsModal'
+import './CustomersPage.css'
 
 const { TextArea } = Input
 const { Option } = Select
@@ -48,6 +50,7 @@ const Customers = () => {
   const { isMobile } = useResponsive()
   const [isModalVisible, setIsModalVisible] = useState(false)
   const [isTimelineVisible, setIsTimelineVisible] = useState(false)
+  const [isDetailsVisible, setIsDetailsVisible] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [form] = Form.useForm()
   const [timelineNotesDraft, setTimelineNotesDraft] = useState('')
@@ -123,6 +126,26 @@ const Customers = () => {
     setAppliedBranchIds([])
     setAppliedLastInteractionRange(null)
   }
+
+  const openCustomerDetails = (record) => {
+    setSelectedCustomer(record)
+    setIsDetailsVisible(true)
+  }
+
+  const tableRowProps = (record) => ({
+    onClick: (e) => {
+      if (
+        e.target.closest('button') ||
+        e.target.closest('a') ||
+        e.target.closest('.ant-dropdown') ||
+        e.target.closest('.ant-dropdown-trigger')
+      ) {
+        return
+      }
+      openCustomerDetails(record)
+    },
+    className: 'customers-table-row-clickable',
+  })
 
   const columns = [
     {
@@ -387,6 +410,7 @@ const Customers = () => {
               pagination={{ pageSize: 10 }}
               scroll={{ x: 'max-content' }}
               size={isMobile ? 'small' : 'middle'}
+              onRow={tableRowProps}
             />
           )}
         </div>
@@ -405,6 +429,7 @@ const Customers = () => {
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
             locale={{ emptyText: 'No new customers' }}
+            onRow={tableRowProps}
           />
         </div>
       ),
@@ -422,6 +447,7 @@ const Customers = () => {
             scroll={{ x: 'max-content' }}
             size={isMobile ? 'small' : 'middle'}
             locale={{ emptyText: 'No repeat customers yet' }}
+            onRow={tableRowProps}
           />
         </div>
       ),
@@ -506,6 +532,18 @@ const Customers = () => {
       <ContentCard staggerIndex={showFilters ? 1 : 0} hoverLift={false}>
         <Tabs items={tabItems} className="mgmt-tabs" />
       </ContentCard>
+
+      <CustomerDetailsModal
+        open={isDetailsVisible}
+        customer={selectedCustomer}
+        isMobile={isMobile}
+        onClose={() => {
+          setIsDetailsVisible(false)
+          if (!isModalVisible && !isTimelineVisible) {
+            setSelectedCustomer(null)
+          }
+        }}
+      />
 
       <Modal
         title={selectedCustomer ? 'Edit Customer' : 'Add New Customer'}
