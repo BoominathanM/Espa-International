@@ -609,6 +609,21 @@
   color: var(--text-muted);
 }
 
+.appointment-bookings-page .appt-livechat-wrap {
+  height: 560px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+@media (max-width: 767px) {
+  .appointment-bookings-page .appt-livechat-wrap {
+    height: 480px;
+  }
+}
+
 /* Modal mounts on body – no .appointment-bookings-page ancestor */
 .appt-form-modal .ant-modal-header {
   border-bottom-color: var(--border-color);

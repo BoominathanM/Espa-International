@@ -60,6 +60,8 @@ import { useGetUsersQuery } from '../../store/api/userApi'
 import dayjs from 'dayjs'
 import './AppointmentBookingsPage.css'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
+import WhatsAppIcon from '../../components/LiveChat/WhatsAppIcon'
+import LiveChatPanel from '../../components/LiveChat/LiveChatPanel'
 import { hasPermission, isSuperAdmin } from '../../utils/permissions'
 import {
   SPA_PACKAGES,
@@ -594,6 +596,25 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
               </div>
             </div>
           </div>
+        </div>
+      ),
+    },
+    {
+      key: 'liveChat',
+      label: (
+        <span>
+          <WhatsAppIcon size={14} /> Live Chats
+        </span>
+      ),
+      children: (
+        <div className="appt-livechat-wrap">
+          <LiveChatPanel
+            name={name}
+            phone={lead.whatsapp || lead.phone || ''}
+            customerId={lead.customer?._id || lead.customer || undefined}
+            leadId={lead._id}
+            active={detailTab === 'liveChat'}
+          />
         </div>
       ),
     },

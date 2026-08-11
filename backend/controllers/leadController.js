@@ -38,7 +38,7 @@ async function countCallsForPhone(phone) {
   }
 }
 
-async function ensureCustomerLinkedToLead({ lead, performedBy }) {
+export async function ensureCustomerLinkedToLead({ lead, performedBy }) {
   if (!lead) return null
   if (lead.customer) {
     return Customer.findById(lead.customer)

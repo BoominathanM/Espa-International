@@ -28,9 +28,10 @@ export const chatApi = apiSlice.injectEndpoints({
       providesTags: ['Chat'],
     }),
     sendChatMessage: builder.mutation({
-      query: ({ customerId, type = 'text', text = '', file, mediaUrl, filename }) => {
+      query: ({ customerId, leadId, type = 'text', text = '', file, mediaUrl, filename }) => {
         const formData = new FormData()
-        formData.append('customerId', customerId)
+        if (customerId) formData.append('customerId', customerId)
+        if (!customerId && leadId) formData.append('leadId', leadId)
         formData.append('type', type)
         if (text) formData.append('text', text)
         if (mediaUrl) formData.append('mediaUrl', mediaUrl)

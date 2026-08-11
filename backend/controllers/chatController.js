@@ -3,6 +3,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import multer from 'multer'
 import Customer from '../models/Customer.js'
+import Lead from '../models/Lead.js'
 import ChatMessage from '../models/ChatMessage.js'
 import {
   normalizePhoneDigits,
@@ -11,6 +12,7 @@ import {
   getPublicBaseUrl,
 } from '../services/chatService.js'
 import { sendAskEvaMessage } from '../services/askevaMessageService.js'
+import { ensureCustomerLinkedToLead } from './leadController.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -70,7 +72,10 @@ function previewForOutbound({ type, text, filename, mediaUrl }) {
  * Accepts multipart (file) or JSON (mediaUrl).
  *
  * Body fields:
- * - customerId (required)
+ * - customerId (required unless leadId is provided)
+ * - leadId (fallback when the chat is opened from a Lead/Appointment record that
+ *   isn't linked to a Customer yet — the matching/created Customer is resolved
+ *   from the lead's phone number, same as the existing "Convert to Customer" flow)
  * - type: text | image | document | video
  * - text / caption
  * - mediaUrl (optional if file uploaded)
@@ -79,13 +84,30 @@ function previewForOutbound({ type, text, filename, mediaUrl }) {
 export const sendChatMessage = async (req, res) => {
   try {
     const customerId = req.body.customerId || req.body.customer_id
-    if (!customerId) {
-      return res.status(400).json({ success: false, message: 'customerId is required' })
-    }
+    const leadId = req.body.leadId || req.body.lead_id
 
-    const customer = await Customer.findById(customerId)
-    if (!customer) {
-      return res.status(404).json({ success: false, message: 'Customer not found' })
+    let customer = null
+
+    if (customerId) {
+      customer = await Customer.findById(customerId)
+      if (!customer) {
+        return res.status(404).json({ success: false, message: 'Customer not found' })
+      }
+    } else if (leadId) {
+      const lead = await Lead.findById(leadId)
+      if (!lead) {
+        return res.status(404).json({ success: false, message: 'Lead not found' })
+      }
+      customer = await ensureCustomerLinkedToLead({ lead, performedBy: req.user?.name || 'User' })
+      if (!customer) {
+        return res.status(400).json({
+          success: false,
+          message: 'Lead has no valid phone number for a customer record',
+        })
+      }
+      await lead.save()
+    } else {
+      return res.status(400).json({ success: false, message: 'customerId is required' })
     }
 
     const recipientRaw = customer.whatsapp || customer.phone

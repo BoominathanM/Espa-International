@@ -44,6 +44,8 @@ import {
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { canCreate, canEdit, canDelete } from '../../utils/permissions'
+import WhatsAppIcon from '../../components/LiveChat/WhatsAppIcon'
+import LiveChatPanel from '../../components/LiveChat/LiveChatPanel'
 import './LeadsPage.css'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
@@ -103,7 +105,7 @@ const Leads = () => {
   const [isFollowUpVisible, setIsFollowUpVisible] = useState(false)
   const [followUpLead, setFollowUpLead] = useState(null)
   const [callLeadMeta, setCallLeadMeta] = useState(null)
-  const [followUpTab, setFollowUpTab] = useState('reminders')
+  const [followUpTab, setFollowUpTab] = useState('liveChat')
   const [reminderDesc, setReminderDesc] = useState('')
   const [reminderDate, setReminderDate] = useState(null)
   const [reminderAssignee, setReminderAssignee] = useState('')
@@ -972,7 +974,7 @@ const Leads = () => {
                 onClick: (e) => {
                   if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.ant-popconfirm')) return
                   setFollowUpLead(record)
-                  setFollowUpTab('reminders')
+                  setFollowUpTab('liveChat')
                   setIsFollowUpVisible(true)
                 },
                 className: 'leads-table-row-clickable',
@@ -1319,7 +1321,7 @@ const Leads = () => {
         onCancel={() => {
           setIsFollowUpVisible(false)
           setFollowUpLead(null)
-          setFollowUpTab('reminders')
+          setFollowUpTab('liveChat')
           setReminderDesc('')
           setReminderDate(null)
           setReminderAssignee('')
@@ -1348,7 +1350,7 @@ const Leads = () => {
                   onClick={() => {
                     setIsFollowUpVisible(false)
                     setFollowUpLead(null)
-                    setFollowUpTab('reminders')
+                    setFollowUpTab('liveChat')
                   }}
                   className="leads-followup-close"
                 />
@@ -1358,6 +1360,7 @@ const Leads = () => {
             <div className="leads-followup-body">
               <div className="leads-followup-sidebar">
                 {[
+                  { key: 'liveChat', icon: <WhatsAppIcon size={16} />, label: 'Live Chat' },
                   { key: 'reminders', icon: <BellOutlined />, label: 'Reminders' },
                   { key: 'activityLogs', icon: <HistoryOutlined />, label: 'Activity Logs' },
                 ].map((tab) => (
@@ -1372,7 +1375,18 @@ const Leads = () => {
                 ))}
               </div>
 
-              <div className="leads-followup-content">
+              <div className={`leads-followup-content${followUpTab === 'liveChat' ? ' leads-followup-content--flush' : ''}`}>
+
+                {/* ===== LIVE CHAT TAB ===== */}
+                {followUpTab === 'liveChat' && (
+                  <LiveChatPanel
+                    name={followUpLead.name || `${followUpLead.first_name || ''} ${followUpLead.last_name || ''}`.trim()}
+                    phone={(leadDetail || followUpLead).whatsapp || (leadDetail || followUpLead).phone || ''}
+                    customerId={(leadDetail || followUpLead).customer?._id || (leadDetail || followUpLead).customer || undefined}
+                    leadId={followUpLeadId}
+                    active={isFollowUpVisible && followUpTab === 'liveChat'}
+                  />
+                )}
 
                 {/* ===== REMINDERS TAB ===== */}
                 {followUpTab === 'reminders' && (
