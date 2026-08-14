@@ -12,6 +12,13 @@ const telecmiSettingsSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    // App secret for TeleCMI's click-to-call API (POST rest.telecmi.com/v2/webrtc/click2call),
+    // shared across all agents — not per-user. From TeleCMI dashboard's API/developer section.
+    clickToCallSecret: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     isActive: {
       type: Boolean,
       default: true,

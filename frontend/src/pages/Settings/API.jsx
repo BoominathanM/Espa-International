@@ -82,6 +82,7 @@ const API = () => {
       telecmiForm.setFieldsValue({
         fromPhoneNumber: telecmiSettings.fromPhoneNumber || '',
         webhookApiKey: telecmiSettings.webhookApiKey || '',
+        clickToCallSecret: telecmiSettings.clickToCallSecret || '',
         isActive: telecmiSettings.isActive !== undefined ? telecmiSettings.isActive : true,
       })
     }
@@ -92,6 +93,7 @@ const API = () => {
       const result = await updateTeleCMISettings({
         fromPhoneNumber: (values.fromPhoneNumber || '').trim(),
         webhookApiKey: (values.webhookApiKey || '').trim(),
+        clickToCallSecret: (values.clickToCallSecret || '').trim(),
         isActive: values.isActive,
       }).unwrap()
 
@@ -307,6 +309,7 @@ const API = () => {
                 initialValues={{
                   fromPhoneNumber: '',
                   webhookApiKey: '',
+                  clickToCallSecret: '',
                   isActive: true,
                 }}
               >
@@ -324,6 +327,14 @@ const API = () => {
                   help="Key TeleCMI must send back when pushing call results to our webhook"
                 >
                   <Input.Password placeholder="Enter Webhook API Key" />
+                </Form.Item>
+
+                <Form.Item
+                  name="clickToCallSecret"
+                  label="Click-to-Call App Secret"
+                  help="TeleCMI's account-wide 'secret' for the Click-to-Call API (rest.telecmi.com/v2/webrtc/click2call) — from TeleCMI's Developer/API credentials page, not per-agent."
+                >
+                  <Input.Password placeholder="Enter Click-to-Call App Secret" />
                 </Form.Item>
 
                 <Form.Item
@@ -360,25 +371,6 @@ const API = () => {
                   </div>
                 </Form.Item>
               </Form>
-
-              <div style={{
-                marginTop: 24,
-                padding: 16,
-                background: '#2a2a2a',
-                borderRadius: 4,
-                border: '1px solid #444',
-              }}>
-                <h4 className="mgmt-card-title-text" style={{ marginBottom: 8 }}>Integration Information</h4>
-                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
-                  <strong>Call via Agent:</strong> <code style={{ color: '#4CAF50' }}>POST /api/telecmi/agent-call</code> (body: leadId — rings the lead&apos;s assigned staff member&apos;s TeleCMI phone, requires their TeleCMI Agent ID/Password set in Settings → Users)
-                </p>
-                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
-                  <strong>Webhook (URL to give TeleCMI):</strong> <code style={{ color: '#4CAF50' }}>https://espacrm.in/api/calls/telecmi-webhook</code>
-                </p>
-                <p style={{ color: '#ccc', margin: '8px 0 0 0', fontSize: '13px' }}>
-                  Configure TeleCMI to push call events (CDR and click-to-call lifecycle events) to the webhook above, sending the Webhook API Key as an <code style={{ color: '#4CAF50' }}>x-api-key</code> header (or Bearer token, or an <code style={{ color: '#4CAF50' }}>apiKey</code> query param). Completed calls automatically create or update a Lead and appear in Call Logs.
-                </p>
-              </div>
             </>
           )}
         </Card>

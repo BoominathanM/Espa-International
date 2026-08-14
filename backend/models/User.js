@@ -54,24 +54,12 @@ const userSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
-    // TeleCMI real click-to-call agent identity (rest.telecmi.com), one per staff member.
+    // TeleCMI real click-to-call agent identity (rest.telecmi.com CHUB User ID), one per staff
+    // member — e.g. "1001_33338459" from the TeleCMI dashboard's Team → User page.
     telecmiAgentId: {
       type: String,
       default: '',
       trim: true,
-    },
-    telecmiAgentPassword: {
-      type: String,
-      default: '',
-    },
-    // Cached login token from POST /v2/user/login (valid ~30 days) so we don't re-login every call.
-    telecmiAgentToken: {
-      type: String,
-      default: '',
-    },
-    telecmiAgentTokenExpiresAt: {
-      type: Date,
-      default: null,
     },
     permissions: {
       type: Map,
@@ -110,8 +98,6 @@ userSchema.methods.toJSON = function () {
     userObject.permissions = permissionsObj
   }
   delete userObject.password
-  delete userObject.telecmiAgentPassword
-  delete userObject.telecmiAgentToken
   return userObject
 }
 

@@ -10,6 +10,7 @@ export const getTeleCMISettings = async (req, res) => {
         _id: settings._id,
         fromPhoneNumber: settings.fromPhoneNumber,
         webhookApiKey: settings.webhookApiKey,
+        clickToCallSecret: settings.clickToCallSecret,
         isActive: settings.isActive,
         createdAt: settings.createdAt,
         updatedAt: settings.updatedAt,
@@ -23,13 +24,14 @@ export const getTeleCMISettings = async (req, res) => {
 
 export const updateTeleCMISettings = async (req, res) => {
   try {
-    const { fromPhoneNumber, webhookApiKey, isActive } = req.body
+    const { fromPhoneNumber, webhookApiKey, clickToCallSecret, isActive } = req.body
 
     let settings = await TeleCMISettings.findOne()
 
     const values = {
       fromPhoneNumber: (fromPhoneNumber || '').trim(),
       webhookApiKey: (webhookApiKey || '').trim(),
+      clickToCallSecret: (clickToCallSecret || '').trim(),
       lastUpdatedBy: req.user?._id || null,
     }
 
@@ -52,6 +54,7 @@ export const updateTeleCMISettings = async (req, res) => {
         _id: settings._id,
         fromPhoneNumber: settings.fromPhoneNumber,
         webhookApiKey: settings.webhookApiKey,
+        clickToCallSecret: settings.clickToCallSecret,
         isActive: settings.isActive,
         createdAt: settings.createdAt,
         updatedAt: settings.updatedAt,

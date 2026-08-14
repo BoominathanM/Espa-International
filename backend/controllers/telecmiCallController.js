@@ -49,7 +49,7 @@ export const makeAgentCall = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Assigned staff member is not an active user' })
     }
 
-    const callResult = await placeAgentCall(agentUser, lead.phone.trim(), {
+    const callResult = await placeAgentCall(settings, agentUser, lead.phone.trim(), {
       crm: 'true',
       leadId: String(lead._id),
     })
