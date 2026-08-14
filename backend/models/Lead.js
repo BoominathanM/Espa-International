@@ -86,9 +86,11 @@ const leadSchema = new mongoose.Schema(
       required: true,
     },
     status: {
+      // No enum restriction: lead stages are managed dynamically via the LeadStage
+      // collection (superadmin-managed), so any stage name must be accepted here.
       type: String,
-      enum: ['New', 'In Progress', 'Follow-Up', 'Converted', 'Lost', 'Cancelled'],
       default: 'New',
+      trim: true,
     },
     branch: {
       type: mongoose.Schema.Types.ObjectId,

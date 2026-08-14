@@ -21,6 +21,7 @@ import {
   Row,
   Col,
   Segmented,
+  Divider,
 } from 'antd'
 import {
   PlusOutlined,
@@ -43,7 +44,7 @@ import {
   MoreOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { canCreate, canEdit, canDelete } from '../../utils/permissions'
+import { canCreate, canEdit, canDelete, isSuperAdmin } from '../../utils/permissions'
 import WhatsAppIcon from '../../components/LiveChat/WhatsAppIcon'
 import LiveChatPanel from '../../components/LiveChat/LiveChatPanel'
 import './LeadsPage.css'
@@ -61,6 +62,7 @@ import {
   useUpdateReminderMutation,
   useDeleteReminderMutation,
 } from '../../store/api/leadApi'
+import { useGetLeadStagesQuery, useCreateLeadStageMutation } from '../../store/api/leadStageApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useConvertLeadToCustomerMutation } from '../../store/api/customerApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
@@ -84,6 +86,41 @@ const { Option } = Select
 
 /** Must match `ASSIGNED_TO_UNASSIGNED_PARAM` in backend leadController (getLeads / export). */
 const FILTER_ASSIGNED_UNASSIGNED = '__unassigned__'
+
+/** Used only until the /lead-stages API responds (or if it fails); backend seeds this same list. */
+const DEFAULT_STAGE_OPTIONS = [
+  'New',
+  'In Progress',
+  'Follow-Up',
+  'Converted',
+  'Lost',
+  'Cancelled',
+  'Enquiry',
+  'Old',
+  'Up Coming',
+  'Unprofessional',
+  'Other District',
+  'RNR',
+  'Hindi',
+]
+
+const STAGE_COLORS = {
+  New: 'blue',
+  'In Progress': 'orange',
+  'Follow-Up': 'purple',
+  Converted: 'green',
+  Lost: 'red',
+  Cancelled: 'default',
+  Enquiry: 'geekblue',
+  Old: 'default',
+  'Up Coming': 'cyan',
+  Unprofessional: 'volcano',
+  'Other District': 'gold',
+  RNR: 'magenta',
+  Hindi: 'lime',
+}
+
+const getStageColor = (status) => STAGE_COLORS[status] || 'default'
 
 const Leads = () => {
   const { message: messageApi } = App.useApp()
@@ -169,6 +206,9 @@ const Leads = () => {
   })
 
   const { data: branchesData } = useGetBranchesQuery()
+  const { data: leadStagesData, refetch: refetchLeadStages } = useGetLeadStagesQuery()
+  const [createLeadStage, { isLoading: createStageLoading }] = useCreateLeadStageMutation()
+  const [newStageInput, setNewStageInput] = useState('')
   const { data: usersData } = useGetUsersQuery()
   const { data: meData } = useGetMeQuery()
   const myUserId = meData?.user?._id || meData?.user?.id || null
@@ -199,6 +239,10 @@ const Leads = () => {
   const leads = leadsData?.leads || []
   const branches = branchesData?.branches || []
   const users = usersData?.users || []
+  const stageOptions = useMemo(() => {
+    const namesFromDb = (leadStagesData?.stages || []).map((s) => s.name).filter(Boolean)
+    return namesFromDb.length ? namesFromDb : DEFAULT_STAGE_OPTIONS
+  }, [leadStagesData])
   const pagination = leadsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
 
   // Transform backend data to frontend format
@@ -330,23 +374,8 @@ const Leads = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (status) => {
-        const colors = {
-          New: 'blue',
-          'In Progress': 'orange',
-          'Follow-Up': 'purple',
-          Converted: 'green',
-          Lost: 'red',
-        }
-        return <Tag color={colors[status] || 'default'}>{status}</Tag>
-      },
-      filters: [
-        { text: 'New', value: 'New' },
-        { text: 'In Progress', value: 'In Progress' },
-        { text: 'Follow-Up', value: 'Follow-Up' },
-        { text: 'Converted', value: 'Converted' },
-        { text: 'Lost', value: 'Lost' },
-      ],
+      render: (status) => <Tag color={getStageColor(status)}>{status}</Tag>,
+      filters: stageOptions.map((stage) => ({ text: stage, value: stage })),
       onFilter: (value, record) => record.status === value,
     },
     {
@@ -863,6 +892,30 @@ const Leads = () => {
     }
   }
 
+  const handleAddStageOption = async () => {
+    const cleanedStage = newStageInput.trim()
+    if (!cleanedStage) {
+      messageApi.warning('Enter stage name')
+      return
+    }
+    const isDuplicate = stageOptions.some(
+      (opt) => opt.trim().toLowerCase() === cleanedStage.toLowerCase()
+    )
+    if (isDuplicate) {
+      messageApi.info('Stage already exists in options')
+      return
+    }
+    try {
+      await createLeadStage(cleanedStage).unwrap()
+      await refetchLeadStages()
+      setNewStageInput('')
+      form.setFieldValue('status', cleanedStage)
+      messageApi.success('Stage option added')
+    } catch (error) {
+      messageApi.error(error?.data?.message || 'Failed to add stage option')
+    }
+  }
+
   return (
     <PageLayout className="leads-management-page">
       <PageHeader
@@ -925,11 +978,11 @@ const Leads = () => {
               <Option value="Other">Other</Option>
             </Select>
             <Select className="ds-filter-fixed" placeholder="Filter by Status" allowClear value={filterStatus} onChange={setFilterStatus}>
-              <Option value="New">New</Option>
-              <Option value="In Progress">In Progress</Option>
-              <Option value="Follow-Up">Follow-Up</Option>
-              <Option value="Converted">Converted</Option>
-              <Option value="Lost">Lost</Option>
+              {stageOptions.map((stage) => (
+                <Option key={stage} value={stage}>
+                  {stage}
+                </Option>
+              ))}
             </Select>
             <Select
               className="ds-filter-fixed"
@@ -1211,12 +1264,45 @@ const Leads = () => {
             </Col>
             <Col xs={24} sm={12}>
               <Form.Item name="status" label="Stage">
-                <Select placeholder="Stage">
-                  <Option value="New">New</Option>
-                  <Option value="In Progress">In Progress</Option>
-                  <Option value="Follow-Up">Follow-Up</Option>
-                  <Option value="Converted">Converted</Option>
-                  <Option value="Lost">Lost</Option>
+                <Select
+                  placeholder="Stage"
+                  showSearch
+                  optionFilterProp="children"
+                  filterOption={(input, option) =>
+                    String(option?.children || '')
+                      .toLowerCase()
+                      .includes(input.toLowerCase())
+                  }
+                  dropdownRender={
+                    isSuperAdmin()
+                      ? (menu) => (
+                          <>
+                            {menu}
+                            <Divider style={{ margin: '8px 0' }} />
+                            <Space.Compact style={{ display: 'flex', padding: '0 8px 8px' }}>
+                              <Input
+                                placeholder="Enter Stage Name"
+                                value={newStageInput}
+                                onChange={(e) => setNewStageInput(e.target.value)}
+                                onPressEnter={(e) => {
+                                  e.preventDefault()
+                                  handleAddStageOption()
+                                }}
+                              />
+                              <Button type="primary" onClick={handleAddStageOption} loading={createStageLoading}>
+                                + Add
+                              </Button>
+                            </Space.Compact>
+                          </>
+                        )
+                      : undefined
+                  }
+                >
+                  {stageOptions.map((stage) => (
+                    <Option key={stage} value={stage}>
+                      {stage}
+                    </Option>
+                  ))}
                 </Select>
               </Form.Item>
             </Col>
@@ -1296,13 +1382,7 @@ const Leads = () => {
                       {normalizeLeadSourceDisplay(selectedLead.source) || 'N/A'}
                     </Tag>
                   </p>
-                  <p className="leads-detail-row"><strong className="leads-detail-label">Status:</strong> <Tag color={
-                    selectedLead.status === 'New' ? 'blue' :
-                      selectedLead.status === 'In Progress' ? 'orange' :
-                        selectedLead.status === 'Follow-Up' ? 'purple' :
-                          selectedLead.status === 'Converted' ? 'green' :
-                            selectedLead.status === 'Lost' ? 'red' : 'default'
-                  }>{selectedLead.status || 'N/A'}</Tag></p>
+                  <p className="leads-detail-row"><strong className="leads-detail-label">Status:</strong> <Tag color={getStageColor(selectedLead.status)}>{selectedLead.status || 'N/A'}</Tag></p>
                   <p className="leads-detail-row"><strong className="leads-detail-label">Branch:</strong> {selectedLead.branch || 'Unassigned'}</p>
                   <p className="leads-detail-row"><strong className="leads-detail-label">Assigned To:</strong> {selectedLead.assignedTo || 'Unassigned'}</p>
                   <p className="leads-detail-row"><strong className="leads-detail-label">Created At:</strong> {selectedLead.createdAt || 'N/A'}</p>

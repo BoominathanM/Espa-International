@@ -31,6 +31,6 @@ const baseQuery = fetchBaseQuery({
 
 export const apiSlice = createApi({
   baseQuery,
-  tagTypes: ['User', 'Branch', 'Auth', 'Role', 'Notification', 'LoginHistory', 'WebsiteSettings', 'WhatsAppSettings', 'OzonetelSettings', 'TeleCMISettings', 'Lead', 'CallLog', 'TeleCMICallLog', 'Dashboard', 'Report', 'Customer', 'Chat'],
+  tagTypes: ['User', 'Branch', 'Auth', 'Role', 'Notification', 'LoginHistory', 'WebsiteSettings', 'WhatsAppSettings', 'OzonetelSettings', 'TeleCMISettings', 'Lead', 'LeadStage', 'CallLog', 'TeleCMICallLog', 'Dashboard', 'Report', 'Customer', 'Chat'],
   endpoints: (builder) => ({}),
 })

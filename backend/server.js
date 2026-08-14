@@ -13,6 +13,7 @@ import notificationRoutes from './routes/notifications.js'
 import loginHistoryRoutes from './routes/loginHistory.js'
 import systemLogsRoutes from './routes/systemLogs.js'
 import leadRoutes from './routes/leads.js'
+import leadStageRoutes from './routes/leadStages.js'
 import websiteSettingsRoutes from './routes/websiteSettings.js'
 import whatsappSettingsRoutes from './routes/whatsappSettings.js'
 import whatsappRoutes from './routes/whatsapp.js'
@@ -29,6 +30,7 @@ import webhookRoutes from './routes/webhook.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
 import Branch from './models/Branch.js'
+import LeadStage from './models/LeadStage.js'
 
 dotenv.config()
 
@@ -186,6 +188,7 @@ app.use('/api/notifications', notificationRoutes)
 app.use('/api/login-history', loginHistoryRoutes)
 app.use('/api/system-logs', systemLogsRoutes)
 app.use('/api/leads', leadRoutes)
+app.use('/api/lead-stages', leadStageRoutes)
 app.use('/api/website-settings', websiteSettingsRoutes)
 app.use('/api/whatsapp-settings', whatsappSettingsRoutes)
 app.use('/api/whatsapp', whatsappRoutes)
@@ -380,6 +383,53 @@ const seedDefaultBranchesIfNeeded = async () => {
   }
 }
 
+// Function to seed default lead stages if they don't exist
+const seedDefaultLeadStagesIfNeeded = async () => {
+  try {
+    // Existing stages (kept for backward compatibility) followed by the newly requested
+    // stages. Any name that already matches an existing one (case/format-insensitive) is
+    // skipped so we never create a duplicate.
+    const defaultStageNames = [
+      'New',
+      'In Progress',
+      'Follow-Up',
+      'Converted',
+      'Lost',
+      'Cancelled',
+      'Enquiry',
+      'Old',
+      'Up Coming',
+      'Unprofessional',
+      'Other District',
+      'RNR',
+      'Hindi',
+    ]
+
+    const normalize = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+    const existingStages = await LeadStage.find()
+    const existingNormalized = new Set(existingStages.map((s) => normalize(s.name)))
+
+    let createdCount = 0
+    for (const stageName of defaultStageNames) {
+      const key = normalize(stageName)
+      if (existingNormalized.has(key)) continue
+      await new LeadStage({ name: stageName }).save()
+      existingNormalized.add(key)
+      createdCount++
+      console.log(`✅ Lead stage "${stageName}" created`)
+    }
+
+    if (createdCount > 0) {
+      console.log(`✅ ${createdCount} default lead stage(s) created`)
+    } else {
+      console.log('ℹ️  Default lead stages already exist')
+    }
+  } catch (error) {
+    console.error('❌ Error seeding default lead stages:', error.message)
+    // Don't exit - let server start even if seeding fails
+  }
+}
+
 // Ensure console output is not buffered
 process.stdout.setEncoding('utf8')
 process.stderr.setEncoding('utf8')
@@ -405,7 +455,10 @@ mongoose
     
     // Seed default branches if needed
     await seedDefaultBranchesIfNeeded()
-    
+
+    // Seed default lead stages if needed
+    await seedDefaultLeadStagesIfNeeded()
+
     const server = app.listen(PORT, () => {
       const timestamp = new Date().toISOString()
       console.log('='.repeat(60))
