@@ -128,6 +128,7 @@ const Leads = () => {
   const [form] = Form.useForm()
   const watchedSpaPackage = Form.useWatch('spa_package', form)
   const watchedSlotTime = Form.useWatch('slot_time', form)
+  const watchedFormBranchId = Form.useWatch('branch', form)
   const leadFormSlotOptions = useMemo(() => {
     if (!watchedSpaPackage || !String(watchedSpaPackage).trim()) return []
     return slotTimesWithCurrent(watchedSpaPackage, watchedSlotTime)
@@ -542,7 +543,18 @@ const Leads = () => {
       spa_package: record.spa_package || '',
       assignedTo: record.assignedToId,
       notes: record.notes,
+      reminderDescription: '',
+      reminderRemindAt: null,
+      reminderAssignedTo: '',
     })
+    const pendingReminder = (record.reminders || []).find((r) => r.status === 'Pending')
+    if (pendingReminder) {
+      form.setFieldsValue({
+        reminderDescription: pendingReminder.description || '',
+        reminderRemindAt: pendingReminder.remindAt ? dayjs(pendingReminder.remindAt) : null,
+        reminderAssignedTo: pendingReminder.assignedTo || '',
+      })
+    }
     setIsModalVisible(true)
   }
 
@@ -645,12 +657,38 @@ const Leads = () => {
         ...(callLeadMeta || {}),
       }
 
+      let leadId = selectedLead?._id
       if (selectedLead) {
         await updateLead({ id: selectedLead._id, ...leadData }).unwrap()
         messageApi.success('Lead updated successfully')
       } else {
-        await createLead(leadData).unwrap()
+        const created = await createLead(leadData).unwrap()
+        leadId = created?.lead?._id
         messageApi.success('Lead created successfully')
+      }
+
+      const reminderDescription = values.reminderDescription?.trim()
+      const reminderRemindAt = values.reminderRemindAt
+      if (leadId && reminderDescription && reminderRemindAt) {
+        const reminderPayload = {
+          description: reminderDescription,
+          remindAt: reminderRemindAt.toISOString(),
+          assignedTo: values.reminderAssignedTo || '',
+        }
+        const existingPendingReminder = (selectedLead?.reminders || []).find((r) => r.status === 'Pending')
+        try {
+          if (existingPendingReminder) {
+            await updateReminderApi({
+              leadId,
+              reminderId: existingPendingReminder._id,
+              ...reminderPayload,
+            }).unwrap()
+          } else {
+            await addReminder({ leadId, ...reminderPayload }).unwrap()
+          }
+        } catch (reminderError) {
+          messageApi.warning(reminderError?.data?.message || 'Lead saved, but reminder could not be saved')
+        }
       }
 
       setIsModalVisible(false)
@@ -1327,6 +1365,57 @@ const Leads = () => {
                 ]}
               >
                 <Input.TextArea rows={3} placeholder="Internal notes (required)" />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Divider style={{ margin: '4px 0 16px' }} />
+              <h3 className="leads-followup-section-title" style={{ marginBottom: 12 }}>Reminder</h3>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="reminderDescription" label="Description">
+                <Input.TextArea rows={2} placeholder="Optional reminder description" />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item label="Quick Replies">
+                <Select
+                  placeholder="Select a quick reply to insert in description"
+                  allowClear
+                  onChange={(val) => { if (val) form.setFieldsValue({ reminderDescription: val }) }}
+                  options={[
+                    { value: 'Follow up on appointment booking', label: 'Follow up on appointment booking' },
+                    { value: 'Reminder for spa package inquiry', label: 'Reminder for spa package inquiry' },
+                    { value: 'Call back regarding pricing', label: 'Call back regarding pricing' },
+                    { value: 'Send promotional offer details', label: 'Send promotional offer details' },
+                    { value: 'Confirm appointment schedule', label: 'Confirm appointment schedule' },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item name="reminderRemindAt" label="Date & time to be notified">
+                <DatePicker
+                  showTime
+                  format="YYYY-MM-DD HH:mm"
+                  style={{ width: '100%' }}
+                  placeholder="Select date"
+                  disabledDate={(current) => current && current < dayjs().startOf('day')}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item name="reminderAssignedTo" label="Set reminder to">
+                <Select placeholder="Select assignee (optional)" allowClear>
+                  {(() => {
+                    const branchName = branches.find(
+                      (b) => (b._id || b.id) === watchedFormBranchId
+                    )?.name
+                    return branchName ? <Option value={branchName}>{branchName}</Option> : null
+                  })()}
+                  {users.map((user) => (
+                    <Option key={user._id || user.id} value={user.name}>{user.name}</Option>
+                  ))}
+                </Select>
               </Form.Item>
             </Col>
           </Row>

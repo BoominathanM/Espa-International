@@ -1382,7 +1382,7 @@ export const addReminder = async (req, res) => {
 // @access  Private
 export const updateReminder = async (req, res) => {
   try {
-    const { status } = req.body
+    const { status, description, remindAt, assignedTo } = req.body
     const lead = await Lead.findById(req.params.id)
     if (!lead) {
       return res.status(404).json({ success: false, message: 'Lead not found' })
@@ -1394,9 +1394,14 @@ export const updateReminder = async (req, res) => {
     }
 
     if (status) reminder.status = status
+    if (description) reminder.description = description
+    if (remindAt) reminder.remindAt = new Date(remindAt)
+    if (assignedTo !== undefined) reminder.assignedTo = assignedTo
     lead.activityLogs.push({
       action: 'Reminder Updated',
-      details: `Reminder status changed to "${status}"`,
+      details: status
+        ? `Reminder status changed to "${status}"`
+        : `Reminder updated: "${reminder.description}"`,
       performedBy: req.user?.name || 'User',
     })
     lead.lastInteraction = new Date()

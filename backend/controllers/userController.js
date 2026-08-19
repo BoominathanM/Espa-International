@@ -37,18 +37,25 @@ const normalizePermissions = (rawPermissions) => {
 }
 
 const normalizeBranchSelection = (payload = {}) => {
-  const incoming = Array.isArray(payload.branches)
-    ? payload.branches
-    : payload.branch
-    ? [payload.branch]
-    : []
+  const incoming = [
+    ...(Array.isArray(payload.branches) ? payload.branches : []),
+    ...(payload.branch ? [payload.branch] : []),
+  ]
 
   const filteredBranchIds = [...new Set(incoming.filter(Boolean).map((id) => String(id)))]
   const allBranches = Boolean(payload.allBranches)
+  // Default branch: explicitly chosen via payload.branch, falling back to the first
+  // selected branch when only one is picked (or when no explicit default was sent).
+  // Kept even when allBranches is true, since the admin still picks a primary branch
+  // from the full branch list in that case.
+  const defaultBranchId = payload.branch ? String(payload.branch) : filteredBranchIds[0] || null
 
   return {
     allBranches,
-    branchIds: allBranches ? [] : filteredBranchIds,
+    // Raw selected ids from the payload; when allBranches is true the caller
+    // resolves this to the full branch list from the DB instead.
+    branchIds: filteredBranchIds,
+    defaultBranchId,
   }
 }
 
@@ -140,10 +147,13 @@ export const createUser = async (req, res) => {
   try {
     const { name, email, password, role, status, phone, cloudAgentAgentId, telecmiAgentId, permissions } = req.body
     const normalizedPermissions = normalizePermissions(permissions)
-    const { allBranches, branchIds } = normalizeBranchSelection(req.body)
+    const { allBranches, branchIds: selectedBranchIds, defaultBranchId } = normalizeBranchSelection(req.body)
 
-    if (!allBranches && branchIds.length === 0) {
+    if (!allBranches && selectedBranchIds.length === 0) {
       return res.status(400).json({ message: 'Select at least one branch or choose All' })
+    }
+    if (!defaultBranchId) {
+      return res.status(400).json({ message: 'Select a default branch' })
     }
     if (!normalizedPermissions) {
       return res.status(400).json({ message: 'User-specific permissions are mandatory' })
@@ -155,13 +165,21 @@ export const createUser = async (req, res) => {
       return res.status(400).json({ message: 'User with this email already exists' })
     }
 
-    // Validate branches when specific branches are selected
+    // Validate branches when specific branches are selected; when All branches is chosen,
+    // resolve to every branch in the system so `branches` reflects the full set (minus the default).
+    let branchIds = selectedBranchIds
     if (!allBranches) {
       for (const branchId of branchIds) {
         const branchExists = await Branch.findById(branchId)
         if (!branchExists) {
           return res.status(400).json({ message: 'Branch not found' })
         }
+      }
+    } else {
+      const allBranchDocs = await Branch.find().select('_id')
+      branchIds = allBranchDocs.map((b) => b._id.toString())
+      if (!branchIds.includes(defaultBranchId)) {
+        return res.status(400).json({ message: 'Default branch not found' })
       }
     }
 
@@ -170,8 +188,8 @@ export const createUser = async (req, res) => {
       email: email.toLowerCase(),
       password,
       role: role || 'staff',
-      branch: allBranches ? null : branchIds[0] || null,
-      branches: allBranches ? [] : branchIds,
+      branch: defaultBranchId,
+      branches: branchIds.filter((id) => id !== defaultBranchId),
       allBranches,
       status: status || 'active',
       phone: phone || '',
@@ -183,7 +201,7 @@ export const createUser = async (req, res) => {
     await user.save()
 
     // Add user to each selected branch's assignedUsers array
-    if (!allBranches && branchIds.length > 0) {
+    if (branchIds.length > 0) {
       await Branch.updateMany(
         { _id: { $in: branchIds } },
         { $addToSet: { assignedUsers: user._id } }
@@ -248,7 +266,7 @@ export const updateUser = async (req, res) => {
   try {
     const { name, email, password, role, status, phone, cloudAgentAgentId, telecmiAgentId, permissions } = req.body
     const normalizedPermissions = normalizePermissions(permissions)
-    const { allBranches, branchIds } = normalizeBranchSelection(req.body)
+    const { allBranches, branchIds: selectedBranchIds, defaultBranchId } = normalizeBranchSelection(req.body)
 
     const user = await User.findById(req.params.id)
     if (!user) {
@@ -259,12 +277,12 @@ export const updateUser = async (req, res) => {
     const oldName = user.name
     const oldRole = user.role
     const oldStatus = user.status
-    const oldBranchIds =
-      Array.isArray(user.branches) && user.branches.length > 0
-        ? user.branches.map((b) => b.toString())
-        : user.branch
-        ? [user.branch.toString()]
-        : []
+    const oldBranchIds = [
+      ...new Set([
+        ...(Array.isArray(user.branches) ? user.branches.map((b) => b.toString()) : []),
+        ...(user.branch ? [user.branch.toString()] : []),
+      ]),
+    ]
 
     // Check if email is being changed and if it's already taken
     if (email && email.toLowerCase() !== user.email) {
@@ -281,18 +299,30 @@ export const updateUser = async (req, res) => {
     if (phone !== undefined) user.phone = phone || ''
     if (cloudAgentAgentId !== undefined) user.cloudAgentAgentId = (cloudAgentAgentId || '').trim()
     if (telecmiAgentId !== undefined) user.telecmiAgentId = telecmiAgentId.trim()
-    if (!allBranches && branchIds.length === 0) {
+    if (!allBranches && selectedBranchIds.length === 0) {
       return res.status(400).json({ message: 'Select at least one branch or choose All' })
+    }
+    if (!defaultBranchId) {
+      return res.status(400).json({ message: 'Select a default branch' })
     }
     if (!normalizedPermissions) {
       return res.status(400).json({ message: 'User-specific permissions are mandatory' })
     }
+    // Validate branches when specific branches are selected; when All branches is chosen,
+    // resolve to every branch in the system so `branches` reflects the full set (minus the default).
+    let branchIds = selectedBranchIds
     if (!allBranches) {
       for (const branchId of branchIds) {
         const branchExists = await Branch.findById(branchId)
         if (!branchExists) {
           return res.status(400).json({ message: 'Branch not found' })
         }
+      }
+    } else {
+      const allBranchDocs = await Branch.find().select('_id')
+      branchIds = allBranchDocs.map((b) => b._id.toString())
+      if (!branchIds.includes(defaultBranchId)) {
+        return res.status(400).json({ message: 'Default branch not found' })
       }
     }
     user.permissions = normalizedPermissions
@@ -302,10 +332,10 @@ export const updateUser = async (req, res) => {
       user.password = password
     }
 
-    const newBranchIds = allBranches ? [] : branchIds
+    const newBranchIds = branchIds
     user.allBranches = allBranches
-    user.branches = newBranchIds
-    user.branch = allBranches ? null : newBranchIds[0] || null
+    user.branch = defaultBranchId
+    user.branches = newBranchIds.filter((id) => id !== defaultBranchId)
 
     await user.save()
 
@@ -483,12 +513,13 @@ export const disableUser = async (req, res) => {
       }
     }
 
-    const branchIdsToRemove =
-      Array.isArray(user.branches) && user.branches.length > 0
-        ? user.branches
-        : user.branch
-        ? [user.branch]
-        : []
+    const branchIdsToRemove = [
+      ...new Set(
+        [...(Array.isArray(user.branches) ? user.branches : []), ...(user.branch ? [user.branch] : [])].map((b) =>
+          String(b)
+        )
+      ),
+    ]
     if (branchIdsToRemove.length > 0) {
       await Branch.updateMany({ _id: { $in: branchIdsToRemove } }, { $pull: { assignedUsers: user._id } })
     }

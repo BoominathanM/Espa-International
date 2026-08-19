@@ -83,6 +83,7 @@ const Users = () => {
   const [disableForm] = Form.useForm()
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const watchedBranches = Form.useWatch('branches', form)
 
   // API hooks
   const { data: usersData, isLoading: usersLoading, refetch: refetchUsers } = useGetUsersQuery()
@@ -100,6 +101,12 @@ const Users = () => {
 
   const users = usersData?.users || []
   const branches = branchesData?.branches || []
+  const hasAllBranchesSelected = (watchedBranches || []).includes(ALL_BRANCH_OPTION)
+  // When "All" is selected, the default branch can be any branch in the system;
+  // otherwise it's limited to whatever was picked in the multi-select.
+  const selectedBranchIdsForDefault = hasAllBranchesSelected
+    ? branches.map((b) => b._id || b.id).filter(Boolean)
+    : (watchedBranches || []).filter((id) => id !== ALL_BRANCH_OPTION)
   const roleCounts = roleCountsData?.roleCounts || {}
   const roleNamesFromDb = (rolesData?.roles || []).map((r) => r.name).filter(Boolean)
   const normalizedRoleOptions = useMemo(() => {
@@ -140,18 +147,21 @@ const Users = () => {
       key: 'branch',
       render: (_, record) => {
         if (record.allBranches) return <Tag color="purple">All</Tag>
-        const recordBranches = Array.isArray(record.branches) ? record.branches : []
-        if (recordBranches.length > 0) {
-          return (
-            <Space wrap>
-              {recordBranches.map((b) => (
-                <Tag key={b._id || b.id || b}>{typeof b === 'object' ? b.name : String(b)}</Tag>
-              ))}
-            </Space>
-          )
-        }
-        const branch = record.branch
-        return branch ? (typeof branch === 'object' ? branch.name : branch) : 'Not Assigned'
+        const defaultBranch = record.branch
+        const otherBranches = Array.isArray(record.branches) ? record.branches : []
+        if (!defaultBranch && otherBranches.length === 0) return 'Not Assigned'
+        return (
+          <Space wrap>
+            {defaultBranch && (
+              <Tag key={defaultBranch._id || defaultBranch.id || defaultBranch} color="blue">
+                {typeof defaultBranch === 'object' ? defaultBranch.name : String(defaultBranch)} (Default)
+              </Tag>
+            )}
+            {otherBranches.map((b) => (
+              <Tag key={b._id || b.id || b}>{typeof b === 'object' ? b.name : String(b)}</Tag>
+            ))}
+          </Space>
+        )
       },
     },
     {
@@ -264,11 +274,11 @@ const Users = () => {
 
   const handleEdit = (record) => {
     setSelectedUser(record)
-    const branchIds = Array.isArray(record.branches)
+    const defaultBranchId = record.branch ? record.branch?._id || record.branch?.id || record.branch : null
+    const otherBranchIds = Array.isArray(record.branches)
       ? record.branches.map((b) => b?._id || b?.id || b).filter(Boolean)
-      : record.branch
-      ? [record.branch?._id || record.branch?.id || record.branch]
       : []
+    const branchIds = [...new Set([...(defaultBranchId ? [defaultBranchId] : []), ...otherBranchIds])]
     const selectedBranches = record.allBranches ? [ALL_BRANCH_OPTION] : branchIds
     const customPermissions = record.permissions || {}
     const editablePermissions =
@@ -291,6 +301,7 @@ const Users = () => {
     form.setFieldsValue({
       ...record,
       branches: selectedBranches,
+      defaultBranch: defaultBranchId || branchIds[0] || undefined,
       phoneNumber: phoneNumber,
       countryCode: countryCode,
       cloudAgentAgentId: record.cloudAgentAgentId || '',
@@ -367,16 +378,35 @@ const Users = () => {
         ? formatPhoneNumber(values.countryCode || selectedCountryCode, values.phoneNumber)
         : ''
       
+      const rawBranches = values.branches || []
+      const isAllBranches = rawBranches.includes(ALL_BRANCH_OPTION)
+      const selectedBranchIds = rawBranches.filter((id) => id !== ALL_BRANCH_OPTION)
+      // A single specific branch is its own default; otherwise (multiple branches, or "All")
+      // the admin must have picked one via the Default Branch field.
+      const defaultBranchId = !isAllBranches && selectedBranchIds.length === 1
+        ? selectedBranchIds[0]
+        : values.defaultBranch
+
       const formData = {
         ...values,
         phone: fullPhoneNumber || '',
         permissions: sanitizePermissionDraft(permissionDraft || {}),
-        allBranches: (values.branches || []).includes(ALL_BRANCH_OPTION),
-        branches: (values.branches || []).filter((id) => id !== ALL_BRANCH_OPTION),
+        allBranches: isAllBranches,
+        // `branch` holds the chosen default; `branches` holds the remaining branches
+        // (the backend re-resolves this to the full branch list when isAllBranches, this is best-effort).
+        branch: defaultBranchId,
+        branches: isAllBranches
+          ? branches.map((b) => b._id || b.id).filter((id) => id && id !== defaultBranchId)
+          : selectedBranchIds.filter((id) => id !== defaultBranchId),
       }
+      delete formData.defaultBranch
 
       if (!values.branches || values.branches.length === 0) {
         message.error('Branch is mandatory (select branches or All)')
+        return
+      }
+      if (!defaultBranchId) {
+        message.error('Please select a default branch')
         return
       }
       const hasAnyPermission = Object.values(permissionDraft || {}).some(
@@ -709,7 +739,20 @@ const Users = () => {
                   onChange={(selectedValues = []) => {
                     const hasAll = selectedValues.includes(ALL_BRANCH_OPTION)
                     if (hasAll) {
+                      // Keep any already-chosen default branch; it's still a valid
+                      // option once the dropdown expands to the full branch list.
                       form.setFieldValue('branches', [ALL_BRANCH_OPTION])
+                      return
+                    }
+                    if (selectedValues.length === 1) {
+                      form.setFieldValue('defaultBranch', selectedValues[0])
+                    } else if (selectedValues.length > 1) {
+                      const currentDefault = form.getFieldValue('defaultBranch')
+                      if (!currentDefault || !selectedValues.includes(currentDefault)) {
+                        form.setFieldValue('defaultBranch', undefined)
+                      }
+                    } else {
+                      form.setFieldValue('defaultBranch', undefined)
                     }
                   }}
                 >
@@ -724,6 +767,30 @@ const Users = () => {
                 </Select>
               </Form.Item>
             </Col>
+            {(hasAllBranchesSelected ? selectedBranchIdsForDefault.length > 0 : selectedBranchIdsForDefault.length > 1) && (
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="defaultBranch"
+                  label="Default Branch"
+                  rules={[{ required: true, message: 'Please select a default branch' }]}
+                  extra={
+                    hasAllBranchesSelected
+                      ? "Chosen branch is stored as the user's primary branch; access still covers all branches."
+                      : "Chosen branch is stored as the user's primary branch; the rest remain as additional branches."
+                  }
+                >
+                  <Select placeholder="Select default branch" showSearch optionFilterProp="children">
+                    {branches
+                      .filter((branch) => selectedBranchIdsForDefault.includes(branch._id || branch.id))
+                      .map((branch) => (
+                        <Option key={branch._id || branch.id} value={branch._id || branch.id}>
+                          {branch.name}
+                        </Option>
+                      ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+            )}
           </Row>
 
           <Form.Item label="User-specific permissions">

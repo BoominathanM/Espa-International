@@ -74,12 +74,15 @@ const resolveUserBranches = async (user) => {
       name: b.name || '',
     }))
   }
-  return Array.isArray(user.branches)
-    ? user.branches.map((b) => ({
-        _id: b._id?.toString() || b.toString(),
-        name: b.name || '',
-      }))
-    : []
+  const branchList = Array.isArray(user.branches) ? user.branches : []
+  const merged = user.branch
+    ? [user.branch, ...branchList.filter((b) => String(b?._id || b) !== String(user.branch?._id || user.branch))]
+    : branchList
+
+  return merged.map((b) => ({
+    _id: b._id?.toString() || b.toString(),
+    name: b.name || '',
+  }))
 }
 
 // @desc    Login user
