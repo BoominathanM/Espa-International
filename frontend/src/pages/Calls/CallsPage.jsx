@@ -88,6 +88,7 @@ const getCallTypeTagColor = (type) => {
 const CALL_TYPE_FILTER_OPTIONS = [
   { value: 'Inbound', label: 'Inbound' },
   { value: 'Manual', label: 'Manual (outbound)' },
+  { value: 'Progressive', label: 'Progressive' },
 ]
 
 /** Aligns provider spellings with CRM labels (Answered / Missed). Matches cloudagentController status filter. */
@@ -243,8 +244,8 @@ const Calls = () => {
   const telecmiCallLogs = telecmiCallLogsData?.callLogs || []
   const telecmiPagination = telecmiCallLogsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
 
-  const TELECMI_TYPE_COLORS = { inbound: 'green', outbound: 'blue' }
-  const TELECMI_TYPE_LABELS = { inbound: 'Inbound', outbound: 'Outbound' }
+  const TELECMI_TYPE_COLORS = { inbound: 'green', outbound: 'blue', progressive: 'purple' }
+  const TELECMI_TYPE_LABELS = { inbound: 'Inbound', outbound: 'Outbound', progressive: 'Progressive' }
 
   const telecmiCalls = useMemo(() => {
     return telecmiCallLogs.map((log) => {
@@ -285,6 +286,7 @@ const Calls = () => {
       filters: [
         { text: 'Inbound', value: 'inbound' },
         { text: 'Outbound', value: 'outbound' },
+        { text: 'Progressive', value: 'progressive' },
       ],
       onFilter: (value, record) => record.variant === value,
     },
@@ -718,6 +720,7 @@ const Calls = () => {
             >
               <Option value="inbound">Inbound</Option>
               <Option value="outbound">Outbound</Option>
+              <Option value="progressive">Progressive</Option>
             </Select>
             <Button onClick={handleClearFilters}>Clear filters</Button>
           </div>

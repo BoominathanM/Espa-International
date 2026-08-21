@@ -108,7 +108,9 @@ export const getCallLogs = async (req, res) => {
     const filter = {}
     const andConditions = []
 
-    if (variant && ['inbound', 'outbound'].includes(String(variant).trim())) {
+    if (variant && String(variant).trim()) {
+      // Any value works here, not just the schema's enum — e.g. superadmin-only "progressive"
+      // matches zero records today but shouldn't silently fall through to an unfiltered list.
       filter.variant = String(variant).trim()
     }
 
