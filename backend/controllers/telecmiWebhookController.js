@@ -53,17 +53,41 @@ export const headTeleCMIWebhook = (req, res) => {
 
 const normalizeDigits = (v) => String(v ?? '').replace(/\D/g, '')
 
+/** Last 10 digits of a phone number, for comparing values that may or may not carry a country code. */
+const phoneTail = (v) => normalizeDigits(v).slice(-10)
+
 /** Best-effort call direction: compare last 10 digits of from/to against our configured DID. */
 const classifyDirection = (fromRaw, toRaw, ourNumberRaw) => {
-  const tail = (s) => normalizeDigits(s).slice(-10)
-  const our = tail(ourNumberRaw)
-  const from = tail(fromRaw)
-  const to = tail(toRaw)
+  const our = phoneTail(ourNumberRaw)
+  const from = phoneTail(fromRaw)
+  const to = phoneTail(toRaw)
   if (our) {
     if (from === our) return 'outbound'
     if (to === our) return 'inbound'
   }
   return 'outbound'
+}
+
+/**
+ * TeleCMI's CDR payload (cmiuid) carries no field shared with the click-to-call placeholder
+ * created at request time (keyed by requestId — see makeAgentCall), so a callId match alone
+ * misses every agent-initiated call: the CDR would otherwise land as a brand-new, disconnected
+ * row instead of updating the "initiated" placeholder the user is looking at. Reconcile by
+ * phone number against a recent, still-unresolved placeholder before falling back to a new doc.
+ */
+const RECONCILE_WINDOW_MS = 2 * 60 * 60 * 1000
+
+const findClickToCallPlaceholder = async (customerNumber) => {
+  const tail = phoneTail(customerNumber)
+  if (!tail) return null
+  const candidates = await TeleCMICallLog.find({
+    callId: { $exists: false },
+    status: 'initiated',
+    createdAt: { $gte: new Date(Date.now() - RECONCILE_WINDOW_MS) },
+  })
+    .sort({ createdAt: -1 })
+    .limit(20)
+  return candidates.find((c) => phoneTail(c.customerNumber) === tail) || null
 }
 
 const saveCdrEntry = async (entry, settings) => {
@@ -98,12 +122,13 @@ const saveCdrEntry = async (entry, settings) => {
     callTimestamp,
     overallConversation: notesText,
     rawPayload: entry,
-    lead: null,
-    branches: [],
   }
 
   // Only link/create a Lead for calls that actually connected — avoids flooding
-  // Leads with every failed/wrong-number dial attempt in the raw CDR stream.
+  // Leads with every failed/wrong-number dial attempt in the raw CDR stream. When this CDR
+  // doesn't resolve a lead, leave `lead`/`branches` out of $set entirely — a merge into a
+  // click-to-call placeholder (findClickToCallPlaceholder, below) must not null out the lead
+  // link that placeholder already has just because this particular call had 0 duration.
   if (customerNumber && duration > 0) {
     const noteLine = `[TeleCMI ${direction === 'inbound' ? 'Inbound' : 'Outbound'} Call] ${duration}s${notesText ? ` — ${notesText}` : ''}`
     const leadRes = await createOrUpdateLeadFromPhone({
@@ -113,8 +138,23 @@ const saveCdrEntry = async (entry, settings) => {
     })
     if (leadRes.success) {
       doc.lead = leadRes.lead._id
-      if (leadRes.lead.branch) doc.branches = [leadRes.lead.branch]
+      doc.branches = leadRes.lead.branch ? [leadRes.lead.branch] : []
     }
+  }
+
+  if (doc.callId) {
+    const updated = await TeleCMICallLog.findOneAndUpdate(
+      { callId: doc.callId },
+      { $set: doc },
+      { new: true }
+    )
+    if (updated) return
+  }
+
+  const placeholder = await findClickToCallPlaceholder(customerNumber)
+  if (placeholder) {
+    await TeleCMICallLog.findByIdAndUpdate(placeholder._id, { $set: doc })
+    return
   }
 
   if (doc.callId) {
