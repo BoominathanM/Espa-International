@@ -49,14 +49,20 @@ export const makeAgentCall = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Assigned staff member is not an active user' })
     }
 
+    console.log(
+      `[TELECMI] => placing click-to-call | lead ${lead._id} (${lead.first_name || ''}) | to ${lead.phone.trim()} ` +
+        `| agent ${agentUser.name} (TeleCMI id ${agentUser.telecmiAgentId})`
+    )
+
     const callResult = await placeAgentCall(settings, agentUser, lead.phone.trim(), {
       crm: 'true',
       leadId: String(lead._id),
     })
 
     const requestId = callResult?.request_id ? String(callResult.request_id) : undefined
+    console.log(`[TELECMI] <= click2call API response:`, JSON.stringify(callResult))
 
-    await TeleCMICallLog.create({
+    const placeholderRow = await TeleCMICallLog.create({
       variant: 'outbound',
       customerName: lead.first_name || '',
       customerNumber: lead.phone.trim(),
@@ -67,6 +73,10 @@ export const makeAgentCall = async (req, res) => {
       lead: lead._id,
       branches: lead.branch ? [lead.branch] : [],
     })
+    console.log(
+      `[TELECMI] => INITIATED row ${placeholderRow._id} created (requestId ${requestId || '—'}). ` +
+        `Awaiting CHUB/CDR webhook to advance status.`
+    )
 
     res.json({ success: true, data: callResult, agent: { id: agentUser._id, name: agentUser.name } })
   } catch (error) {

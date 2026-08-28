@@ -106,6 +106,14 @@ const saveCdrEntry = async (entry, settings) => {
   const duration = Number(entry.duration) || 0
   const callTimestamp = entry.time ? new Date(Number(entry.time)) : null
 
+  // Derive a readable call outcome for the CDR path. Previously `status` was never set here, so a
+  // CDR-only integration left the row frozen at the "initiated" placeholder value. Prefer any
+  // status/disposition string TeleCMI's own CDR carries; otherwise infer from talk time.
+  const rawCdrStatus = cleanValue(entry.status || entry.disposition || entry.dialstatus || entry.hangup_cause)
+  const derivedStatus = rawCdrStatus
+    ? rawCdrStatus.toLowerCase()
+    : (duration > 0 ? 'completed' : 'missed')
+
   const doc = {
     variant: direction,
     callId: entry.cmiuid ? String(entry.cmiuid) : undefined,
@@ -120,9 +128,17 @@ const saveCdrEntry = async (entry, settings) => {
     isRecorded: String(entry.record ?? '').toLowerCase() === 'true',
     rate: Number(entry.rate) || 0,
     callTimestamp,
+    status: derivedStatus,
     overallConversation: notesText,
     rawPayload: entry,
   }
+
+  console.log(
+    LOG,
+    `CDR entry: from=${fromNumber || '—'} to=${toNumber || '—'} dir=${direction} dur=${duration}s ` +
+      `billed=${doc.billedSeconds}s rec=${doc.recordingFile || '—'} cmiuid=${entry.cmiuid || '—'} ` +
+      `=> status "${derivedStatus}"${rawCdrStatus ? ' (from CDR)' : ' (inferred from duration)'}`
+  )
 
   // Only link/create a Lead for calls that actually connected — avoids flooding
   // Leads with every failed/wrong-number dial attempt in the raw CDR stream. When this CDR
@@ -148,23 +164,33 @@ const saveCdrEntry = async (entry, settings) => {
       { $set: doc },
       { new: true }
     )
-    if (updated) return
+    if (updated) {
+      console.log(LOG, `CDR => updated existing row ${updated._id} matched by callId ${doc.callId}; status now "${doc.status}"`)
+      return
+    }
   }
 
   const placeholder = await findClickToCallPlaceholder(customerNumber)
   if (placeholder) {
     await TeleCMICallLog.findByIdAndUpdate(placeholder._id, { $set: doc })
+    console.log(
+      LOG,
+      `CDR => merged into click-to-call placeholder ${placeholder._id} (requestId ${placeholder.requestId || '—'}); ` +
+        `status "${placeholder.status || '(none)'}" => "${doc.status}", duration ${doc.duration}s`
+    )
     return
   }
 
   if (doc.callId) {
-    await TeleCMICallLog.findOneAndUpdate(
+    const up = await TeleCMICallLog.findOneAndUpdate(
       { callId: doc.callId },
       { $set: doc },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     )
+    console.log(LOG, `CDR => no placeholder match; upserted standalone row ${up?._id} (callId ${doc.callId}), status "${doc.status}"`)
   } else {
-    await TeleCMICallLog.create(doc)
+    const created = await TeleCMICallLog.create(doc)
+    console.log(LOG, `CDR => no callId and no placeholder match; created standalone row ${created._id}, status "${doc.status}"`)
   }
 }
 
@@ -204,13 +230,21 @@ const saveChubCallEvent = async (body) => {
 
   if (orConditions.length) {
     const query = orConditions.length === 1 ? orConditions[0] : { $or: orConditions }
-    await TeleCMICallLog.findOneAndUpdate(
+    const prev = await TeleCMICallLog.findOne(query).select('status callId requestId').lean()
+    const saved = await TeleCMICallLog.findOneAndUpdate(
       query,
       { $set: fields },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     )
+    console.log(
+      LOG,
+      `CHUB event => ${prev ? `matched row ${prev._id}` : `created row ${saved?._id}`}: ` +
+        `status "${prev?.status ?? '(new)'}" => "${fields.status}" ` +
+        `| callId=${callId || '—'} requestId=${requestId || '—'} to=${fields.customerNumber || '—'} agent=${fields.agentCode || '—'}`
+    )
   } else {
-    await TeleCMICallLog.create(fields)
+    const created = await TeleCMICallLog.create(fields)
+    console.log(LOG, `CHUB event => created row ${created._id} status "${fields.status}" (no callId/requestId to match on)`)
   }
 }
 
@@ -218,14 +252,18 @@ export const handleTeleCMIWebhook = async (req, res) => {
   try {
     const body = req.body
     if (!body || typeof body !== 'object' || Object.keys(body).length === 0) {
+      console.warn(LOG, `<= inbound webhook from ${req.ip} rejected: empty body`)
       return res.status(400).json({ success: false, message: 'Missing request body' })
     }
+
+    console.log(LOG, `<= inbound webhook from ${req.ip} | payload keys: [${Object.keys(body).join(', ')}]`)
 
     const settings = await TeleCMISettings.getSettings()
     const configuredKey = settings.webhookApiKey || process.env.TELECMI_WEBHOOK_API_KEY
     const requestKey = extractApiKey(req)
 
     if (configuredKey && requestKey !== configuredKey) {
+      console.warn(LOG, `<= rejected: API key ${requestKey ? 'mismatch' : 'missing'} (expected the configured Webhook API Key)`)
       return res.status(401).json({ success: false, message: 'Invalid API key' })
     }
 
