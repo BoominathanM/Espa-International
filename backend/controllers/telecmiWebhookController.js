@@ -245,27 +245,35 @@ const linkRecordingToLead = async (leadId, filename, meta = {}) => {
 
 /**
  * TeleCMI's followme/bridge places a short first leg that ends `recv_cancel` (logged as
- * `missed`) before the real ring — and a genuine no-answer only settles on the LAST leg.
- * A missed row is "superseded" (must NOT trigger ZenXAI) when, for the same number within a
- * few minutes, there is another row that: answered, OR was created later (a subsequent
- * attempt / the real ring), OR already fired its own ZenXAI push.
+ * `missed`) seconds before the real ring — and a genuine no-answer only settles on the LAST
+ * leg. A missed row is "superseded" (must NOT trigger ZenXAI) when, for the same number:
+ *  - a call ANSWERED within ±5 min (the customer actually spoke to us), OR
+ *  - another leg was created within ~2 min AFTER it (the real ring of the same dial), OR
+ *  - a sibling within ±5 min already fired its own real ZenXAI push (dedupe).
+ * A deliberate re-dial minutes later is NOT "superseding" — that missed call still gets its
+ * own AI call-back.
  */
 const SIBLING_WINDOW_MS = 5 * 60 * 1000
+const SUPERSEDE_LEG_WINDOW_MS = 2 * 60 * 1000
 
 const findSupersedingCall = async (call) => {
   const tail = phoneTail(call.customerNumber || call.toNumber)
   if (!tail) return null
   const selfCreated = call.createdAt ? new Date(call.createdAt) : new Date()
-  const from = new Date(selfCreated.getTime() - SIBLING_WINDOW_MS)
-  const to = new Date(selfCreated.getTime() + SIBLING_WINDOW_MS)
+  const wideFrom = new Date(selfCreated.getTime() - SIBLING_WINDOW_MS)
+  const wideTo = new Date(selfCreated.getTime() + SIBLING_WINDOW_MS)
+  const legTo = new Date(selfCreated.getTime() + SUPERSEDE_LEG_WINDOW_MS)
   return TeleCMICallLog.findOne({
     _id: { $ne: call._id },
     customerNumber: new RegExp(`${tail}$`),
-    createdAt: { $gte: from, $lte: to },
     $or: [
-      { status: 'answered' },
-      { createdAt: { $gt: selfCreated } },
-      { zenxaiCallbackAt: { $ne: null }, 'zenxaiCallbackResult.suppressed': { $exists: false } },
+      { status: 'answered', createdAt: { $gte: wideFrom, $lte: wideTo } },
+      { createdAt: { $gt: selfCreated, $lte: legTo } },
+      {
+        zenxaiCallbackAt: { $ne: null },
+        'zenxaiCallbackResult.suppressed': { $exists: false },
+        createdAt: { $gte: wideFrom, $lte: wideTo },
+      },
     ],
   })
     .select('_id status createdAt')
@@ -281,8 +289,10 @@ const suppressPendingMissedSiblings = async (answeredCall) => {
   const tail = phoneTail(answeredCall.customerNumber || answeredCall.toNumber)
   if (!tail) return
   const base = answeredCall.createdAt ? new Date(answeredCall.createdAt) : new Date()
-  const from = new Date(base.getTime() - SIBLING_WINDOW_MS)
-  const to = new Date(base.getTime() + SIBLING_WINDOW_MS)
+  // Only the missed legs that belong to THIS dial sequence (a couple of minutes either side),
+  // not a genuine missed call the customer never returned hours/minutes earlier.
+  const from = new Date(base.getTime() - SUPERSEDE_LEG_WINDOW_MS)
+  const to = new Date(base.getTime() + SUPERSEDE_LEG_WINDOW_MS)
   const r = await TeleCMICallLog.updateMany(
     {
       _id: { $ne: answeredCall._id },
@@ -413,11 +423,29 @@ const saveChubCallEvent = async (body, settings = {}) => {
   if (orConditions.length) {
     const query = orConditions.length === 1 ? orConditions[0] : { $or: orConditions }
     const prev = await TeleCMICallLog.findOne(query).select('status callId requestId').lean()
-    saved = await TeleCMICallLog.findOneAndUpdate(
-      query,
-      { $set: fields },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    )
+    try {
+      saved = await TeleCMICallLog.findOneAndUpdate(
+        query,
+        { $set: fields },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      )
+    } catch (err) {
+      // A followme/double-dial run produces sibling rows with different callId/requestId; a
+      // $set that would move one row's unique key onto another's value throws E11000. Retry
+      // once matching the row by callId alone and without touching the unique keys.
+      if (err?.code === 11000) {
+        const { callId: _c, requestId: _r, ...safeFields } = fields
+        const fallbackQuery = callId ? { callId } : requestId ? { requestId } : query
+        saved = await TeleCMICallLog.findOneAndUpdate(
+          fallbackQuery,
+          { $set: safeFields },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        )
+        console.warn(LOG, `CHUB event => E11000 on key move; retried without callId/requestId $set (row ${saved?._id})`)
+      } else {
+        throw err
+      }
+    }
     console.log(
       LOG,
       `CHUB event => ${prev ? `matched row ${prev._id}` : `created row ${saved?._id}`}: ` +
@@ -480,22 +508,24 @@ export const handleTeleCMIWebhook = async (req, res) => {
       console.log(LOG, `CDR webhook received (${cdrEntries.length} record(s))`)
       const results = await Promise.allSettled(cdrEntries.map((entry) => saveCdrEntry(entry, settings)))
       const failed = results.filter((r) => r.status === 'rejected')
-      if (failed.length) {
-        failed.forEach((f) => console.error(LOG, 'CDR entry failed:', f.reason))
-        return res.status(500).json({
-          success: false,
-          message: 'One or more CDR entries failed to process',
-          processed: results.length - failed.length,
-          failed: failed.length,
-        })
-      }
-      return res.status(200).json({ success: true, message: 'Webhook processed successfully', processed: results.length })
+      failed.forEach((f) => console.error(LOG, 'CDR entry failed (acknowledged anyway):', f.reason))
+      // Always ack 200 — a non-2xx makes TeleCMI retry and can get the webhook disabled.
+      return res.status(200).json({
+        success: true,
+        message: 'Webhook received',
+        processed: results.length - failed.length,
+        failed: failed.length,
+      })
     }
 
     // Shape 2: TeleCMI click-to-call (CHUB) call-lifecycle event, e.g. "Outgoing Call Started".
     if (body.call_id !== undefined) {
       console.log(LOG, `CHUB call-lifecycle event received (status: ${body.status}):`, body)
-      await saveChubCallEvent(body, settings)
+      try {
+        await saveChubCallEvent(body, settings)
+      } catch (err) {
+        console.error(LOG, 'CHUB event processing failed (acknowledged anyway):', err)
+      }
       // TeleCMI's CHUB docs show a plain "got it" acknowledgment for these events, not JSON.
       return res.status(200).send('got it')
     }
@@ -504,7 +534,8 @@ export const handleTeleCMIWebhook = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Unrecognized payload shape' })
   } catch (error) {
     console.error(LOG, 'ERROR:', error)
-    return res.status(500).json({ success: false, message: 'Internal server error' })
+    // Still ack so TeleCMI doesn't disable the webhook over a transient error.
+    return res.status(200).json({ success: false, message: 'Received with errors' })
   }
 }
 

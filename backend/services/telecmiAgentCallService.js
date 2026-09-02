@@ -11,17 +11,6 @@ import axios from 'axios'
  */
 const CHUB_BASE_URL = 'https://rest.telecmi.com'
 
-/**
- * `webrtc` / `followme` control how TeleCMI reaches the agent. `followme:true` rings the
- * agent's follow-me number(s); if that account is set up with more than one, TeleCMI can
- * place two legs (a short one that ends `recv_cancel`, then the real ring). Override via env
- * without a redeploy to tune this: TELECMI_CLICK2CALL_WEBRTC / TELECMI_CLICK2CALL_FOLLOWME.
- */
-const envBool = (value, fallback) => {
-  if (value === undefined || value === null || String(value).trim() === '') return fallback
-  return /^(1|true|yes|on)$/i.test(String(value).trim())
-}
-
 class TeleCMIAgentCallError extends Error {
   constructor(message, status) {
     super(message)
@@ -75,8 +64,8 @@ export const placeAgentCall = async (settings, user, toNumber, extraParams) => {
         secret: settings.clickToCallSecret,
         to,
         ...(extraParams ? { extra_params: extraParams } : {}),
-        webrtc: envBool(process.env.TELECMI_CLICK2CALL_WEBRTC, false),
-        followme: envBool(process.env.TELECMI_CLICK2CALL_FOLLOWME, true),
+        webrtc: false,
+        followme: true,
         ...(callerid ? { callerid } : {}),
       },
       { timeout: 15000 }
