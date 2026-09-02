@@ -6,39 +6,14 @@ import Lead from '../models/Lead.js'
 import User from '../models/User.js'
 import { applyCallLogBranchScope, canAccessBranch } from '../utils/branchAccess.js'
 import { parseIstDateRange } from '../utils/istDateRange.js'
+import { RECORDING_NAME_RE, telecmiRecordingUrl } from '../utils/telecmiRecording.js'
 import { placeAgentCall, TeleCMIAgentCallError } from '../services/telecmiAgentCallService.js'
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** TeleCMI recording filenames look like "<digits>_<appid>.mp3" (or .wav). */
-const RECORDING_NAME_RE = /^[A-Za-z0-9._-]+\.(mp3|wav)$/i
 const TELECMI_PLAY_URL = 'https://rest.telecmi.com/v2/play'
 
-/**
- * Build a playable URL for a TeleCMI recording from its stored filename. TeleCMI's CHUB CDR
- * only gives us the bare filename; the audio itself is fetched from TeleCMI's /v2/play API
- * with the account appid + secret. We never expose the secret to the browser — the URL below
- * points at our own authenticated proxy (streamRecording). An explicit TELECMI_RECORDING_BASE_URL
- * still wins if set (e.g. a CDN the account exposes). Protocol-relative so it inherits the
- * page's http/https and avoids mixed-content behind a TLS-terminating proxy.
- */
-const buildRecordingUrl = (req, filename) => {
-  const raw = String(filename || '').trim()
-  if (!raw) return ''
-  if (/^https?:\/\//i.test(raw)) return raw
-
-  const base = (process.env.TELECMI_RECORDING_BASE_URL || '').trim()
-  if (base) {
-    const [path, query] = base.split('?')
-    const joined = `${path.replace(/\/+$/, '')}/${raw.replace(/^\/+/, '')}`
-    return query ? `${joined}?${query}` : joined
-  }
-
-  if (!RECORDING_NAME_RE.test(raw)) return ''
-  const host = req?.get?.('host')
-  const prefix = host ? `//${host}` : ''
-  return `${prefix}/api/telecmi/recording?file=${encodeURIComponent(raw)}`
-}
+const buildRecordingUrl = (req, filename) => telecmiRecordingUrl(req?.get?.('host'), filename)
 
 /**
  * Authenticated proxy for a TeleCMI call recording — GET /api/telecmi/recording?file=<name>
