@@ -13,6 +13,8 @@ import {
   handleTeleCMIWebhook,
   pingTeleCMIWebhook,
   headTeleCMIWebhook,
+  handleMissedCallPush,
+  handleZenxaiConversationWebhook,
 } from '../controllers/telecmiWebhookController.js'
 
 const router = express.Router()
@@ -20,5 +22,11 @@ const router = express.Router()
 router.get('/telecmi-webhook', pingTeleCMIWebhook)
 router.head('/telecmi-webhook', headTeleCMIWebhook)
 router.post('/telecmi-webhook', handleTeleCMIWebhook)
+
+// Public missed-call push to ZenXAI (retry / backfill of the automatic push in the webhook)
+router.post('/telecmi-missed-call', handleMissedCallPush)
+
+// Public receiver for ZenXAI's AI call-back conversation result
+router.post('/zenxai-webhook', handleZenxaiConversationWebhook)
 
 export default router

@@ -47,6 +47,13 @@ const telecmiCallLogSchema = new mongoose.Schema(
     // TeleCMI real click-to-call (CHUB) agent-call lifecycle fields
     requestId: { type: String, trim: true, default: undefined },
     status: { type: String, default: '' },
+
+    // ZenXAI AI call-back for missed calls (see services/zenxaiMissedCallService.js).
+    // `zenxaiCallbackAt` doubles as a guard so a redelivered "missed" webhook can't trigger
+    // a second AI call-back for the same record.
+    zenxaiCallbackAt: { type: Date, default: null },
+    zenxaiCallbackResult: { type: mongoose.Schema.Types.Mixed, default: null },
+    zenxaiConversationAt: { type: Date, default: null },
   },
   { timestamps: true }
 )

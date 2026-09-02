@@ -16,7 +16,9 @@
  */
 import TeleCMISettings from '../models/TeleCMISettings.js'
 import TeleCMICallLog from '../models/TeleCMICallLog.js'
+import Lead from '../models/Lead.js'
 import { createOrUpdateLeadFromPhone } from '../services/telecmiCallService.js'
+import { pushMissedCallToZenxai } from '../services/zenxaiMissedCallService.js'
 
 const LOG = '[TELECMI]'
 
@@ -201,9 +203,22 @@ const toDateFromEpoch = (value) => {
   return new Date(n < 1e12 ? n * 1000 : n)
 }
 
-const saveChubCallEvent = async (body) => {
+/**
+ * A CHUB call goes through several lifecycle events (started → ringing → final). Only the
+ * final one tells us whether the call was answered or missed and carries the recording +
+ * talk time. TeleCMI marks that final event with `type: "cdr"` and/or a `hangup_reason`.
+ */
+const isFinalChubEvent = (body) => body?.type === 'cdr' || body?.hangup_reason !== undefined
+
+const saveChubCallEvent = async (body, settings = {}) => {
   const callId = body.call_id ? String(body.call_id) : undefined
   const requestId = body.request_id ? String(body.request_id) : undefined
+  const isFinal = isFinalChubEvent(body)
+  const rawStatus = cleanValue(body.status)
+  // Talk time (seconds) — the final "cdr"-shaped CHUB event carries it as `answeredsec`;
+  // some variants use `duration` / `billedsec`. Take the first one actually present.
+  const talkRaw = [body.answeredsec, body.duration, body.billedsec].find((v) => v !== undefined && v !== null && v !== '')
+  const answeredSec = talkRaw !== undefined ? Number(talkRaw) || 0 : undefined
 
   // Only set callId/requestId when this event actually carries them, so a later event that
   // omits one doesn't clobber a value an earlier event (or call-placement) already stored.
@@ -213,12 +228,30 @@ const saveChubCallEvent = async (body) => {
     fromNumber: cleanValue(body.callerid),
     toNumber: cleanValue(body.to),
     agentCode: cleanValue(body.user),
-    status: cleanValue(body.status) || 'started',
+    status: rawStatus || 'started',
     callTimestamp: toDateFromEpoch(body.time),
     rawPayload: body,
   }
   if (callId) fields.callId = callId
   if (requestId) fields.requestId = requestId
+
+  // On the final event resolve a definitive answered/missed outcome and pull in the
+  // recording filename + talk time. Every field below is guarded so an earlier non-final
+  // event (started/ringing — no filename, no answeredsec) can't blank a value the final
+  // event stored, and a redelivery of an early event can't undo the final one.
+  if (isFinal) {
+    fields.status = rawStatus === 'answered' ? 'answered' : 'missed'
+  }
+  if (answeredSec !== undefined) {
+    fields.duration = answeredSec
+    fields.billedSeconds = answeredSec
+  }
+  if (body.filename !== undefined && String(body.filename).trim()) {
+    fields.recordingFile = String(body.filename).trim()
+  }
+  if (body.record !== undefined) {
+    fields.isRecorded = String(body.record).toLowerCase() === 'true'
+  }
 
   // Match an existing entry (created at call-placement time, keyed by requestId, or from an
   // earlier lifecycle event for the same call_id) so repeat events update in place. Uses a
@@ -228,10 +261,11 @@ const saveChubCallEvent = async (body) => {
   if (callId) orConditions.push({ callId })
   if (requestId) orConditions.push({ requestId })
 
+  let saved
   if (orConditions.length) {
     const query = orConditions.length === 1 ? orConditions[0] : { $or: orConditions }
     const prev = await TeleCMICallLog.findOne(query).select('status callId requestId').lean()
-    const saved = await TeleCMICallLog.findOneAndUpdate(
+    saved = await TeleCMICallLog.findOneAndUpdate(
       query,
       { $set: fields },
       { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -243,8 +277,39 @@ const saveChubCallEvent = async (body) => {
         `| callId=${callId || '—'} requestId=${requestId || '—'} to=${fields.customerNumber || '—'} agent=${fields.agentCode || '—'}`
     )
   } else {
-    const created = await TeleCMICallLog.create(fields)
-    console.log(LOG, `CHUB event => created row ${created._id} status "${fields.status}" (no callId/requestId to match on)`)
+    saved = await TeleCMICallLog.create(fields)
+    console.log(LOG, `CHUB event => created row ${saved._id} status "${fields.status}" (no callId/requestId to match on)`)
+  }
+
+  // Missed call → ask ZenXAI to place an AI call-back. Only on the terminal event (never while
+  // still ringing) and never breaks the webhook response. The `zenxaiCallbackAt: null` guard in
+  // the claim query is atomic, so a redelivered "missed" webhook can't double-dial the customer.
+  if (isFinal && fields.status === 'missed' && saved && !saved.zenxaiCallbackAt) {
+    const claimed = await TeleCMICallLog.findOneAndUpdate(
+      { _id: saved._id, zenxaiCallbackAt: null },
+      { $set: { zenxaiCallbackAt: new Date() } },
+      { new: true }
+    )
+    if (claimed) {
+      try {
+        const result = await pushMissedCallToZenxai(saved, {
+          assistant: 'outbound',
+          fromPhoneNumber: settings.fromPhoneNumber,
+          source: 'telecmi-webhook',
+        })
+        if (result?.skipped) {
+          // Not configured yet — release the claim so a later delivery/retry can still fire.
+          await TeleCMICallLog.findByIdAndUpdate(saved._id, { $set: { zenxaiCallbackAt: null } })
+        } else {
+          await TeleCMICallLog.findByIdAndUpdate(saved._id, {
+            $set: { zenxaiCallbackResult: result?.data ?? null },
+          })
+        }
+      } catch (err) {
+        await TeleCMICallLog.findByIdAndUpdate(saved._id, { $set: { zenxaiCallbackAt: null } })
+        console.error(LOG, `ZenXAI missed-call push failed for row ${saved._id}:`, err.message)
+      }
+    }
   }
 }
 
@@ -288,7 +353,7 @@ export const handleTeleCMIWebhook = async (req, res) => {
     // Shape 2: TeleCMI click-to-call (CHUB) call-lifecycle event, e.g. "Outgoing Call Started".
     if (body.call_id !== undefined) {
       console.log(LOG, `CHUB call-lifecycle event received (status: ${body.status}):`, body)
-      await saveChubCallEvent(body)
+      await saveChubCallEvent(body, settings)
       // TeleCMI's CHUB docs show a plain "got it" acknowledgment for these events, not JSON.
       return res.status(200).send('got it')
     }
@@ -297,6 +362,150 @@ export const handleTeleCMIWebhook = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Unrecognized payload shape' })
   } catch (error) {
     console.error(LOG, 'ERROR:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error' })
+  }
+}
+
+/**
+ * Public (no-JWT) missed-call push — POST /api/calls/telecmi-missed-call
+ *
+ * Forwards a missed TeleCMI call to ZenXAI. Complements the automatic push in
+ * saveChubCallEvent; use it to retry a failed push or backfill an older record.
+ *
+ * Body: `{ callId }` or `{ requestId }` or `{ id }` to resolve an existing TeleCMICallLog,
+ * or a raw record object with at least `customerNumber` to push without a stored row.
+ * Guarded by the same optional Webhook API Key check as the webhook above.
+ */
+export const handleMissedCallPush = async (req, res) => {
+  try {
+    const body = req.body || {}
+
+    const settings = await TeleCMISettings.getSettings()
+    const configuredKey = settings.webhookApiKey || process.env.TELECMI_WEBHOOK_API_KEY
+    const requestKey = extractApiKey(req)
+    if (configuredKey && requestKey !== configuredKey) {
+      console.warn(LOG, `<= missed-call push rejected: API key ${requestKey ? 'mismatch' : 'missing'}`)
+      return res.status(401).json({ success: false, message: 'Invalid API key' })
+    }
+
+    let callLog = null
+    if (body.callId) callLog = await TeleCMICallLog.findOne({ callId: String(body.callId) })
+    else if (body.requestId) callLog = await TeleCMICallLog.findOne({ requestId: String(body.requestId) })
+    else if (body.id) callLog = await TeleCMICallLog.findById(body.id).catch(() => null)
+
+    if (!callLog && !body.customerNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide callId, requestId or id of a stored call, or a raw record with customerNumber',
+      })
+    }
+
+    const record = callLog || {
+      callId: body.callId || '',
+      requestId: body.requestId || '',
+      variant: body.variant || body.direction || '',
+      customerName: body.customerName || '',
+      customerNumber: body.customerNumber || '',
+      fromNumber: body.fromNumber || '',
+      toNumber: body.toNumber || body.customerNumber || '',
+      agentCode: body.agentCode || '',
+      status: body.status || 'missed',
+      callTimestamp: body.callTimestamp || null,
+      lead: body.leadId || null,
+    }
+
+    const result = await pushMissedCallToZenxai(record, {
+      assistant: body.assistant === 'feedback' ? 'feedback' : 'outbound',
+      fromPhoneNumber: settings.fromPhoneNumber,
+      source: 'manual-endpoint',
+    })
+    if (result?.skipped) {
+      return res.status(503).json({
+        success: false,
+        message: `ZenXAI push not configured: ${(result.missing || []).join(', ')}`,
+      })
+    }
+    if (callLog?._id) {
+      await TeleCMICallLog.findByIdAndUpdate(callLog._id, {
+        $set: { zenxaiCallbackAt: new Date(), zenxaiCallbackResult: result?.data ?? null },
+      })
+    }
+    return res.status(200).json({ success: true, message: 'Missed call pushed to ZenXAI', zenxai: result })
+  } catch (error) {
+    console.error(LOG, 'missed-call push ERROR:', error.message)
+    return res.status(502).json({ success: false, message: 'Failed to push missed call to ZenXAI' })
+  }
+}
+
+/**
+ * Public (no-JWT) ZenXAI conversation receiver — POST /api/calls/zenxai-webhook
+ *
+ * After ZenXAI's AI agent finishes the call-back conversation it POSTs the collected data
+ * here. Shape (from the ZenXAI docs / tool config — parsed leniently):
+ *   { name, phonenumber, branch, service, "whatsapp_number"|"whatsapp number",
+ *     date, time, callbacktime, conversation, overall_conversation, ... }
+ *
+ * We attach `overall_conversation` to the most recent matching call log and, when that call
+ * is linked to a Lead, append a note to it. No Lead is created here (by design).
+ */
+export const handleZenxaiConversationWebhook = async (req, res) => {
+  try {
+    const body = req.body || {}
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({ success: false, message: 'Missing request body' })
+    }
+    console.log(LOG, `<= ZenXAI conversation webhook from ${req.ip} | keys: [${Object.keys(body).join(', ')}]`)
+
+    const phoneRaw =
+      body.phonenumber || body.phoneNumber || body.phone || body.metadata?.phonenum || body.metadata?.phonenumber || ''
+    const tail = phoneTail(phoneRaw)
+    if (!tail) {
+      return res.status(400).json({ success: false, message: 'No usable phone number in payload' })
+    }
+
+    const overall = cleanValue(body.overall_conversation || body.overallConversation || body.conversation)
+    const noteLine = `[ZenXAI AI Call-back] ${overall || 'conversation completed'}`
+
+    // Most recent call for this number — prefer one we actually asked ZenXAI to call back.
+    const callLog =
+      (await TeleCMICallLog.findOne({
+        customerNumber: new RegExp(`${tail}$`),
+        zenxaiCallbackAt: { $ne: null },
+      }).sort({ zenxaiCallbackAt: -1 })) ||
+      (await TeleCMICallLog.findOne({ customerNumber: new RegExp(`${tail}$`) }).sort({
+        callTimestamp: -1,
+        createdAt: -1,
+      }))
+
+    if (!callLog) {
+      console.warn(LOG, `ZenXAI conversation webhook: no TeleCMI call log matched ${tail}`)
+      return res.status(200).json({ success: true, matched: false })
+    }
+
+    const update = { zenxaiConversationAt: new Date() }
+    if (overall) update.overallConversation = overall
+    if (!callLog.customerName && cleanValue(body.name)) update.customerName = cleanValue(body.name)
+    await TeleCMICallLog.findByIdAndUpdate(callLog._id, { $set: update })
+
+    // Append the note to the linked Lead only (don't create one).
+    let leadNoted = false
+    if (callLog.lead) {
+      const lead = await Lead.findById(callLog.lead)
+      if (lead) {
+        lead.notes = lead.notes ? `${lead.notes}\n${noteLine}` : noteLine
+        lead.lastInteraction = new Date()
+        await lead.save()
+        leadNoted = true
+      }
+    }
+
+    console.log(
+      LOG,
+      `ZenXAI conversation stored on call log ${callLog._id}${leadNoted ? ` + note on lead ${callLog.lead}` : ''}`
+    )
+    return res.status(200).json({ success: true, matched: true, callLogId: callLog._id, leadNoted })
+  } catch (error) {
+    console.error(LOG, 'ZenXAI conversation webhook ERROR:', error.message)
     return res.status(500).json({ success: false, message: 'Internal server error' })
   }
 }

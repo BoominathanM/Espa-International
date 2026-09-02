@@ -261,6 +261,8 @@ const Calls = () => {
         agentCode: log.agentCode || '-',
         duration: formatDuration(log.duration),
         recordingFile: log.recordingFile || '',
+        recordingUrl: log.recordingUrl || '',
+        isRecorded: !!log.isRecorded,
         branch: branchNames.join(', ') || null,
         status: log.status || '',
         overallConversation: log.overallConversation || '',
@@ -875,10 +877,33 @@ const Calls = () => {
               <p><strong>Duration:</strong> {selectedTeleCMICall.duration}</p>
             )}
             {selectedTeleCMICall.recordingFile && (
-              <p>
-                <strong>Recording:</strong> {selectedTeleCMICall.recordingFile}{' '}
-                <span className="mgmt-muted" style={{ fontSize: 12 }}>(playback requires TeleCMI recording API)</span>
-              </p>
+              <div style={{ marginTop: 8 }}>
+                <p style={{ marginBottom: 4 }}>
+                  <strong>Recording:</strong> {selectedTeleCMICall.recordingFile}
+                </p>
+                {selectedTeleCMICall.recordingUrl ? (
+                  <>
+                    <audio
+                      key={selectedTeleCMICall._id}
+                      controls
+                      preload="none"
+                      style={{ width: '100%' }}
+                    >
+                      <source src={selectedTeleCMICall.recordingUrl} type="audio/mpeg" />
+                      Your browser does not support the audio element.
+                    </audio>
+                    <p style={{ marginTop: 4, fontSize: 12 }}>
+                      <a href={selectedTeleCMICall.recordingUrl} target="_blank" rel="noopener noreferrer">
+                        Open recording in new tab
+                      </a>
+                    </p>
+                  </>
+                ) : (
+                  <span className="mgmt-muted" style={{ fontSize: 12 }}>
+                    Recording not playable yet — this call has no stored recording file.
+                  </span>
+                )}
+              </div>
             )}
             {selectedTeleCMICall.branch && (
               <p><strong>Branch:</strong> {selectedTeleCMICall.branch}</p>
