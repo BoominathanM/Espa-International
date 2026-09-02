@@ -16,6 +16,7 @@
  */
 import TeleCMISettings from '../models/TeleCMISettings.js'
 import TeleCMICallLog from '../models/TeleCMICallLog.js'
+import ZenxaiSendData from '../models/ZenxaiSendData.js'
 import Lead from '../models/Lead.js'
 import { createOrUpdateLeadFromPhone } from '../services/telecmiCallService.js'
 import { pushMissedCallToZenxai } from '../services/zenxaiMissedCallService.js'
@@ -168,39 +169,51 @@ const saveCdrEntry = async (entry, settings) => {
     }
   }
 
+  let savedRow = null
+
   if (doc.callId) {
-    const updated = await TeleCMICallLog.findOneAndUpdate(
+    savedRow = await TeleCMICallLog.findOneAndUpdate(
       { callId: doc.callId },
       { $set: doc },
       { new: true }
     )
-    if (updated) {
-      console.log(LOG, `CDR => updated existing row ${updated._id} matched by callId ${doc.callId}; status now "${doc.status}"`)
-      return
+    if (savedRow) {
+      console.log(LOG, `CDR => updated existing row ${savedRow._id} matched by callId ${doc.callId}; status now "${doc.status}"`)
     }
   }
 
-  const placeholder = await findClickToCallPlaceholder(customerNumber)
-  if (placeholder) {
-    await TeleCMICallLog.findByIdAndUpdate(placeholder._id, { $set: doc })
-    console.log(
-      LOG,
-      `CDR => merged into click-to-call placeholder ${placeholder._id} (requestId ${placeholder.requestId || '—'}); ` +
-        `status "${placeholder.status || '(none)'}" => "${doc.status}", duration ${doc.duration}s`
-    )
-    return
+  if (!savedRow) {
+    const placeholder = await findClickToCallPlaceholder(customerNumber)
+    if (placeholder) {
+      savedRow = await TeleCMICallLog.findByIdAndUpdate(placeholder._id, { $set: doc }, { new: true })
+      console.log(
+        LOG,
+        `CDR => merged into click-to-call placeholder ${placeholder._id} (requestId ${placeholder.requestId || '—'}); ` +
+          `status "${placeholder.status || '(none)'}" => "${doc.status}", duration ${doc.duration}s`
+      )
+    }
   }
 
-  if (doc.callId) {
-    const up = await TeleCMICallLog.findOneAndUpdate(
-      { callId: doc.callId },
-      { $set: doc },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    )
-    console.log(LOG, `CDR => no placeholder match; upserted standalone row ${up?._id} (callId ${doc.callId}), status "${doc.status}"`)
-  } else {
-    const created = await TeleCMICallLog.create(doc)
-    console.log(LOG, `CDR => no callId and no placeholder match; created standalone row ${created._id}, status "${doc.status}"`)
+  if (!savedRow) {
+    if (doc.callId) {
+      savedRow = await TeleCMICallLog.findOneAndUpdate(
+        { callId: doc.callId },
+        { $set: doc },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      )
+      console.log(LOG, `CDR => no placeholder match; upserted standalone row ${savedRow?._id} (callId ${doc.callId}), status "${doc.status}"`)
+    } else {
+      savedRow = await TeleCMICallLog.create(doc)
+      console.log(LOG, `CDR => no callId and no placeholder match; created standalone row ${savedRow._id}, status "${doc.status}"`)
+    }
+  }
+
+  // A missed call that only reaches us via the native CDR webhook (no CHUB lifecycle event)
+  // must still get the ZenXAI AI call-back — but only for a deliberate call to a known Lead,
+  // never for the raw CDR stream's failed/wrong-number dials.
+  if (savedRow && savedRow.status === 'missed' && savedRow.lead && !savedRow.zenxaiCallbackAt) {
+    console.log(LOG, `CDR terminal MISSED for lead-linked row ${savedRow._id} — arranging ZenXAI call-back`)
+    maybeTriggerMissedZenxai(savedRow, settings)
   }
 }
 
@@ -214,9 +227,17 @@ const toDateFromEpoch = (value) => {
 /**
  * A CHUB call goes through several lifecycle events (started → ringing → final). Only the
  * final one tells us whether the call was answered or missed and carries the recording +
- * talk time. TeleCMI marks that final event with `type: "cdr"` and/or a `hangup_reason`.
+ * talk time. TeleCMI marks that final event with `type: "cdr"`, a `hangup_reason`, or an
+ * explicitly terminal status.
  */
-const isFinalChubEvent = (body) => body?.type === 'cdr' || body?.hangup_reason !== undefined
+const TERMINAL_STATUSES = new Set([
+  'answered', 'missed', 'noanswer', 'no-answer', 'no_answer', 'failed', 'busy',
+  'rejected', 'cancel', 'cancelled', 'canceled', 'notanswered', 'not-answered',
+])
+const isFinalChubEvent = (body) =>
+  body?.type === 'cdr' ||
+  body?.hangup_reason !== undefined ||
+  TERMINAL_STATUSES.has(String(body?.status ?? '').trim().toLowerCase())
 
 /**
  * Mirror a call recording onto the linked Lead so it shows in the Lead detail
@@ -245,35 +266,28 @@ const linkRecordingToLead = async (leadId, filename, meta = {}) => {
 
 /**
  * TeleCMI's followme/bridge places a short first leg that ends `recv_cancel` (logged as
- * `missed`) seconds before the real ring — and a genuine no-answer only settles on the LAST
- * leg. A missed row is "superseded" (must NOT trigger ZenXAI) when, for the same number:
- *  - a call ANSWERED within ±5 min (the customer actually spoke to us), OR
- *  - another leg was created within ~2 min AFTER it (the real ring of the same dial), OR
- *  - a sibling within ±5 min already fired its own real ZenXAI push (dedupe).
- * A deliberate re-dial minutes later is NOT "superseding" — that missed call still gets its
- * own AI call-back.
+ * `missed`) seconds before the real ring. A missed row is "superseded" (must NOT trigger
+ * ZenXAI) only by ANOTHER LEG OF THE SAME DIAL — i.e. for the same number, within a couple
+ * of minutes EITHER SIDE, there is a row that answered, was created later, or already fired
+ * its own ZenXAI push. A separate earlier answered call or a deliberate re-dial minutes
+ * later does NOT suppress — a genuine missed call always gets its own AI call-back.
  */
-const SIBLING_WINDOW_MS = 5 * 60 * 1000
 const SUPERSEDE_LEG_WINDOW_MS = 2 * 60 * 1000
 
 const findSupersedingCall = async (call) => {
   const tail = phoneTail(call.customerNumber || call.toNumber)
   if (!tail) return null
   const selfCreated = call.createdAt ? new Date(call.createdAt) : new Date()
-  const wideFrom = new Date(selfCreated.getTime() - SIBLING_WINDOW_MS)
-  const wideTo = new Date(selfCreated.getTime() + SIBLING_WINDOW_MS)
-  const legTo = new Date(selfCreated.getTime() + SUPERSEDE_LEG_WINDOW_MS)
+  const from = new Date(selfCreated.getTime() - SUPERSEDE_LEG_WINDOW_MS)
+  const to = new Date(selfCreated.getTime() + SUPERSEDE_LEG_WINDOW_MS)
   return TeleCMICallLog.findOne({
     _id: { $ne: call._id },
     customerNumber: new RegExp(`${tail}$`),
+    createdAt: { $gte: from, $lte: to },
     $or: [
-      { status: 'answered', createdAt: { $gte: wideFrom, $lte: wideTo } },
-      { createdAt: { $gt: selfCreated, $lte: legTo } },
-      {
-        zenxaiCallbackAt: { $ne: null },
-        'zenxaiCallbackResult.suppressed': { $exists: false },
-        createdAt: { $gte: wideFrom, $lte: wideTo },
-      },
+      { status: 'answered' },
+      { createdAt: { $gt: selfCreated } },
+      { zenxaiCallbackAt: { $ne: null }, 'zenxaiCallbackResult.suppressed': { $exists: false } },
     ],
   })
     .select('_id status createdAt')
@@ -308,6 +322,41 @@ const suppressPendingMissedSiblings = async (answeredCall) => {
   }
 }
 
+/** Log a missed call to zenxaisenddatas as a non-push outcome (suppressed / skipped), so the
+ *  collection always reflects what happened to a missed call. Best-effort. */
+const recordZenxaiSkip = async (call, reason) => {
+  try {
+    await ZenxaiSendData.create({
+      callLog: call?._id || null,
+      callId: call?.callId || '',
+      requestId: call?.requestId || '',
+      variant: call?.variant || '',
+      customerName: call?.customerName || '',
+      customerNumber: call?.customerNumber || call?.toNumber || '',
+      agentCode: call?.agentCode || '',
+      status: call?.status || 'missed',
+      callTimestamp: call?.callTimestamp || null,
+      lead: call?.lead || null,
+      branches: Array.isArray(call?.branches) ? call.branches : [],
+      assistant: 'outbound',
+      source: 'telecmi-webhook',
+      pushStatus: 'skipped',
+      skippedReason: reason,
+    })
+  } catch (err) {
+    console.error(LOG, 'could not record ZenXAI skip row:', err.message)
+  }
+}
+
+/**
+ * Missed terminal call → schedule the ZenXAI AI call-back (if not already handled). Shared by
+ * the CHUB and native-CDR webhook paths.
+ */
+const maybeTriggerMissedZenxai = (row, settings) => {
+  if (!row || row.status !== 'missed' || row.zenxaiCallbackAt) return
+  scheduleZenxaiMissedPush(row._id, { fromPhoneNumber: settings?.fromPhoneNumber })
+}
+
 /**
  * Schedule the ZenXAI AI call-back for a missed call. Deferred by
  * ZENXAI_MISSED_PUSH_DELAY_MS (default 90000) so a superseding leg (the real full ring, or
@@ -323,7 +372,18 @@ const scheduleZenxaiMissedPush = (callLogId, { fromPhoneNumber } = {}) => {
   setTimeout(async () => {
     try {
       const call = await TeleCMICallLog.findById(callLogId)
-      if (!call || call.zenxaiCallbackAt || call.status !== 'missed') return
+      if (!call) {
+        console.warn(LOG, `ZenXAI push skipped for ${callLogId} — row not found`)
+        return
+      }
+      if (call.zenxaiCallbackAt) {
+        console.log(LOG, `ZenXAI push skipped for ${callLogId} — already handled (zenxaiCallbackAt set)`)
+        return
+      }
+      if (call.status !== 'missed') {
+        console.log(LOG, `ZenXAI push skipped for ${callLogId} — status is "${call.status}", not "missed"`)
+        return
+      }
 
       const superseding = await findSupersedingCall(call)
       if (superseding) {
@@ -333,7 +393,8 @@ const scheduleZenxaiMissedPush = (callLogId, { fromPhoneNumber } = {}) => {
             zenxaiCallbackResult: { suppressed: `superseded by ${superseding._id} (${superseding.status})` },
           },
         })
-        console.log(LOG, `ZenXAI push suppressed for ${callLogId} — superseded by ${superseding._id} (followme / double-dial leg)`)
+        await recordZenxaiSkip(call, `superseded by ${superseding._id} (${superseding.status})`)
+        console.log(LOG, `ZenXAI push suppressed for ${callLogId} — superseded by ${superseding._id} (${superseding.status}) within ${SUPERSEDE_LEG_WINDOW_MS / 1000}s`)
         return
       }
 
@@ -343,8 +404,12 @@ const scheduleZenxaiMissedPush = (callLogId, { fromPhoneNumber } = {}) => {
         { $set: { zenxaiCallbackAt: new Date() } },
         { new: true }
       )
-      if (!claimed) return
+      if (!claimed) {
+        console.log(LOG, `ZenXAI push skipped for ${callLogId} — another worker already claimed it`)
+        return
+      }
 
+      console.log(LOG, `ZenXAI push firing for ${callLogId} (${claimed.customerNumber || '—'})`)
       try {
         const result = await pushMissedCallToZenxai(claimed, {
           assistant: 'outbound',
@@ -353,8 +418,10 @@ const scheduleZenxaiMissedPush = (callLogId, { fromPhoneNumber } = {}) => {
         })
         if (result?.skipped) {
           await TeleCMICallLog.findByIdAndUpdate(callLogId, { $set: { zenxaiCallbackAt: null } })
+          console.warn(LOG, `ZenXAI push for ${callLogId} not sent — not configured: ${(result.missing || []).join(', ')}`)
         } else {
           await TeleCMICallLog.findByIdAndUpdate(callLogId, { $set: { zenxaiCallbackResult: result?.data ?? null } })
+          console.log(LOG, `ZenXAI push for ${callLogId} sent — HTTP ${result?.status}`)
         }
       } catch (err) {
         await TeleCMICallLog.findByIdAndUpdate(callLogId, { $set: { zenxaiCallbackAt: null } })
@@ -473,13 +540,14 @@ const saveChubCallEvent = async (body, settings = {}) => {
       await suppressPendingMissedSiblings(saved).catch((e) =>
         console.error(LOG, 'suppressPendingMissedSiblings failed:', e.message)
       )
-    } else if (fields.status === 'missed' && !saved.zenxaiCallbackAt) {
+    } else if (fields.status === 'missed') {
       // Deferred + superseded-suppressed ZenXAI AI call-back. Only on the terminal event,
       // only once (the scheduler re-checks before firing), never breaks the webhook response.
-      // The delay lets the real full-ring / answered leg of a followme/double-dialled call
-      // land and cancel this one — see scheduleZenxaiMissedPush.
-      scheduleZenxaiMissedPush(saved._id, { fromPhoneNumber: settings.fromPhoneNumber })
+      console.log(LOG, `CHUB terminal MISSED for row ${saved._id} — arranging ZenXAI call-back`)
+      maybeTriggerMissedZenxai(saved, settings)
     }
+  } else if (fields.status === 'missed' && !isFinal) {
+    console.log(LOG, `CHUB non-terminal event with status "missed" for row ${saved?._id} — waiting for a terminal event before ZenXAI`)
   }
 }
 
