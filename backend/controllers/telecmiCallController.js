@@ -332,3 +332,105 @@ export const getZenxaiSends = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to fetch ZenXAI send records' })
   }
 }
+
+/**
+ * Backfill: push already-stored missed TeleCMI calls to ZenXAI that were never sent — e.g.
+ * calls recorded before this integration, or while ZenXAI creds were missing. Super-admin only.
+ *
+ * DRY-RUN BY DEFAULT — it only reports what it *would* do. Pass { "dryRun": false } to actually
+ * place the AI call-backs (this rings real customers). Each successful/skipped/failed attempt
+ * writes a row to `zenxaisenddatas` via pushMissedCallToZenxai.
+ *
+ * POST /api/telecmi/zenxai-backfill
+ * Body (all optional): dryRun (default true), limit (default 20, max 100), leadOnly (default true),
+ *   variant ("inbound"|"outbound"), callDateFrom / callDateTo ("YYYY-MM-DD", IST).
+ */
+export const backfillZenxaiSends = async (req, res) => {
+  try {
+    const body = req.body || {}
+    const dryRun = body.dryRun !== false // anything but an explicit false stays a dry run
+    const parsedLimit = Math.min(100, Math.max(1, parseInt(body.limit, 10) || 20))
+    const leadOnly = body.leadOnly !== false
+
+    const notSent = [{ zenxaiCallbackAt: null }, { zenxaiCallbackAt: { $exists: false } }]
+    const filter = { status: 'missed', $and: [{ $or: notSent }] }
+    if (leadOnly) filter.lead = { $ne: null }
+    if (body.variant && ['inbound', 'outbound'].includes(String(body.variant))) {
+      filter.variant = String(body.variant)
+    }
+    if (body.callDateFrom && body.callDateTo) {
+      const range = parseIstDateRange(body.callDateFrom, body.callDateTo)
+      if (range?.from && range?.to) filter.callTimestamp = { $gte: range.from, $lte: range.to }
+    }
+    applyCallLogBranchScope(filter, req)
+
+    const matched = await TeleCMICallLog.countDocuments(filter)
+    const candidates = await TeleCMICallLog.find(filter)
+      .sort({ callTimestamp: -1, createdAt: -1 })
+      .limit(parsedLimit)
+
+    if (dryRun) {
+      return res.json({
+        success: true,
+        dryRun: true,
+        matched,
+        wouldProcess: candidates.length,
+        sample: candidates.map((c) => ({
+          _id: c._id,
+          callId: c.callId,
+          customerName: c.customerName,
+          customerNumber: c.customerNumber,
+          callTimestamp: c.callTimestamp,
+          lead: c.lead,
+        })),
+        note: 'Pass { "dryRun": false } to actually send these to ZenXAI (this rings real customers).',
+      })
+    }
+
+    const settings = await TeleCMISettings.getSettings()
+    const results = []
+    for (const call of candidates) {
+      // Atomic claim so a concurrent webhook or a re-run can't double-dial the same customer.
+      const claimed = await TeleCMICallLog.findOneAndUpdate(
+        { _id: call._id, $or: notSent },
+        { $set: { zenxaiCallbackAt: new Date() } },
+        { new: true }
+      )
+      if (!claimed) {
+        results.push({ _id: call._id, pushStatus: 'skipped', reason: 'already sent / claimed' })
+        continue
+      }
+      try {
+        const r = await pushMissedCallToZenxai(call, {
+          assistant: 'outbound',
+          fromPhoneNumber: settings.fromPhoneNumber,
+          source: 'backfill-endpoint',
+        })
+        if (r?.skipped) {
+          await TeleCMICallLog.findByIdAndUpdate(call._id, { $set: { zenxaiCallbackAt: null } })
+          results.push({ _id: call._id, pushStatus: 'skipped', missing: r.missing })
+        } else {
+          await TeleCMICallLog.findByIdAndUpdate(call._id, { $set: { zenxaiCallbackResult: r?.data ?? null } })
+          results.push({ _id: call._id, pushStatus: 'sent', responseStatus: r?.status })
+        }
+      } catch (err) {
+        await TeleCMICallLog.findByIdAndUpdate(call._id, { $set: { zenxaiCallbackAt: null } })
+        results.push({ _id: call._id, pushStatus: 'failed', error: err.message })
+      }
+    }
+
+    res.json({
+      success: true,
+      dryRun: false,
+      matched,
+      processed: results.length,
+      sent: results.filter((r) => r.pushStatus === 'sent').length,
+      skipped: results.filter((r) => r.pushStatus === 'skipped').length,
+      failed: results.filter((r) => r.pushStatus === 'failed').length,
+      results,
+    })
+  } catch (error) {
+    console.error('ZenXAI backfill error:', error.message)
+    res.status(500).json({ success: false, message: 'ZenXAI backfill failed' })
+  }
+}
