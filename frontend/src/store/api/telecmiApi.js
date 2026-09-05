@@ -27,10 +27,15 @@ export const telecmiApi = apiSlice.injectEndpoints({
       },
       providesTags: ['TeleCMICallLog'],
     }),
+    getTeleCMICallLogsForLead: builder.query({
+      query: (leadId) => `/telecmi/call-logs/lead/${leadId}`,
+      providesTags: ['TeleCMICallLog'],
+    }),
   }),
 })
 
 export const {
   useMakeTeleCMIAgentCallMutation,
   useGetTeleCMICallLogsQuery,
+  useGetTeleCMICallLogsForLeadQuery,
 } = telecmiApi

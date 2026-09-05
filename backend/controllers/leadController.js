@@ -11,7 +11,7 @@ import { syncAskEvaAppointmentsToDb } from '../services/askevaAppointmentSyncSer
 import { applyBranchScope, canAccessBranch, getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
 import { applyCanonicalSourceToLeadQuery, normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
 
-const DEFAULT_BRANCH_NAME = 'HO - Tambaram'
+const DEFAULT_BRANCH_NAME = 'Espa Head Offices Tambaram'
 
 /** Query param value for "no assigned user" (matches Mongo `assignedTo: null`). */
 const ASSIGNED_TO_UNASSIGNED_PARAM = '__unassigned__'

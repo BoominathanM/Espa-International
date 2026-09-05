@@ -3,6 +3,7 @@ import {
   makeAgentCall,
   getStatus,
   getCallLogs,
+  getCallLogsForLead,
   streamRecording,
   getZenxaiSends,
   backfillZenxaiSends,
@@ -14,6 +15,7 @@ const router = express.Router()
 router.get('/status', authenticate, getStatus)
 router.post('/agent-call', authenticate, makeAgentCall)
 router.get('/call-logs', authenticate, getCallLogs)
+router.get('/call-logs/lead/:leadId', authenticate, getCallLogsForLead)
 router.get('/recording', authenticate, streamRecording)
 router.get('/zenxai-sends', authenticate, getZenxaiSends)
 router.post('/zenxai-backfill', authenticate, isSuperAdmin, backfillZenxaiSends)

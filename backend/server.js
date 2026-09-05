@@ -330,9 +330,19 @@ const seedSuperAdminIfNeeded = async () => {
   }
 }
 
-// Function to seed default branches if they don't exist
+// Function to seed default branches ONLY when the DB has no branches at all
+// (fresh install bootstrap). On an existing deployment this is a no-op — it used
+// to re-create these 5 branches on every restart, which is how the duplicate
+// "Anna Nagar" / "Coimbatore" / "Medavakkam" / "Vallakkottai" / "Bangalore"
+// branches kept reappearing alongside the real "E SPA …" ones.
 const seedDefaultBranchesIfNeeded = async () => {
   try {
+    const existingBranchCount = await Branch.countDocuments()
+    if (existingBranchCount > 0) {
+      console.log('ℹ️  Branches already exist — skipping default branch seed')
+      return
+    }
+
     const defaultBranches = [
       {
         name: 'Anna Nagar',

@@ -15,6 +15,39 @@ const TELECMI_PLAY_URL = 'https://rest.telecmi.com/v2/play'
 
 const buildRecordingUrl = (req, filename) => telecmiRecordingUrl(req?.get?.('host'), filename)
 
+const normalizeDigits = (v) => String(v ?? '').replace(/\D/g, '')
+
+/** Last 10 digits of a phone number — same tail-match convention used by the TeleCMI webhook
+ *  (telecmiWebhookController.js) to compare numbers that may or may not carry a country code. */
+const phoneTail = (v) => normalizeDigits(v).slice(-10)
+
+/**
+ * Backfill a few fields in the response (not persisted) from rawPayload so rows saved
+ * before the webhook started copying them still render correctly:
+ *  - recordingFile  <- rawPayload.filename   (playable recording)
+ *  - duration       <- rawPayload.answeredsec / duration / billedsec  (Duration column)
+ */
+const shapeCallLogs = (logs, req) => {
+  const firstNum = (...vals) => {
+    for (const v of vals) {
+      if (v === undefined || v === null || v === '') continue
+      const n = Number(v)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 0
+  }
+  return logs.map((doc) => {
+    const obj = doc.toObject ? doc.toObject() : doc
+    const rp = obj.rawPayload || {}
+    const fileName = String(obj.recordingFile || rp.filename || '').trim()
+    obj.recordingFile = fileName
+    obj.recordingUrl = buildRecordingUrl(req, fileName)
+    obj.duration = firstNum(obj.duration, rp.answeredsec, rp.duration, rp.billedsec)
+    obj.billedSeconds = firstNum(obj.billedSeconds, rp.billedsec, rp.answeredsec, rp.duration)
+    return obj
+  })
+}
+
 /**
  * Authenticated proxy for a TeleCMI call recording — GET /api/telecmi/recording?file=<name>
  * Streams the mp3/wav from TeleCMI's /v2/play so the app secret stays server-side.
@@ -232,28 +265,7 @@ export const getCallLogs = async (req, res) => {
       TeleCMICallLog.countDocuments(filter),
     ])
 
-    // Backfill a few fields in the response (not persisted) from rawPayload so rows saved
-    // before the webhook started copying them still render correctly:
-    //  - recordingFile  <- rawPayload.filename   (playable recording)
-    //  - duration       <- rawPayload.answeredsec / duration / billedsec  (Duration column)
-    const firstNum = (...vals) => {
-      for (const v of vals) {
-        if (v === undefined || v === null || v === '') continue
-        const n = Number(v)
-        if (Number.isFinite(n) && n > 0) return n
-      }
-      return 0
-    }
-    const shapedLogs = logs.map((doc) => {
-      const obj = doc.toObject()
-      const rp = obj.rawPayload || {}
-      const fileName = String(obj.recordingFile || rp.filename || '').trim()
-      obj.recordingFile = fileName
-      obj.recordingUrl = buildRecordingUrl(req, fileName)
-      obj.duration = firstNum(obj.duration, rp.answeredsec, rp.duration, rp.billedsec)
-      obj.billedSeconds = firstNum(obj.billedSeconds, rp.billedsec, rp.answeredsec, rp.duration)
-      return obj
-    })
+    const shapedLogs = shapeCallLogs(logs, req)
 
     res.json({
       success: true,
@@ -268,6 +280,56 @@ export const getCallLogs = async (req, res) => {
   } catch (error) {
     console.error('Get TeleCMI call logs error:', error.message)
     res.status(500).json({ success: false, message: 'Failed to fetch TeleCMI call logs' })
+  }
+}
+
+/**
+ * TeleCMI call history for one Lead — GET /api/telecmi/call-logs/lead/:leadId
+ * Powers the "TeleCMI Call History" card on the Lead Details view.
+ *
+ * Matches records already linked to this Lead (`lead` ref, set at click-to-call time or when a
+ * connected CDR call resolves a lead) UNION any record whose customer number's last 10 digits
+ * match the lead's phone — the same tail-match convention the TeleCMI webhook itself uses to
+ * reconcile numbers that may or may not carry a country code (see phoneTail above and
+ * telecmiWebhookController.js). Missed calls are excluded — this card is meant to show connected
+ * conversations only; the full history (including missed) still shows on the main Calls page.
+ */
+export const getCallLogsForLead = async (req, res) => {
+  try {
+    const { leadId } = req.params
+    if (!leadId || !leadId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ success: false, message: 'Invalid leadId' })
+    }
+
+    const lead = await Lead.findById(leadId).select('phone branch')
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Lead not found' })
+    }
+    if (!canAccessBranch(req.user, lead.branch)) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
+    }
+
+    const tail = phoneTail(lead.phone)
+    const orConditions = [{ lead: lead._id }]
+    if (tail) orConditions.push({ customerNumber: new RegExp(`${tail}$`) })
+
+    // Lead Details only wants connected calls — missed attempts clutter the card and are
+    // already visible on the main Calls page.
+    const filter = { $or: orConditions, status: { $ne: 'missed' } }
+    applyCallLogBranchScope(filter, req)
+
+    const { limit = 50 } = req.query
+    const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 50))
+
+    const logs = await TeleCMICallLog.find(filter)
+      .sort({ callTimestamp: -1, createdAt: -1 })
+      .limit(parsedLimit)
+      .populate('branches', 'name')
+
+    res.json({ success: true, callLogs: shapeCallLogs(logs, req) })
+  } catch (error) {
+    console.error('Get TeleCMI call logs for lead error:', error.message)
+    res.status(500).json({ success: false, message: 'Failed to fetch TeleCMI call logs for this lead' })
   }
 }
 

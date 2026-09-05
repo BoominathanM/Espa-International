@@ -67,7 +67,7 @@ import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useConvertLeadToCustomerMutation } from '../../store/api/customerApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
 import { useGetCampaignsQuery, useMakeCallMutation } from '../../store/api/cloudAgentApi'
-import { useMakeTeleCMIAgentCallMutation } from '../../store/api/telecmiApi'
+import { useMakeTeleCMIAgentCallMutation, useGetTeleCMICallLogsForLeadQuery } from '../../store/api/telecmiApi'
 import { useGetMeQuery } from '../../store/api/authApi'
 import { getApiBaseUrl } from '../../utils/apiConfig'
 import * as XLSX from 'xlsx'
@@ -217,6 +217,11 @@ const Leads = () => {
   const [makeCall, { isLoading: callLoading }] = useMakeCallMutation()
   const [makeTeleCMIAgentCall] = useMakeTeleCMIAgentCallMutation()
   const [callingViaTeleCMILeadId, setCallingViaTeleCMILeadId] = useState(null)
+  const { data: teleCMICallHistoryData, isFetching: teleCMICallHistoryLoading } = useGetTeleCMICallLogsForLeadQuery(
+    selectedLead?._id,
+    { skip: !isTimelineVisible || !selectedLead?._id }
+  )
+  const teleCMICallHistory = teleCMICallHistoryData?.callLogs || []
 
   const campaignIds = campaignsData?.campaignIds || []
   const defaultCampaign = campaignsData?.defaultCampaign || ''
@@ -1513,6 +1518,50 @@ const Leads = () => {
                 </p>
               </Card>
             )}
+
+            <Card title="TeleCMI Call History" className="leads-detail-card">
+              {teleCMICallHistoryLoading ? (
+                <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                  <Spin size="small" />
+                </div>
+              ) : teleCMICallHistory.length === 0 ? (
+                <Empty description="No TeleCMI calls found for this number" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 360, overflowY: 'auto' }}>
+                  {teleCMICallHistory.map((call) => (
+                    <div
+                      key={call._id}
+                      style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: 10 }}
+                    >
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                        <Tag color={call.variant === 'inbound' ? 'blue' : 'geekblue'}>
+                          {call.variant === 'inbound' ? 'Inbound' : 'Outbound'}
+                        </Tag>
+                        <Tag color={call.status === 'answered' ? 'green' : call.status === 'missed' ? 'red' : 'default'}>
+                          {call.status || 'unknown'}
+                        </Tag>
+                        <span style={{ color: '#666' }}>
+                          {dayjs(call.callTimestamp || call.createdAt).format('MMM DD, YYYY hh:mm A')}
+                        </span>
+                        {call.duration > 0 && <span style={{ color: '#666' }}>• {call.duration}s</span>}
+                        {call.customerNumber && <span style={{ color: '#666' }}>• {call.customerNumber}</span>}
+                      </div>
+                      {call.recordingUrl && (
+                        <>
+                          <audio controls style={{ width: '100%' }}>
+                            <source src={call.recordingUrl} type="audio/mpeg" />
+                            Your browser does not support the audio element.
+                          </audio>
+                          <p style={{ margin: '6px 0 0' }}>
+                            <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer">Open recording in new tab</a>
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
 
             {(selectedLead.subject || selectedLead.message || selectedLead.notes) && (
               <Card title="Additional Information" className="leads-detail-card">

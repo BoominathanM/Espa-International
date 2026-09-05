@@ -146,9 +146,20 @@ const Users = () => {
       title: 'Branch',
       key: 'branch',
       render: (_, record) => {
-        if (record.allBranches) return <Tag color="purple">All</Tag>
         const defaultBranch = record.branch
         const otherBranches = Array.isArray(record.branches) ? record.branches : []
+        if (record.allBranches) {
+          return (
+            <Space wrap>
+              <Tag color="purple">All</Tag>
+              {defaultBranch && (
+                <Tag key={defaultBranch._id || defaultBranch.id || defaultBranch} color="blue">
+                  {typeof defaultBranch === 'object' ? defaultBranch.name : String(defaultBranch)} (Default)
+                </Tag>
+              )}
+            </Space>
+          )
+        }
         if (!defaultBranch && otherBranches.length === 0) return 'Not Assigned'
         return (
           <Space wrap>
