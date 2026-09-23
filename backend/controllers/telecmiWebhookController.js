@@ -16,10 +16,12 @@
  */
 import TeleCMISettings from '../models/TeleCMISettings.js'
 import TeleCMICallLog from '../models/TeleCMICallLog.js'
+import crypto from 'crypto'
 import ZenxaiSendData from '../models/ZenxaiSendData.js'
+import ZenxaiWebhookEvent from '../models/ZenxaiWebhookEvent.js'
 import Lead from '../models/Lead.js'
 import { createOrUpdateLeadFromPhone } from '../services/telecmiCallService.js'
-import { pushMissedCallToZenxai } from '../services/zenxaiMissedCallService.js'
+import { pushMissedCallToZenxai, callLogFieldsFromPush } from '../services/zenxaiMissedCallService.js'
 import { telecmiRecordingUrl } from '../utils/telecmiRecording.js'
 
 const LOG = '[TELECMI]'
@@ -420,7 +422,9 @@ const scheduleZenxaiMissedPush = (callLogId, { fromPhoneNumber } = {}) => {
           await TeleCMICallLog.findByIdAndUpdate(callLogId, { $set: { zenxaiCallbackAt: null } })
           console.warn(LOG, `ZenXAI push for ${callLogId} not sent — not configured: ${(result.missing || []).join(', ')}`)
         } else {
-          await TeleCMICallLog.findByIdAndUpdate(callLogId, { $set: { zenxaiCallbackResult: result?.data ?? null } })
+          await TeleCMICallLog.findByIdAndUpdate(callLogId, {
+            $set: { zenxaiCallbackResult: result?.data ?? null, ...callLogFieldsFromPush(result) },
+          })
           console.log(LOG, `ZenXAI push for ${callLogId} sent — HTTP ${result?.status}`)
         }
       } catch (err) {
@@ -668,7 +672,7 @@ export const handleMissedCallPush = async (req, res) => {
     }
     if (callLog?._id) {
       await TeleCMICallLog.findByIdAndUpdate(callLog._id, {
-        $set: { zenxaiCallbackAt: new Date(), zenxaiCallbackResult: result?.data ?? null },
+        $set: { zenxaiCallbackAt: new Date(), zenxaiCallbackResult: result?.data ?? null, ...callLogFieldsFromPush(result) },
       })
     }
     return res.status(200).json({ success: true, message: 'Missed call pushed to ZenXAI', zenxai: result })
@@ -695,6 +699,8 @@ export const handleZenxaiConversationWebhook = async (req, res) => {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return res.status(400).json({ success: false, message: 'Missing request body' })
     }
+    // Public Voice API events pasted onto this legacy URL are handled by the new receiver.
+    if (isZenxaiApiEvent(body)) return handleZenxaiApiEvent(req, res)
     console.log(LOG, `<= ZenXAI conversation webhook from ${req.ip} | keys: [${Object.keys(body).join(', ')}]`)
 
     const phoneRaw =
@@ -747,6 +753,223 @@ export const handleZenxaiConversationWebhook = async (req, res) => {
     return res.status(200).json({ success: true, matched: true, callLogId: callLog._id, leadNoted })
   } catch (error) {
     console.error(LOG, 'ZenXAI conversation webhook ERROR:', error.message)
+    return res.status(500).json({ success: false, message: 'Internal server error' })
+  }
+}
+
+/* ------------------------------------------------------------------------------------------
+ * ZenXAI Public Voice API webhook — POST /api/calls/zenxai-events
+ *
+ * Configure this URL in ZenXAI → Voice Agents → <assistant> → Configuration → API Access →
+ * Webhook. Envelope (from ZenXAI's API docs):
+ *   { id: "evt_…", type: "call.completed", created_at, data: {
+ *       call_id, status, assistant_id, phone, reference, metadata, inputs, attempts,
+ *       next_retry_at, duration_sec, ended_reason, failure_reason,
+ *       collected_data: { <key>: { label, value, heard } }, summary, recording_url,
+ *       lead_id, created_at, ended_at } }
+ * Headers: X-ZenX-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">, X-ZenX-Delivery: evt_…
+ * Events may repeat (dedupe on id) and arrive out of order (a final status is never
+ * downgraded). ZenXAI needs a 2xx within 10 s, otherwise it retries (1m, 5m, 30m, 2h, 6h, 12h).
+ * ------------------------------------------------------------------------------------------ */
+const ZENXAI_FINAL_STATUSES = new Set(['completed', 'no_answer', 'busy', 'failed', 'cancelled'])
+const ZENXAI_STATUS_LABELS = {
+  queued: 'Queued',
+  dialing: 'Dialing',
+  retry_scheduled: 'Retry scheduled',
+  completed: 'Answered',
+  no_answer: 'Not answered',
+  busy: 'Busy / declined',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+}
+const SIGNATURE_TOLERANCE_SEC = 300
+
+/** true = valid, false = invalid/missing, null = no secret configured (not checked). */
+const verifyZenxaiSignature = (req) => {
+  const secret = (process.env.ZENXAI_WEBHOOK_SECRET || '').trim()
+  if (!secret) return null
+  const header = String(req.headers['x-zenx-signature'] || '')
+  if (!header || typeof req.rawBody !== 'string') return false
+  const parts = Object.fromEntries(
+    header.split(',').map((p) => {
+      const i = p.indexOf('=')
+      return [p.slice(0, i).trim(), p.slice(i + 1).trim()]
+    })
+  )
+  const t = Number(parts.t)
+  if (!parts.v1 || !Number.isFinite(t)) return false
+  if (Math.abs(Date.now() / 1000 - t) > SIGNATURE_TOLERANCE_SEC) return false
+  const expected = crypto.createHmac('sha256', secret).update(`${parts.t}.${req.rawBody}`).digest('hex')
+  const a = Buffer.from(parts.v1)
+  const b = Buffer.from(expected)
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
+
+const isObjectId = (v) => /^[0-9a-fA-F]{24}$/.test(String(v || ''))
+
+/** Find the TeleCMI call log a ZenXAI call belongs to: call_id → our metadata/reference → phone. */
+const findCallLogForZenxaiCall = async (data) => {
+  if (data.call_id) {
+    const byCallId = await TeleCMICallLog.findOne({ zenxaiCallId: String(data.call_id) })
+    if (byCallId) return byCallId
+  }
+  for (const candidate of [data.metadata?.callLogId, data.reference]) {
+    if (isObjectId(candidate)) {
+      const byId = await TeleCMICallLog.findById(candidate)
+      if (byId) return byId
+    }
+  }
+  const tail = phoneTail(data.phone)
+  if (!tail) return null
+  // Only a call we actually asked ZenXAI to ring back, and one not already bound to another call_id.
+  return TeleCMICallLog.findOne({
+    customerNumber: new RegExp(`${tail}$`),
+    zenxaiCallbackAt: { $ne: null },
+    $or: [{ zenxaiCallId: '' }, { zenxaiCallId: { $exists: false } }, { zenxaiCallId: String(data.call_id || '') }],
+  }).sort({ zenxaiCallbackAt: -1 })
+}
+
+/** "Full Name: Ravi Kumar | Branch: Anna Nagar" from collected_data. */
+const formatCollectedData = (collected) => {
+  if (!collected || typeof collected !== 'object') return ''
+  return Object.entries(collected)
+    .map(([key, v]) => {
+      const value = v && typeof v === 'object' ? v.value : v
+      if (value === null || value === undefined || String(value).trim() === '') return ''
+      const label = (v && typeof v === 'object' && v.label) || key
+      return `${label}: ${value}`
+    })
+    .filter(Boolean)
+    .join(' | ')
+}
+
+const leadNoteForEvent = (type, data) => {
+  if (type === 'call.analysis_ready') {
+    return data.summary ? `[ZenXAI AI Call-back · Summary] ${data.summary}` : ''
+  }
+  if (type === 'call.completed') {
+    const collected = formatCollectedData(data.collected_data)
+    const dur = Number.isFinite(Number(data.duration_sec)) && data.duration_sec !== null ? ` (${data.duration_sec}s)` : ''
+    return `[ZenXAI AI Call-back · Answered${dur}]${collected ? ` ${collected}` : ''}`
+  }
+  if (['call.no_answer', 'call.busy', 'call.failed', 'call.cancelled'].includes(type)) {
+    const label = ZENXAI_STATUS_LABELS[data.status] || type.replace('call.', '')
+    return `[ZenXAI AI Call-back · ${label}]${data.failure_reason ? ` ${data.failure_reason}` : ''}`
+  }
+  return ''
+}
+
+/** True when the body is a Public Voice API event envelope rather than the legacy conversation shape. */
+export const isZenxaiApiEvent = (body) =>
+  !!body && typeof body.type === 'string' && body.type.startsWith('call.') && !!body.data && typeof body.data === 'object'
+
+export const handleZenxaiApiEvent = async (req, res) => {
+  let eventRow = null
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {}
+
+    const signatureValid = verifyZenxaiSignature(req)
+    if (signatureValid === false) {
+      console.warn(LOG, `<= ZenXAI event ${body.id || ''} rejected: bad or stale X-ZenX-Signature`)
+      return res.status(401).json({ success: false, message: 'Invalid signature' })
+    }
+
+    // Anything that isn't a call.* event (e.g. a dashboard "Send test" ping) is acknowledged, not processed.
+    if (!isZenxaiApiEvent(body)) {
+      console.log(LOG, `<= ZenXAI non-call event acknowledged | type=${body.type || '—'} keys: [${Object.keys(body).join(', ')}]`)
+      return res.status(200).json({ success: true, ignored: true })
+    }
+    const type = body.type
+    const data = body.data
+
+    const eventId = String(
+      body.id || req.headers['x-zenx-delivery'] || `${data.call_id || ''}:${type}:${body.created_at || ''}`
+    )
+    console.log(LOG, `<= ZenXAI event ${eventId} ${type} call=${data.call_id || '—'} status=${data.status || '—'}`)
+
+    // Dedupe: the unique eventId insert fails on a redelivery.
+    try {
+      eventRow = await ZenxaiWebhookEvent.create({
+        eventId,
+        type,
+        eventCreatedAt: body.created_at ? new Date(body.created_at) : null,
+        zenxaiCallId: String(data.call_id || ''),
+        status: String(data.status || ''),
+        phone: String(data.phone || ''),
+        reference: String(data.reference || ''),
+        signatureValid,
+        payload: body,
+      })
+    } catch (err) {
+      if (err?.code === 11000) {
+        console.log(LOG, `ZenXAI event ${eventId} already processed — ignoring duplicate`)
+        return res.status(200).json({ success: true, duplicate: true })
+      }
+      throw err
+    }
+
+    const callLog = await findCallLogForZenxaiCall(data)
+    if (!callLog) {
+      console.warn(LOG, `ZenXAI event ${eventId}: no TeleCMI call log matched call ${data.call_id || '—'} / ${data.phone || '—'}`)
+      return res.status(200).json({ success: true, matched: false })
+    }
+
+    const set = { zenxaiLastEvent: type, zenxaiLastEventAt: new Date() }
+    if (data.call_id && !callLog.zenxaiCallId) set.zenxaiCallId = String(data.call_id)
+    const incoming = String(data.status || '')
+    const currentIsFinal = ZENXAI_FINAL_STATUSES.has(callLog.zenxaiCallStatus)
+    if (incoming && (!currentIsFinal || ZENXAI_FINAL_STATUSES.has(incoming))) set.zenxaiCallStatus = incoming
+    if (Number.isFinite(Number(data.attempts)) && Number(data.attempts) >= (callLog.zenxaiAttempts || 0)) {
+      set.zenxaiAttempts = Number(data.attempts)
+    }
+    if (data.duration_sec !== null && data.duration_sec !== undefined) set.zenxaiDurationSec = Number(data.duration_sec) || 0
+    if (data.ended_reason) set.zenxaiEndedReason = String(data.ended_reason)
+    if (data.failure_reason) set.zenxaiFailureReason = String(data.failure_reason)
+    if (data.collected_data && typeof data.collected_data === 'object' && Object.keys(data.collected_data).length) {
+      set.zenxaiCollectedData = data.collected_data
+    }
+    if (data.summary) {
+      set.zenxaiSummary = String(data.summary)
+      set.overallConversation = String(data.summary)
+    }
+    if (data.recording_url) set.zenxaiRecordingUrl = String(data.recording_url)
+    if (data.ended_at) set.zenxaiEndedAt = new Date(data.ended_at)
+    if (type === 'call.completed' || type === 'call.analysis_ready') set.zenxaiConversationAt = new Date()
+    if (!callLog.customerName) {
+      const heardName = cleanValue(data.collected_data?.full_name?.value)
+      if (heardName) set.customerName = heardName
+    }
+    await TeleCMICallLog.findByIdAndUpdate(callLog._id, { $set: set })
+
+    // Append a note to the linked Lead only (never create one) — same rule as the legacy receiver.
+    let leadNoted = false
+    const noteLine = leadNoteForEvent(type, data)
+    if (noteLine && callLog.lead) {
+      // Isolated: a Lead that fails validation must not make ZenXAI retry the whole event for 12 h.
+      try {
+        const lead = await Lead.findById(callLog.lead)
+        if (lead) {
+          lead.notes = lead.notes ? `${lead.notes}\n${noteLine}` : noteLine
+          lead.lastInteraction = new Date()
+          await lead.save()
+          leadNoted = true
+        }
+      } catch (err) {
+        console.error(LOG, `ZenXAI ${type}: could not add note to lead ${callLog.lead}:`, err.message)
+      }
+    }
+
+    await ZenxaiWebhookEvent.updateOne(
+      { _id: eventRow._id },
+      { $set: { callLog: callLog._id, lead: callLog.lead || null } }
+    )
+    console.log(LOG, `ZenXAI ${type} applied to call log ${callLog._id}${leadNoted ? ` + note on lead ${callLog.lead}` : ''}`)
+    return res.status(200).json({ success: true, matched: true, callLogId: callLog._id, leadNoted })
+  } catch (error) {
+    console.error(LOG, 'ZenXAI event webhook ERROR:', error.message)
+    // Drop the dedupe row so ZenXAI's retry is processed rather than ignored as a duplicate.
+    if (eventRow?._id) await ZenxaiWebhookEvent.deleteOne({ _id: eventRow._id }).catch(() => {})
+    // 5xx so ZenXAI retries a transient failure.
     return res.status(500).json({ success: false, message: 'Internal server error' })
   }
 }

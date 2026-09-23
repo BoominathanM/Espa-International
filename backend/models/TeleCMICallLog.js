@@ -54,6 +54,21 @@ const telecmiCallLogSchema = new mongoose.Schema(
     zenxaiCallbackAt: { type: Date, default: null },
     zenxaiCallbackResult: { type: mongoose.Schema.Types.Mixed, default: null },
     zenxaiConversationAt: { type: Date, default: null },
+
+    // ZenXAI Public Voice API (crm.zenxai.io/api/public/v1) — filled from the 202 response and
+    // then from the signed webhook events (see handleZenxaiApiEvent).
+    zenxaiCallId: { type: String, default: '' },
+    zenxaiCallStatus: { type: String, default: '' }, // queued | dialing | retry_scheduled | completed | no_answer | busy | failed | cancelled
+    zenxaiAttempts: { type: Number, default: 0 },
+    zenxaiDurationSec: { type: Number, default: null },
+    zenxaiEndedReason: { type: String, default: '' },
+    zenxaiFailureReason: { type: String, default: '' },
+    zenxaiCollectedData: { type: mongoose.Schema.Types.Mixed, default: null },
+    zenxaiSummary: { type: String, default: '' },
+    zenxaiRecordingUrl: { type: String, default: '' },
+    zenxaiEndedAt: { type: Date, default: null },
+    zenxaiLastEvent: { type: String, default: '' },
+    zenxaiLastEventAt: { type: Date, default: null },
   },
   { timestamps: true }
 )
@@ -62,6 +77,7 @@ telecmiCallLogSchema.index({ customerNumber: 1 })
 telecmiCallLogSchema.index({ variant: 1 })
 telecmiCallLogSchema.index({ branches: 1 })
 telecmiCallLogSchema.index({ createdAt: -1 })
+telecmiCallLogSchema.index({ zenxaiCallId: 1 })
 telecmiCallLogSchema.index({ callId: 1 }, { unique: true, sparse: true })
 telecmiCallLogSchema.index({ requestId: 1 }, { unique: true, sparse: true })
 

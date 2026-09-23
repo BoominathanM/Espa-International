@@ -15,6 +15,7 @@ import {
   headTeleCMIWebhook,
   handleMissedCallPush,
   handleZenxaiConversationWebhook,
+  handleZenxaiApiEvent,
 } from '../controllers/telecmiWebhookController.js'
 
 const router = express.Router()
@@ -28,5 +29,12 @@ router.post('/telecmi-missed-call', handleMissedCallPush)
 
 // Public receiver for ZenXAI's AI call-back conversation result
 router.post('/zenxai-webhook', handleZenxaiConversationWebhook)
+
+// Public receiver for ZenXAI Public Voice API events (call.queued … call.analysis_ready),
+// signed with X-ZenX-Signature — the URL to paste into the assistant's API Access → Webhook.
+router.get('/zenxai-events', (req, res) =>
+  res.status(200).json({ success: true, message: 'ZenXAI events webhook is active (use POST)' })
+)
+router.post('/zenxai-events', handleZenxaiApiEvent)
 
 export default router

@@ -141,7 +141,13 @@ app.use(cors({
 }))
 app.options('*', cors())
 app.use(cookieParser())
-app.use(express.json({ limit: '12mb' }))
+app.use(express.json({
+  limit: '12mb',
+  // ZenXAI signs the raw body (X-ZenX-Signature), so keep it for the ZenXAI webhook routes only.
+  verify: (req, res, buf) => {
+    if (req.originalUrl && req.originalUrl.startsWith('/api/calls/zenxai')) req.rawBody = buf.toString('utf8')
+  },
+}))
 app.use(express.urlencoded({ extended: true, limit: '12mb' }))
 
 // Public chat media (AskEVA fetches image/PDF links from here)

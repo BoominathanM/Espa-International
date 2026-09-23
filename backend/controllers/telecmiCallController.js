@@ -8,6 +8,7 @@ import { applyCallLogBranchScope, canAccessBranch } from '../utils/branchAccess.
 import { parseIstDateRange } from '../utils/istDateRange.js'
 import { RECORDING_NAME_RE, telecmiRecordingUrl } from '../utils/telecmiRecording.js'
 import { placeAgentCall, TeleCMIAgentCallError } from '../services/telecmiAgentCallService.js'
+import { pushMissedCallToZenxai, callLogFieldsFromPush } from '../services/zenxaiMissedCallService.js'
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -447,7 +448,9 @@ export const backfillZenxaiSends = async (req, res) => {
           await TeleCMICallLog.findByIdAndUpdate(call._id, { $set: { zenxaiCallbackAt: null } })
           results.push({ _id: call._id, pushStatus: 'skipped', missing: r.missing })
         } else {
-          await TeleCMICallLog.findByIdAndUpdate(call._id, { $set: { zenxaiCallbackResult: r?.data ?? null } })
+          await TeleCMICallLog.findByIdAndUpdate(call._id, {
+            $set: { zenxaiCallbackResult: r?.data ?? null, ...callLogFieldsFromPush(r) },
+          })
           results.push({ _id: call._id, pushStatus: 'sent', responseStatus: r?.status })
         }
       } catch (err) {

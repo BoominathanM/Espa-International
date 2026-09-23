@@ -36,6 +36,10 @@ const zenxaiSendDataSchema = new mongoose.Schema(
     error: { type: String, default: '' },
     responseStatus: { type: Number, default: null },
     responseData: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    // 'public-api' (crm.zenxai.io assistants/{id}/calls) or 'legacy' (voice.zenxai.io make_call)
+    apiMode: { type: String, default: 'legacy' },
+    zenxaiCallId: { type: String, default: '' },
   },
   { timestamps: true }
 )

@@ -24,9 +24,21 @@ import ZenxaiSendData from '../models/ZenxaiSendData.js'
  *   ZENXAI_FROM_PHONE_NUMBER      number ZenXAI dials out as (falls back to the value the caller passes, then TELECMI_FROM_NUMBER)
  *   ZENXAI_OUTBOUND_ASSISTANT_ID  assistant uuid for the "Outbound Agent"
  *   ZENXAI_FEEDBACK_ASSISTANT_ID  assistant uuid for the "Feedback Agent"
+ *
+ * Public Voice API mode (preferred — used whenever ZENXAI_API_KEY + ZENXAI_API_ASSISTANT_ID are set):
+ *   POST {ZENXAI_API_BASE_URL}/assistants/{ZENXAI_API_ASSISTANT_ID}/calls
+ *   Authorization: Bearer zxk_live_…   Idempotency-Key: telecmi-missed-<callLogId>
+ *   { phone, inputs, reference, metadata }  ->  202 { call_id, status: "queued", ... }
+ *   Results come back as signed webhook events — see handleZenxaiApiEvent.
+ *   ZENXAI_API_BASE_URL           default https://crm.zenxai.io/api/public/v1
+ *   ZENXAI_API_KEY                zxk_live_… (Voice Agents → Assistant → Configuration → API Access)
+ *   ZENXAI_API_ASSISTANT_ID       assistant uuid shown on that page
+ *   ZENXAI_API_NAME_INPUT_KEY     optional Call Data key that receives the customer name (e.g. customer_name);
+ *                                 set it only once that key exists in the assistant's Call Data tab
  */
 const LOG = '[ZENXAI]'
 const DEFAULT_URL = 'https://voice.zenxai.io/api/v1/phone/make_call'
+const DEFAULT_API_BASE_URL = 'https://crm.zenxai.io/api/public/v1'
 
 const readConfig = () => ({
   url: (process.env.ZENXAI_MAKE_CALL_URL || DEFAULT_URL).trim(),
@@ -35,6 +47,10 @@ const readConfig = () => ({
   fromEnv: (process.env.ZENXAI_FROM_PHONE_NUMBER || process.env.TELECMI_FROM_NUMBER || '').trim(),
   outboundAssistant: (process.env.ZENXAI_OUTBOUND_ASSISTANT_ID || '').trim(),
   feedbackAssistant: (process.env.ZENXAI_FEEDBACK_ASSISTANT_ID || '').trim(),
+  apiBaseUrl: (process.env.ZENXAI_API_BASE_URL || DEFAULT_API_BASE_URL).trim().replace(/\/+$/, ''),
+  apiKey: (process.env.ZENXAI_API_KEY || '').trim(),
+  apiAssistantId: (process.env.ZENXAI_API_ASSISTANT_ID || '').trim(),
+  apiNameInputKey: (process.env.ZENXAI_API_NAME_INPUT_KEY || '').trim(),
 })
 
 /** ZenXAI wants an E.164-ish "+<cc><number>" string; assume a bare 10-digit value is Indian. */
@@ -81,6 +97,7 @@ const recordSend = async (entry) => {
 export const pushMissedCallToZenxai = async (callLog, opts = {}) => {
   const { assistant = 'outbound', fromPhoneNumber, source } = opts
   const cfg = readConfig()
+  if (cfg.apiKey && cfg.apiAssistantId) return pushViaPublicApi(callLog, { assistant, source }, cfg)
 
   const phoneNumber = withPlus(callLog?.customerNumber || callLog?.toNumber)
   const fromNumber = withPlus(fromPhoneNumber || cfg.fromEnv)
@@ -145,4 +162,79 @@ export const pushMissedCallToZenxai = async (callLog, opts = {}) => {
     })
     throw err
   }
+}
+
+/**
+ * Public Voice API push: POST {base}/assistants/{id}/calls. ZenXAI answers 202 with a
+ * `call_id` that is stored on the call log so the later webhook events match it exactly.
+ * Same return contract as the legacy path ({status, data} / {skipped, missing}).
+ */
+const pushViaPublicApi = async (callLog, { assistant, source }, cfg) => {
+  const url = `${cfg.apiBaseUrl}/assistants/${cfg.apiAssistantId}/calls`
+  const phone = withPlus(callLog?.customerNumber || callLog?.toNumber)
+  const baseEntry = { ...baseEntryFrom(callLog, { assistant, source }, phone), apiMode: 'public-api', zenxaiUrl: url }
+
+  if (!phone) {
+    console.warn(LOG, `public API call skipped for ${callLog?.callId || callLog?._id || '(unknown)'} — no customer phone`)
+    await recordSend({ ...baseEntry, pushStatus: 'skipped', skippedReason: 'customer phone number' })
+    return { skipped: true, missing: ['customer phone number'] }
+  }
+
+  const name = String(callLog?.customerName || '').trim()
+  const callLogId = callLog?._id ? String(callLog._id) : ''
+  const payload = {
+    phone,
+    reference: callLogId || String(callLog?.callId || callLog?.requestId || ''),
+    metadata: {
+      source: 'espa-crm-telecmi-missed',
+      callLogId,
+      telecmiCallId: String(callLog?.callId || ''),
+      leadId: callLog?.lead ? String(callLog.lead?._id || callLog.lead) : '',
+      customer_name: name,
+    },
+  }
+  if (cfg.apiNameInputKey && name) payload.inputs = { [cfg.apiNameInputKey]: name }
+
+  const headers = { Authorization: `Bearer ${cfg.apiKey}`, 'Content-Type': 'application/json' }
+  // Same call log => same key, so a retried push can never ring the customer twice.
+  if (callLogId) headers['Idempotency-Key'] = `telecmi-missed-${callLogId}`
+
+  console.log(LOG, `=> POST ${url} | AI call-back to ${phone} ref=${payload.reference || '—'} src=${source || '—'}`)
+  try {
+    const response = await axios.post(url, payload, { headers, timeout: 20000 })
+    const data = response.data ?? null
+    console.log(LOG, `<= ${response.status} call_id=${data?.call_id || '—'} status=${data?.status || '—'}`)
+    await recordSend({
+      ...baseEntry,
+      requestPayload: payload,
+      pushStatus: 'sent',
+      responseStatus: response.status,
+      responseData: data,
+      zenxaiCallId: data?.call_id || '',
+    })
+    return { status: response.status, data, zenxaiCallId: data?.call_id || '' }
+  } catch (err) {
+    const errBody = err.response?.data
+    const errText = err.response ? `${err.response.status} ${JSON.stringify(errBody)}` : err.message
+    console.error(LOG, `public API call failed: ${errText}`)
+    await recordSend({
+      ...baseEntry,
+      requestPayload: payload,
+      pushStatus: 'failed',
+      error: String(errText).slice(0, 500),
+      responseStatus: err.response?.status ?? null,
+      responseData: errBody ?? null,
+    })
+    throw err
+  }
+}
+
+/**
+ * Extra TeleCMICallLog fields to $set after a successful push — the Public API's `call_id` and
+ * initial status, so the webhook events can match this row. Empty for the legacy path.
+ */
+export const callLogFieldsFromPush = (result) => {
+  const callId = result?.zenxaiCallId || result?.data?.call_id || ''
+  if (!callId) return {}
+  return { zenxaiCallId: String(callId), zenxaiCallStatus: String(result?.data?.status || 'queued') }
 }
