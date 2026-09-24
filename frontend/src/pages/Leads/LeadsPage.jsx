@@ -67,7 +67,11 @@ import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useConvertLeadToCustomerMutation } from '../../store/api/customerApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
 import { useGetCampaignsQuery, useMakeCallMutation } from '../../store/api/cloudAgentApi'
-import { useMakeTeleCMIAgentCallMutation, useGetTeleCMICallLogsForLeadQuery } from '../../store/api/telecmiApi'
+import {
+  useMakeTeleCMIAgentCallMutation,
+  useGetTeleCMICallLogsForLeadQuery,
+  useGetZenxaiCallsForLeadQuery,
+} from '../../store/api/telecmiApi'
 import { useGetMeQuery } from '../../store/api/authApi'
 import { getApiBaseUrl } from '../../utils/apiConfig'
 import * as XLSX from 'xlsx'
@@ -121,6 +125,42 @@ const STAGE_COLORS = {
 }
 
 const getStageColor = (status) => STAGE_COLORS[status] || 'default'
+
+// ZenXAI Public Voice API call statuses (see backend handleZenxaiApiEvent)
+const ZENXAI_STATUS_LABELS = {
+  requested: 'Requested',
+  skipped: 'Skipped',
+  queued: 'Queued',
+  dialing: 'Dialing',
+  retry_scheduled: 'Retry scheduled',
+  completed: 'Answered',
+  no_answer: 'Not answered',
+  busy: 'Busy / declined',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+}
+const ZENXAI_STATUS_COLORS = {
+  queued: 'default',
+  dialing: 'processing',
+  retry_scheduled: 'gold',
+  completed: 'green',
+  no_answer: 'orange',
+  busy: 'orange',
+  failed: 'red',
+  cancelled: 'default',
+}
+
+/** collected_data ({ key: { label, value, heard } }) → non-empty rows for display. */
+const zenxaiCollectedRows = (collected) =>
+  collected && typeof collected === 'object'
+    ? Object.entries(collected)
+        .map(([key, v]) => ({
+          key,
+          label: (v && typeof v === 'object' && v.label) || key,
+          value: v && typeof v === 'object' ? v.value : v,
+        }))
+        .filter((r) => r.value !== null && r.value !== undefined && String(r.value).trim() !== '')
+    : []
 
 const Leads = () => {
   const { message: messageApi } = App.useApp()
@@ -222,6 +262,11 @@ const Leads = () => {
     { skip: !isTimelineVisible || !selectedLead?._id }
   )
   const teleCMICallHistory = teleCMICallHistoryData?.callLogs || []
+  const { data: zenxaiCallHistoryData, isFetching: zenxaiCallHistoryLoading } = useGetZenxaiCallsForLeadQuery(
+    selectedLead?._id,
+    { skip: !isTimelineVisible || !selectedLead?._id }
+  )
+  const zenxaiCallHistory = zenxaiCallHistoryData?.calls || []
 
   const campaignIds = campaignsData?.campaignIds || []
   const defaultCampaign = campaignsData?.defaultCampaign || ''
@@ -1559,6 +1604,72 @@ const Leads = () => {
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+            </Card>
+
+            <Card title="ZenXAI AI Call History" className="leads-detail-card">
+              {zenxaiCallHistoryLoading ? (
+                <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                  <Spin size="small" />
+                </div>
+              ) : zenxaiCallHistory.length === 0 ? (
+                <Empty description="No ZenXAI AI calls found for this number" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 420, overflowY: 'auto' }}>
+                  {zenxaiCallHistory.map((call) => {
+                    const collected = zenxaiCollectedRows(call.collectedData)
+                    const when = call.endedAt || call.requestedAt || call.sortAt
+                    return (
+                      <div key={call.key} style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: 10 }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                          <Tag color={call.source === 'feedback' ? 'magenta' : 'purple'}>
+                            {call.source === 'missed-call-callback'
+                              ? 'AI call-back (missed call)'
+                              : call.source === 'feedback'
+                                ? 'AI feedback call'
+                                : 'AI call'}
+                          </Tag>
+                          <Tag color={ZENXAI_STATUS_COLORS[call.status] || 'default'}>
+                            {ZENXAI_STATUS_LABELS[call.status] || call.status || 'Sent'}
+                          </Tag>
+                          {when && <span style={{ color: '#666' }}>{dayjs(when).format('MMM DD, YYYY hh:mm A')}</span>}
+                          {call.durationSec > 0 && <span style={{ color: '#666' }}>• {call.durationSec}s</span>}
+                          {call.attempts > 1 && <span style={{ color: '#666' }}>• {call.attempts} attempts</span>}
+                          {call.phone && <span style={{ color: '#666' }}>• {call.phone}</span>}
+                        </div>
+                        {call.missedCallAt && (
+                          <p style={{ margin: '0 0 6px', color: '#666', fontSize: 12 }}>
+                            Missed TeleCMI call at {dayjs(call.missedCallAt).format('MMM DD, YYYY hh:mm A')}
+                          </p>
+                        )}
+                        {call.failureReason && (
+                          <p style={{ margin: '0 0 6px' }}><strong>Reason:</strong> {call.failureReason}</p>
+                        )}
+                        {call.summary && (
+                          <p style={{ margin: '0 0 6px', whiteSpace: 'pre-wrap' }}><strong>Summary:</strong> {call.summary}</p>
+                        )}
+                        {collected.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', margin: '0 0 6px', fontSize: 13 }}>
+                            {collected.map((r) => (
+                              <span key={r.key}><strong>{r.label}:</strong> {String(r.value)}</span>
+                            ))}
+                          </div>
+                        )}
+                        {call.recordingUrl && (
+                          <>
+                            <audio key={call.key} controls preload="none" style={{ width: '100%' }}>
+                              <source src={call.recordingUrl} />
+                              Your browser does not support the audio element.
+                            </audio>
+                            <p style={{ margin: '6px 0 0' }}>
+                              <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer">Open recording in new tab</a>
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </Card>

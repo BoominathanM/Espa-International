@@ -4,17 +4,29 @@ import TeleCMICallLog from '../models/TeleCMICallLog.js'
 import ZenxaiSendData from '../models/ZenxaiSendData.js'
 import Lead from '../models/Lead.js'
 import User from '../models/User.js'
-import { applyCallLogBranchScope, canAccessBranch } from '../utils/branchAccess.js'
+import { applyCallLogBranchScope, canAccessBranch, getAccessibleBranchIds } from '../utils/branchAccess.js'
 import { parseIstDateRange } from '../utils/istDateRange.js'
 import { RECORDING_NAME_RE, telecmiRecordingUrl } from '../utils/telecmiRecording.js'
 import { placeAgentCall, TeleCMIAgentCallError } from '../services/telecmiAgentCallService.js'
-import { pushMissedCallToZenxai, callLogFieldsFromPush } from '../services/zenxaiMissedCallService.js'
+import {
+  pushMissedCallToZenxai,
+  callLogFieldsFromPush,
+  fetchZenxaiCall,
+  zenxaiAuthHeadersFor,
+} from '../services/zenxaiMissedCallService.js'
+import ZenxaiWebhookEvent from '../models/ZenxaiWebhookEvent.js'
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const TELECMI_PLAY_URL = 'https://rest.telecmi.com/v2/play'
 
 const buildRecordingUrl = (req, filename) => telecmiRecordingUrl(req?.get?.('host'), filename)
+
+/** Protocol-relative URL of the authenticated ZenXAI recording proxy (see streamZenxaiRecording). */
+const buildZenxaiRecordingUrl = (req, zenxaiCallId) => {
+  const host = req?.get?.('host')
+  return `${host ? `//${host}` : ''}/api/telecmi/zenxai-recording/${encodeURIComponent(zenxaiCallId)}`
+}
 
 const normalizeDigits = (v) => String(v ?? '').replace(/\D/g, '')
 
@@ -45,6 +57,11 @@ const shapeCallLogs = (logs, req) => {
     obj.recordingUrl = buildRecordingUrl(req, fileName)
     obj.duration = firstNum(obj.duration, rp.answeredsec, rp.duration, rp.billedsec)
     obj.billedSeconds = firstNum(obj.billedSeconds, rp.billedsec, rp.answeredsec, rp.duration)
+    // Playable ZenXAI AI call-back recording (via our proxy, so an expiring upstream URL is refreshed).
+    obj.zenxaiRecordingPlayUrl =
+      obj.zenxaiCallId && obj.zenxaiRecordingUrl ? buildZenxaiRecordingUrl(req, obj.zenxaiCallId) : ''
+    const fb = obj.zenxaiFeedback || {}
+    obj.zenxaiFeedbackRecordingPlayUrl = fb.callId && fb.recordingUrl ? buildZenxaiRecordingUrl(req, fb.callId) : ''
     return obj
   })
 }
@@ -472,5 +489,247 @@ export const backfillZenxaiSends = async (req, res) => {
   } catch (error) {
     console.error('ZenXAI backfill error:', error.message)
     res.status(500).json({ success: false, message: 'ZenXAI backfill failed' })
+  }
+}
+
+/* ------------------------------------------------------------------------------------------
+ * ZenXAI AI call history for a Lead — GET /api/telecmi/zenxai-calls/lead/:leadId
+ *
+ * Every ZenXAI Public Voice API call for the lead's phone number (tail-matched, like the
+ * TeleCMI history) or linked to the lead:
+ *  - call-backs we placed for a missed TeleCMI call (TeleCMICallLog rows with zenxaiCallId —
+ *    these are `missed` rows, which is why the TeleCMI history card never showed them), and
+ *  - calls known only from webhook events that matched no call log (zenxaiwebhookevents).
+ * Access follows the Lead (canAccessBranch), not the call-log branches: missed inbound calls are
+ * often saved without a branch, and branch scoping would hide them from the lead's own staff.
+ * ------------------------------------------------------------------------------------------ */
+const shapeZenxaiCallFromLog = (log, req) => ({
+  key: `log-${log._id}`,
+  zenxaiCallId: log.zenxaiCallId || '',
+  telecmiCallLogId: log._id,
+  source: 'missed-call-callback',
+  phone: log.customerNumber || '',
+  status: log.zenxaiCallStatus || (log.zenxaiCallId ? 'queued' : ''),
+  attempts: log.zenxaiAttempts || 0,
+  durationSec: log.zenxaiDurationSec ?? null,
+  endedReason: log.zenxaiEndedReason || '',
+  failureReason: log.zenxaiFailureReason || '',
+  // Legacy call-backs (no zenxaiCallId) stored the AI conversation in overallConversation; for
+  // Public API calls that field is the TeleCMI call's own notes, so it must not pose as the summary.
+  summary: log.zenxaiSummary || (!log.zenxaiCallId ? log.overallConversation || '' : ''),
+  collectedData: log.zenxaiCollectedData || null,
+  recordingUrl: log.zenxaiCallId && log.zenxaiRecordingUrl ? buildZenxaiRecordingUrl(req, log.zenxaiCallId) : '',
+  missedCallAt: log.callTimestamp || log.createdAt || null,
+  requestedAt: log.zenxaiCallbackAt || null,
+  endedAt: log.zenxaiEndedAt || null,
+  sortAt: log.zenxaiEndedAt || log.zenxaiLastEventAt || log.zenxaiCallbackAt || log.createdAt,
+})
+
+/** The automatic feedback call stored on the same row (zenxaiFeedback.*), as its own history entry. */
+const shapeZenxaiFeedbackFromLog = (log, req) => {
+  const fb = log.zenxaiFeedback || {}
+  return {
+    key: `fb-${log._id}`,
+    zenxaiCallId: fb.callId || '',
+    telecmiCallLogId: log._id,
+    source: 'feedback',
+    phone: log.customerNumber || '',
+    status: fb.status || (fb.callId ? 'queued' : 'requested'),
+    attempts: fb.attempts || 0,
+    durationSec: fb.durationSec ?? null,
+    endedReason: fb.endedReason || '',
+    failureReason: fb.failureReason || fb.error || '',
+    summary: fb.summary || '',
+    collectedData: fb.collectedData || null,
+    recordingUrl: fb.callId && fb.recordingUrl ? buildZenxaiRecordingUrl(req, fb.callId) : '',
+    missedCallAt: null,
+    requestedAt: fb.requestedAt || null,
+    endedAt: fb.endedAt || null,
+    sortAt: fb.endedAt || fb.lastEventAt || fb.requestedAt || log.createdAt,
+  }
+}
+
+const shapeZenxaiCallFromEvent = (evt, req) => {
+  const d = evt?.payload?.data || {}
+  return {
+    key: `evt-${evt.zenxaiCallId || evt._id}`,
+    zenxaiCallId: evt.zenxaiCallId || '',
+    telecmiCallLogId: null,
+    source: evt.assistantKind === 'feedback' ? 'feedback' : 'zenxai',
+    phone: d.phone || evt.phone || '',
+    status: d.status || evt.status || '',
+    attempts: Number(d.attempts) || 0,
+    durationSec: d.duration_sec ?? null,
+    endedReason: d.ended_reason || '',
+    failureReason: d.failure_reason || '',
+    summary: d.summary || '',
+    collectedData: d.collected_data && Object.keys(d.collected_data).length ? d.collected_data : null,
+    recordingUrl: evt.zenxaiCallId && d.recording_url ? buildZenxaiRecordingUrl(req, evt.zenxaiCallId) : '',
+    missedCallAt: null,
+    requestedAt: d.created_at ? new Date(d.created_at) : null,
+    endedAt: d.ended_at ? new Date(d.ended_at) : null,
+    sortAt: d.ended_at ? new Date(d.ended_at) : evt.eventCreatedAt || evt.createdAt,
+  }
+}
+
+export const getZenxaiCallsForLead = async (req, res) => {
+  try {
+    const { leadId } = req.params
+    if (!leadId || !leadId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ success: false, message: 'Invalid leadId' })
+    }
+    const lead = await Lead.findById(leadId).select('phone branch')
+    if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' })
+    if (!canAccessBranch(req.user, lead.branch)) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
+    }
+
+    const tail = phoneTail(lead.phone)
+    const who = [{ lead: lead._id }]
+    if (tail) who.push({ customerNumber: new RegExp(`${tail}$`) })
+
+    const logs = await TeleCMICallLog.find({
+      $and: [
+        { $or: who },
+        // A real Public API call, a legacy call-back that produced a conversation, or a feedback call.
+        {
+          $or: [
+            { zenxaiCallId: { $nin: ['', null] } },
+            { zenxaiConversationAt: { $ne: null } },
+            { 'zenxaiFeedback.callId': { $nin: ['', null] } },
+            { 'zenxaiFeedback.requestedAt': { $ne: null } },
+          ],
+        },
+      ],
+    })
+      .sort({ zenxaiCallbackAt: -1, createdAt: -1 })
+      .limit(50)
+      .lean()
+
+    const calls = []
+    for (const l of logs) {
+      if (l.zenxaiCallId || l.zenxaiConversationAt) calls.push(shapeZenxaiCallFromLog(l, req))
+      if (l.zenxaiFeedback?.callId || l.zenxaiFeedback?.requestedAt) calls.push(shapeZenxaiFeedbackFromLog(l, req))
+    }
+    const known = new Set(calls.map((c) => c.zenxaiCallId).filter(Boolean))
+
+    if (tail) {
+      // Latest snapshot per ZenXAI call among events that matched no call log. Every event's
+      // `data` is the full call object, so the newest one carries the most complete state.
+      const unmatched = await ZenxaiWebhookEvent.aggregate([
+        {
+          $match: {
+            callLog: null,
+            phone: new RegExp(`${tail}$`),
+            zenxaiCallId: { $nin: ['', null, 'run_test'] },
+            type: { $ne: 'call.test' }, // dashboard "Send test" events stored before they were ignored
+          },
+        },
+        { $sort: { eventCreatedAt: -1, createdAt: -1 } },
+        { $group: { _id: '$zenxaiCallId', doc: { $first: '$$ROOT' } } },
+        { $limit: 50 },
+      ])
+      for (const { doc } of unmatched) {
+        if (!known.has(doc.zenxaiCallId)) calls.push(shapeZenxaiCallFromEvent(doc, req))
+      }
+    }
+
+    calls.sort((a, b) => new Date(b.sortAt || 0) - new Date(a.sortAt || 0))
+    res.json({ success: true, calls })
+  } catch (error) {
+    console.error('Get ZenXAI calls for lead error:', error.message)
+    res.status(500).json({ success: false, message: 'Failed to fetch ZenXAI calls for this lead' })
+  }
+}
+
+/** May this user hear this ZenXAI call? Admin-wide users yes; others via call-log branch, the
+ *  linked lead's branch, or any lead with the same number in one of their branches. */
+const canAccessZenxaiCall = async (user, { callLog, phone }) => {
+  const accessible = getAccessibleBranchIds(user)
+  if (accessible === null) return true
+  if (!accessible.length) return false
+  if ((callLog?.branches || []).some((b) => accessible.includes(String(b)))) return true
+  if (callLog?.lead) {
+    const linked = await Lead.findById(callLog.lead).select('branch').lean()
+    if (linked?.branch && accessible.includes(String(linked.branch))) return true
+  }
+  const tail = phoneTail(phone)
+  if (!tail) return false
+  return !!(await Lead.exists({ phone: new RegExp(`${tail}$`), branch: { $in: accessible } }))
+}
+
+/**
+ * Authenticated proxy for a ZenXAI call recording — GET /api/telecmi/zenxai-recording/:zenxaiCallId
+ * Asks ZenXAI for the call's current recording_url (GET /calls/{id}; stored URLs may be
+ * short-lived), falls back to the stored one, and streams it with Range support so the
+ * browser's audio player can seek. The API key is only sent to ZenXAI's own host.
+ */
+export const streamZenxaiRecording = async (req, res) => {
+  try {
+    const zenxaiCallId = String(req.params.zenxaiCallId || '').trim()
+    if (!/^[A-Za-z0-9_-]{6,80}$/.test(zenxaiCallId)) {
+      return res.status(400).json({ success: false, message: 'Invalid ZenXAI call id' })
+    }
+
+    // The id is either the AI call-back's or the feedback call's (each assistant has its own key).
+    let kind = 'outbound'
+    let callLog = await TeleCMICallLog.findOne({ zenxaiCallId }).lean()
+    if (!callLog) {
+      callLog = await TeleCMICallLog.findOne({ 'zenxaiFeedback.callId': zenxaiCallId }).lean()
+      if (callLog) kind = 'feedback'
+    }
+    const lastEvent = callLog
+      ? null
+      : await ZenxaiWebhookEvent.findOne({ zenxaiCallId }).sort({ eventCreatedAt: -1, createdAt: -1 }).lean()
+    if (!callLog && !lastEvent) {
+      return res.status(404).json({ success: false, message: 'Unknown ZenXAI call' })
+    }
+    if (lastEvent?.assistantKind === 'feedback') kind = 'feedback'
+    const phone = callLog?.customerNumber || lastEvent?.phone || ''
+    if (!(await canAccessZenxaiCall(req.user, { callLog, phone }))) {
+      return res.status(403).json({ success: false, message: 'Not allowed' })
+    }
+
+    const storedUrl = kind === 'feedback' ? callLog?.zenxaiFeedback?.recordingUrl : callLog?.zenxaiRecordingUrl
+    const fresh = await fetchZenxaiCall(zenxaiCallId, kind)
+    const recordingUrl = fresh?.recording_url || storedUrl || lastEvent?.payload?.data?.recording_url || ''
+    if (!/^https:\/\//i.test(recordingUrl)) {
+      return res.status(404).json({ success: false, message: 'Recording not available yet' })
+    }
+    if (callLog && fresh?.recording_url && fresh.recording_url !== storedUrl) {
+      const field = kind === 'feedback' ? 'zenxaiFeedback.recordingUrl' : 'zenxaiRecordingUrl'
+      await TeleCMICallLog.updateOne({ _id: callLog._id }, { $set: { [field]: fresh.recording_url } })
+    }
+
+    const headers = { ...zenxaiAuthHeadersFor(recordingUrl, kind) }
+    if (req.headers.range) headers.Range = req.headers.range
+    const upstream = await axios.get(recordingUrl, {
+      headers,
+      responseType: 'stream',
+      timeout: 30000,
+      maxRedirects: 5,
+      validateStatus: (s) => s >= 200 && s < 500,
+    })
+    if (upstream.status !== 200 && upstream.status !== 206) {
+      upstream.data?.resume?.()
+      console.warn(`[ZENXAI] recording fetch for ${zenxaiCallId} returned ${upstream.status}`)
+      return res.status(502).json({ success: false, message: 'Recording not available from ZenXAI' })
+    }
+
+    res.status(upstream.status)
+    res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/mpeg')
+    for (const h of ['content-length', 'content-range', 'accept-ranges']) {
+      if (upstream.headers[h]) res.setHeader(h, upstream.headers[h])
+    }
+    res.setHeader('Cache-Control', 'private, max-age=3600')
+    upstream.data.on('error', (err) => {
+      console.error('[ZENXAI] recording stream error:', err.message)
+      if (!res.headersSent) res.status(502).end()
+      else res.destroy(err)
+    })
+    upstream.data.pipe(res)
+  } catch (error) {
+    console.error('Stream ZenXAI recording error:', error.message)
+    if (!res.headersSent) res.status(502).json({ success: false, message: 'Failed to fetch recording' })
   }
 }

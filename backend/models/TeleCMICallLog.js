@@ -69,6 +69,31 @@ const telecmiCallLogSchema = new mongoose.Schema(
     zenxaiEndedAt: { type: Date, default: null },
     zenxaiLastEvent: { type: String, default: '' },
     zenxaiLastEventAt: { type: Date, default: null },
+    // The single Lead-note line written for this call — replaced in place as more data arrives.
+    zenxaiLeadNote: { type: String, default: '' },
+
+    // ZenXAI FEEDBACK assistant call, placed automatically after the AI call-back above ends
+    // "completed" (see scheduleZenxaiFeedbackCall). Kept apart so it never overwrites the
+    // call-back's own fields. `requestedAt` is the atomic claim that stops a second feedback call.
+    zenxaiFeedback: {
+      requestedAt: { type: Date, default: null },
+      source: { type: String, default: '' }, // 'auto-after-ai-answered' | 'manual-endpoint'
+      callId: { type: String, default: '' },
+      status: { type: String, default: '' }, // ZenXAI call status, or 'skipped'
+      attempts: { type: Number, default: 0 },
+      durationSec: { type: Number, default: null },
+      endedReason: { type: String, default: '' },
+      failureReason: { type: String, default: '' },
+      collectedData: { type: mongoose.Schema.Types.Mixed, default: null },
+      summary: { type: String, default: '' },
+      recordingUrl: { type: String, default: '' },
+      endedAt: { type: Date, default: null },
+      conversationAt: { type: Date, default: null },
+      lastEvent: { type: String, default: '' },
+      lastEventAt: { type: Date, default: null },
+      leadNote: { type: String, default: '' },
+      error: { type: String, default: '' },
+    },
   },
   { timestamps: true }
 )
@@ -78,6 +103,7 @@ telecmiCallLogSchema.index({ variant: 1 })
 telecmiCallLogSchema.index({ branches: 1 })
 telecmiCallLogSchema.index({ createdAt: -1 })
 telecmiCallLogSchema.index({ zenxaiCallId: 1 })
+telecmiCallLogSchema.index({ 'zenxaiFeedback.callId': 1 })
 telecmiCallLogSchema.index({ callId: 1 }, { unique: true, sparse: true })
 telecmiCallLogSchema.index({ requestId: 1 }, { unique: true, sparse: true })
 

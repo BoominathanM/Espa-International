@@ -21,7 +21,12 @@ import ZenxaiSendData from '../models/ZenxaiSendData.js'
 import ZenxaiWebhookEvent from '../models/ZenxaiWebhookEvent.js'
 import Lead from '../models/Lead.js'
 import { createOrUpdateLeadFromPhone } from '../services/telecmiCallService.js'
-import { pushMissedCallToZenxai, callLogFieldsFromPush } from '../services/zenxaiMissedCallService.js'
+import {
+  pushMissedCallToZenxai,
+  callLogFieldsFromPush,
+  isZenxaiFeedbackApiEnabled,
+  zenxaiAssistantKindFor,
+} from '../services/zenxaiMissedCallService.js'
 import { telecmiRecordingUrl } from '../utils/telecmiRecording.js'
 
 const LOG = '[TELECMI]'
@@ -451,9 +456,13 @@ const saveChubCallEvent = async (body, settings = {}) => {
 
   // Only set callId/requestId when this event actually carries them, so a later event that
   // omits one doesn't clobber a value an earlier event (or call-placement) already stored.
+  // On an INCOMING call `to` is our own TeleCMI number and the customer is the caller — using
+  // `to` there would make the AI call-back ring our own line. Outbound events are unchanged.
+  const ourTail = phoneTail(settings.fromPhoneNumber || process.env.TELECMI_FROM_NUMBER)
+  const inboundToUs = body.direction === 'inbound' && ourTail && phoneTail(body.to) === ourTail
   const fields = {
     variant: body.direction === 'inbound' ? 'inbound' : 'outbound',
-    customerNumber: cleanValue(body.to),
+    customerNumber: cleanValue(inboundToUs ? body.from || body.callerid || body.to : body.to),
     fromNumber: cleanValue(body.callerid),
     toNumber: cleanValue(body.to),
     agentCode: cleanValue(body.user),
@@ -671,9 +680,21 @@ export const handleMissedCallPush = async (req, res) => {
       })
     }
     if (callLog?._id) {
-      await TeleCMICallLog.findByIdAndUpdate(callLog._id, {
-        $set: { zenxaiCallbackAt: new Date(), zenxaiCallbackResult: result?.data ?? null, ...callLogFieldsFromPush(result) },
-      })
+      if (result?.kind === 'feedback') {
+        // Public API feedback call: its own sub-document, so the row's AI call-back stays intact.
+        await TeleCMICallLog.findByIdAndUpdate(callLog._id, {
+          $set: {
+            'zenxaiFeedback.requestedAt': new Date(),
+            'zenxaiFeedback.source': 'manual-endpoint',
+            'zenxaiFeedback.error': '',
+            ...callLogFieldsFromPush(result),
+          },
+        })
+      } else {
+        await TeleCMICallLog.findByIdAndUpdate(callLog._id, {
+          $set: { zenxaiCallbackAt: new Date(), zenxaiCallbackResult: result?.data ?? null, ...callLogFieldsFromPush(result) },
+        })
+      }
     }
     return res.status(200).json({ success: true, message: 'Missed call pushed to ZenXAI', zenxai: result })
   } catch (error) {
@@ -784,10 +805,16 @@ const ZENXAI_STATUS_LABELS = {
 }
 const SIGNATURE_TOLERANCE_SEC = 300
 
-/** true = valid, false = invalid/missing, null = no secret configured (not checked). */
+/** Signing secrets of every assistant whose webhook points here — each assistant signs with its own. */
+const zenxaiWebhookSecrets = () =>
+  [process.env.ZENXAI_WEBHOOK_SECRET, process.env.ZENXAI_FEEDBACK_WEBHOOK_SECRET]
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+
+/** true = valid for one of our secrets, false = invalid/missing, null = no secret configured (not checked). */
 const verifyZenxaiSignature = (req) => {
-  const secret = (process.env.ZENXAI_WEBHOOK_SECRET || '').trim()
-  if (!secret) return null
+  const secrets = zenxaiWebhookSecrets()
+  if (!secrets.length) return null
   const header = String(req.headers['x-zenx-signature'] || '')
   if (!header || typeof req.rawBody !== 'string') return false
   const parts = Object.fromEntries(
@@ -799,34 +826,99 @@ const verifyZenxaiSignature = (req) => {
   const t = Number(parts.t)
   if (!parts.v1 || !Number.isFinite(t)) return false
   if (Math.abs(Date.now() / 1000 - t) > SIGNATURE_TOLERANCE_SEC) return false
-  const expected = crypto.createHmac('sha256', secret).update(`${parts.t}.${req.rawBody}`).digest('hex')
-  const a = Buffer.from(parts.v1)
-  const b = Buffer.from(expected)
-  return a.length === b.length && crypto.timingSafeEqual(a, b)
+  const received = Buffer.from(parts.v1)
+  return secrets.some((secret) => {
+    const expected = Buffer.from(crypto.createHmac('sha256', secret).update(`${parts.t}.${req.rawBody}`).digest('hex'))
+    return received.length === expected.length && crypto.timingSafeEqual(received, expected)
+  })
 }
 
 const isObjectId = (v) => /^[0-9a-fA-F]{24}$/.test(String(v || ''))
 
-/** Find the TeleCMI call log a ZenXAI call belongs to: call_id → our metadata/reference → phone. */
+/**
+ * Where each piece of a ZenXAI call is stored on the TeleCMICallLog: the AI call-back's own
+ * top-level fields, or the separate zenxaiFeedback.* sub-document for the feedback call.
+ */
+const ZENXAI_FIELD_KEYS = [
+  'callId', 'status', 'attempts', 'durationSec', 'endedReason', 'failureReason', 'collectedData',
+  'summary', 'recordingUrl', 'endedAt', 'conversationAt', 'lastEvent', 'lastEventAt', 'leadNote',
+]
+const ZENXAI_FIELDS = {
+  outbound: {
+    callId: 'zenxaiCallId',
+    status: 'zenxaiCallStatus',
+    attempts: 'zenxaiAttempts',
+    durationSec: 'zenxaiDurationSec',
+    endedReason: 'zenxaiEndedReason',
+    failureReason: 'zenxaiFailureReason',
+    collectedData: 'zenxaiCollectedData',
+    summary: 'zenxaiSummary',
+    recordingUrl: 'zenxaiRecordingUrl',
+    endedAt: 'zenxaiEndedAt',
+    conversationAt: 'zenxaiConversationAt',
+    lastEvent: 'zenxaiLastEvent',
+    lastEventAt: 'zenxaiLastEventAt',
+    leadNote: 'zenxaiLeadNote',
+  },
+  feedback: Object.fromEntries(ZENXAI_FIELD_KEYS.map((k) => [k, `zenxaiFeedback.${k}`])),
+}
+
+const getPath = (obj, path) => path.split('.').reduce((acc, k) => (acc == null ? acc : acc[k]), obj)
+
+/** Current stored state of one kind of ZenXAI call on a call log. */
+const currentZenxai = (callLog, kind) =>
+  Object.fromEntries(ZENXAI_FIELD_KEYS.map((k) => [k, getPath(callLog, ZENXAI_FIELDS[kind][k])]))
+
+/**
+ * Run fn() for one ZenXAI call at a time. ZenXAI fires several events for the same call within
+ * milliseconds (seen live: call.completed twice + call.analysis_ready inside 200 ms); handled in
+ * parallel they'd each read the row before the others' writes (e.g. two Lead notes).
+ * In-process only — enough for this single backend process.
+ */
+const zenxaiCallLocks = new Map()
+const withZenxaiCallLock = (key, fn) => {
+  if (!key) return fn()
+  const run = (zenxaiCallLocks.get(key) || Promise.resolve()).then(fn, fn)
+  const tail = run.catch(() => {})
+  zenxaiCallLocks.set(key, tail)
+  tail.then(() => {
+    if (zenxaiCallLocks.get(key) === tail) zenxaiCallLocks.delete(key)
+  })
+  return run
+}
+
+/**
+ * Find the TeleCMI call log a ZenXAI call belongs to, and whether it is the AI call-back
+ * ('outbound') or the feedback call: bound call_id → our metadata/reference → phone.
+ */
 const findCallLogForZenxaiCall = async (data) => {
-  if (data.call_id) {
-    const byCallId = await TeleCMICallLog.findOne({ zenxaiCallId: String(data.call_id) })
-    if (byCallId) return byCallId
+  const callId = String(data.call_id || '')
+  if (callId) {
+    const asCallBack = await TeleCMICallLog.findOne({ zenxaiCallId: callId })
+    if (asCallBack) return { callLog: asCallBack, kind: 'outbound' }
+    const asFeedback = await TeleCMICallLog.findOne({ 'zenxaiFeedback.callId': callId })
+    if (asFeedback) return { callLog: asFeedback, kind: 'feedback' }
   }
+  // Not bound yet (e.g. the event beat our write of the 202 call_id): which assistant placed it?
+  const kind =
+    zenxaiAssistantKindFor(data.assistant_id) || (data.metadata?.kind === 'feedback' ? 'feedback' : 'outbound')
   for (const candidate of [data.metadata?.callLogId, data.reference]) {
     if (isObjectId(candidate)) {
       const byId = await TeleCMICallLog.findById(candidate)
-      if (byId) return byId
+      if (byId) return { callLog: byId, kind }
     }
   }
   const tail = phoneTail(data.phone)
-  if (!tail) return null
-  // Only a call we actually asked ZenXAI to ring back, and one not already bound to another call_id.
-  return TeleCMICallLog.findOne({
+  if (!tail) return { callLog: null, kind }
+  // Only a call we actually asked ZenXAI to place, and one not already bound to another call_id.
+  const f = ZENXAI_FIELDS[kind]
+  const requestedField = kind === 'feedback' ? 'zenxaiFeedback.requestedAt' : 'zenxaiCallbackAt'
+  const callLog = await TeleCMICallLog.findOne({
     customerNumber: new RegExp(`${tail}$`),
-    zenxaiCallbackAt: { $ne: null },
-    $or: [{ zenxaiCallId: '' }, { zenxaiCallId: { $exists: false } }, { zenxaiCallId: String(data.call_id || '') }],
-  }).sort({ zenxaiCallbackAt: -1 })
+    [requestedField]: { $ne: null },
+    $or: [{ [f.callId]: '' }, { [f.callId]: { $exists: false } }, { [f.callId]: callId }],
+  }).sort({ [requestedField]: -1 })
+  return { callLog, kind }
 }
 
 /** "Full Name: Ravi Kumar | Branch: Anna Nagar" from collected_data. */
@@ -843,20 +935,201 @@ const formatCollectedData = (collected) => {
     .join(' | ')
 }
 
-const leadNoteForEvent = (type, data) => {
-  if (type === 'call.analysis_ready') {
-    return data.summary ? `[ZenXAI AI Call-back · Summary] ${data.summary}` : ''
+/**
+ * The ONE Lead-note line for a ZenXAI call, built from everything known so far (final status,
+ * collected data, summary). Re-built on every event and swapped in place of the previous line,
+ * so ZenXAI's repeated events (completed ×2, then analysis_ready) end up as a single, complete
+ * note. '' while the call hasn't finished. ZenXAI has reported duration_sec 0 for a real
+ * conversation, so a 0 duration is left out rather than shown as "(0s)".
+ */
+const leadNoteForCall = (state, kind = 'outbound') => {
+  const status = String(state.status || '')
+  if (!ZENXAI_FINAL_STATUSES.has(status)) return ''
+  const tag = kind === 'feedback' ? 'ZenXAI Feedback' : 'ZenXAI AI Call-back'
+  if (status === 'completed') {
+    const dur = Number(state.durationSec) > 0 ? ` (${state.durationSec}s)` : ''
+    const summary = String(state.summary || '').replace(/\s+/g, ' ').trim()
+    const parts = [formatCollectedData(state.collectedData), summary ? `Summary: ${summary}` : ''].filter(Boolean)
+    return `[${tag} · Answered${dur}]${parts.length ? ` ${parts.join(' | ')}` : ''}`
   }
-  if (type === 'call.completed') {
-    const collected = formatCollectedData(data.collected_data)
-    const dur = Number.isFinite(Number(data.duration_sec)) && data.duration_sec !== null ? ` (${data.duration_sec}s)` : ''
-    return `[ZenXAI AI Call-back · Answered${dur}]${collected ? ` ${collected}` : ''}`
+  const label = ZENXAI_STATUS_LABELS[status] || status
+  return `[${tag} · ${label}]${state.failureReason ? ` ${state.failureReason}` : ''}`
+}
+
+/* ------------------------------------------------------------------------------------------
+ * Automatic FEEDBACK call — once the AI call-back ends "completed" (answered), the feedback
+ * assistant (ZENXAI_FEEDBACK_API_*) calls the customer once. Deferred by
+ * ZENXAI_FEEDBACK_DELAY_MS (default 60000) so the customer isn't rung the instant they hang up.
+ * Opt out with ZENXAI_FEEDBACK_AUTO=false; ZENXAI_FEEDBACK_MIN_DURATION_SEC skips very short
+ * call-backs (default 0 = no minimum). Nothing happens unless the feedback key is configured.
+ * `zenxaiFeedback.requestedAt` is claimed atomically, so repeated completed/analysis_ready
+ * events can never place a second feedback call. The timer is in-process: a backend restart
+ * inside the delay window drops that one pending feedback call.
+ * ------------------------------------------------------------------------------------------ */
+const FEEDBACK_DEFAULT_DELAY_MS = 60000
+
+const placeZenxaiFeedbackCall = async (callLogId) => {
+  const claimed = await TeleCMICallLog.findOneAndUpdate(
+    { _id: callLogId, zenxaiCallStatus: 'completed', 'zenxaiFeedback.requestedAt': null },
+    { $set: { 'zenxaiFeedback.requestedAt': new Date(), 'zenxaiFeedback.source': 'auto-after-ai-answered' } },
+    { new: true }
+  )
+  if (!claimed) {
+    console.log(LOG, `ZenXAI feedback for ${callLogId} not placed — already requested or call-back no longer "completed"`)
+    return
   }
-  if (['call.no_answer', 'call.busy', 'call.failed', 'call.cancelled'].includes(type)) {
-    const label = ZENXAI_STATUS_LABELS[data.status] || type.replace('call.', '')
-    return `[ZenXAI AI Call-back · ${label}]${data.failure_reason ? ` ${data.failure_reason}` : ''}`
+
+  const minSec = Number(process.env.ZENXAI_FEEDBACK_MIN_DURATION_SEC) || 0
+  const tookSec = Number(claimed.zenxaiDurationSec) || 0
+  if (minSec > 0 && tookSec < minSec) {
+    await TeleCMICallLog.updateOne(
+      { _id: callLogId },
+      { $set: { 'zenxaiFeedback.status': 'skipped', 'zenxaiFeedback.error': `AI call-back lasted ${tookSec}s (< ${minSec}s)` } }
+    )
+    console.log(LOG, `ZenXAI feedback for ${callLogId} skipped — call-back lasted ${tookSec}s (< ${minSec}s)`)
+    return
   }
-  return ''
+
+  try {
+    const result = await pushMissedCallToZenxai(claimed, { assistant: 'feedback', source: 'auto-feedback' })
+    if (result?.skipped) {
+      await TeleCMICallLog.updateOne(
+        { _id: callLogId },
+        { $set: { 'zenxaiFeedback.status': 'skipped', 'zenxaiFeedback.error': `not sent: ${(result.missing || []).join(', ')}` } }
+      )
+      return
+    }
+    await TeleCMICallLog.updateOne(
+      { _id: callLogId },
+      { $set: { ...callLogFieldsFromPush(result), 'zenxaiFeedback.error': '' } }
+    )
+    console.log(LOG, `ZenXAI feedback call for ${callLogId} placed — call_id ${result?.zenxaiCallId || '—'}`)
+  } catch (err) {
+    // Release the claim so a later completed/analysis_ready event for this call-back can retry.
+    const errText = err.response ? `${err.response.status} ${JSON.stringify(err.response.data)}` : err.message
+    await TeleCMICallLog.updateOne(
+      { _id: callLogId },
+      { $set: { 'zenxaiFeedback.requestedAt': null, 'zenxaiFeedback.error': String(errText).slice(0, 500) } }
+    ).catch(() => {})
+    console.error(LOG, `ZenXAI feedback call for ${callLogId} failed:`, errText)
+  }
+}
+
+// Call logs with a feedback timer already running — ZenXAI sends completed/analysis_ready
+// several times per call; one timer is enough (the DB claim is still the real guard).
+const pendingFeedbackCalls = new Set()
+
+/** @returns {boolean} true when a feedback call was (or already is) scheduled for this call log */
+const scheduleZenxaiFeedbackCall = (callLogId) => {
+  if (String(process.env.ZENXAI_FEEDBACK_AUTO || '').trim().toLowerCase() === 'false') return false
+  if (!isZenxaiFeedbackApiEnabled()) {
+    console.log(LOG, `AI call-back ${callLogId} answered — no feedback call (ZENXAI_FEEDBACK_API_KEY/ASSISTANT_ID not set)`)
+    return false
+  }
+  const id = String(callLogId)
+  if (pendingFeedbackCalls.has(id)) return true
+  pendingFeedbackCalls.add(id)
+  const raw = Number(process.env.ZENXAI_FEEDBACK_DELAY_MS)
+  const delayMs = Number.isFinite(raw) && raw >= 0 ? raw : FEEDBACK_DEFAULT_DELAY_MS
+  setTimeout(() => {
+    placeZenxaiFeedbackCall(callLogId)
+      .catch((err) => console.error(LOG, `placeZenxaiFeedbackCall error for ${callLogId}:`, err.message))
+      .finally(() => pendingFeedbackCalls.delete(id))
+  }, delayMs)
+  console.log(LOG, `AI call-back ${callLogId} answered — feedback call scheduled in ${delayMs}ms`)
+  return true
+}
+
+/**
+ * Apply one (already de-duplicated) ZenXAI call event to its TeleCMI call log. Runs under
+ * withZenxaiCallLock, so it always re-reads the row the previous event for this call wrote.
+ * Returns the JSON body for the webhook response.
+ */
+const applyZenxaiEvent = async (type, data, eventId, eventRow) => {
+  const { callLog, kind } = await findCallLogForZenxaiCall(data)
+  if (!callLog) {
+    await ZenxaiWebhookEvent.updateOne({ _id: eventRow._id }, { $set: { assistantKind: kind } })
+    console.warn(LOG, `ZenXAI event ${eventId}: no TeleCMI call log matched call ${data.call_id || '—'} / ${data.phone || '—'}`)
+    return { success: true, matched: false }
+  }
+
+  const F = ZENXAI_FIELDS[kind]
+  const cur = currentZenxai(callLog, kind)
+  const set = { [F.lastEvent]: type, [F.lastEventAt]: new Date() }
+  if (data.call_id && !cur.callId) set[F.callId] = String(data.call_id)
+  const incoming = String(data.status || '')
+  const currentIsFinal = ZENXAI_FINAL_STATUSES.has(cur.status)
+  if (incoming && (!currentIsFinal || ZENXAI_FINAL_STATUSES.has(incoming))) set[F.status] = incoming
+  if (Number.isFinite(Number(data.attempts)) && Number(data.attempts) >= (cur.attempts || 0)) {
+    set[F.attempts] = Number(data.attempts)
+  }
+  if (data.duration_sec !== null && data.duration_sec !== undefined) set[F.durationSec] = Number(data.duration_sec) || 0
+  if (data.ended_reason) set[F.endedReason] = String(data.ended_reason)
+  if (data.failure_reason) set[F.failureReason] = String(data.failure_reason)
+  if (data.collected_data && typeof data.collected_data === 'object' && Object.keys(data.collected_data).length) {
+    set[F.collectedData] = data.collected_data
+  }
+  // Own field only — overallConversation holds the TeleCMI call's notes and must not be replaced.
+  if (data.summary) set[F.summary] = String(data.summary)
+  if (data.recording_url) set[F.recordingUrl] = String(data.recording_url)
+  if (data.ended_at) set[F.endedAt] = new Date(data.ended_at)
+  if (type === 'call.completed' || type === 'call.analysis_ready') set[F.conversationAt] = new Date()
+  if (!callLog.customerName) {
+    const heardName = cleanValue(data.collected_data?.full_name?.value)
+    if (heardName) set.customerName = heardName
+  }
+  await TeleCMICallLog.findByIdAndUpdate(callLog._id, { $set: set })
+
+  // One note per ZenXAI call on the linked Lead only (never create one): written when the call
+  // finishes, then replaced in place as later events add collected data / the summary.
+  const merged = { ...cur }
+  for (const k of ZENXAI_FIELD_KEYS) if (F[k] in set) merged[k] = set[F[k]]
+  let leadNoted = false
+  const noteLine = callLog.lead ? leadNoteForCall(merged, kind) : ''
+  if (noteLine && noteLine !== cur.leadNote) {
+    // Isolated: a Lead that fails validation must not make ZenXAI retry the whole event for 12 h.
+    try {
+      const lead = await Lead.findById(callLog.lead)
+      if (lead) {
+        const notes = lead.notes || ''
+        const prev = cur.leadNote
+        lead.notes =
+          prev && notes.includes(prev)
+            ? notes.replace(prev, () => noteLine) // function form: no "$&"-style expansion of the note text
+            : notes
+              ? `${notes}\n${noteLine}`
+              : noteLine
+        lead.lastInteraction = new Date()
+        await lead.save()
+        await TeleCMICallLog.updateOne({ _id: callLog._id }, { $set: { [F.leadNote]: noteLine } })
+        leadNoted = true
+      }
+    } catch (err) {
+      console.error(LOG, `ZenXAI ${type}: could not add note to lead ${callLog.lead}:`, err.message)
+    }
+  }
+
+  // The AI call-back was answered → arrange the one-time feedback call (never for the feedback call itself).
+  const statusNow = set[F.status] || cur.status
+  let feedbackScheduled = false
+  if (
+    kind === 'outbound' &&
+    statusNow === 'completed' &&
+    (type === 'call.completed' || type === 'call.analysis_ready') &&
+    !callLog.zenxaiFeedback?.requestedAt
+  ) {
+    feedbackScheduled = scheduleZenxaiFeedbackCall(callLog._id)
+  }
+
+  await ZenxaiWebhookEvent.updateOne(
+    { _id: eventRow._id },
+    { $set: { callLog: callLog._id, lead: callLog.lead || null, assistantKind: kind } }
+  )
+  console.log(
+    LOG,
+    `ZenXAI ${kind} ${type} applied to call log ${callLog._id}${leadNoted ? ` + note on lead ${callLog.lead}` : ''}`
+  )
+  return { success: true, matched: true, kind, callLogId: callLog._id, leadNoted, feedbackScheduled }
 }
 
 /** True when the body is a Public Voice API event envelope rather than the legacy conversation shape. */
@@ -874,8 +1147,10 @@ export const handleZenxaiApiEvent = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid signature' })
     }
 
-    // Anything that isn't a call.* event (e.g. a dashboard "Send test" ping) is acknowledged, not processed.
-    if (!isZenxaiApiEvent(body)) {
+    // Anything that isn't a real call event is acknowledged, not processed — including the
+    // dashboard's "Send test", which arrives as type "call.test" with a fake call_id/phone and
+    // must never bind to (or show up on) a real customer's call.
+    if (!isZenxaiApiEvent(body) || body.type === 'call.test') {
       console.log(LOG, `<= ZenXAI non-call event acknowledged | type=${body.type || '—'} keys: [${Object.keys(body).join(', ')}]`)
       return res.status(200).json({ success: true, ignored: true })
     }
@@ -898,6 +1173,7 @@ export const handleZenxaiApiEvent = async (req, res) => {
         phone: String(data.phone || ''),
         reference: String(data.reference || ''),
         signatureValid,
+        assistantKind: zenxaiAssistantKindFor(data.assistant_id),
         payload: body,
       })
     } catch (err) {
@@ -908,63 +1184,11 @@ export const handleZenxaiApiEvent = async (req, res) => {
       throw err
     }
 
-    const callLog = await findCallLogForZenxaiCall(data)
-    if (!callLog) {
-      console.warn(LOG, `ZenXAI event ${eventId}: no TeleCMI call log matched call ${data.call_id || '—'} / ${data.phone || '—'}`)
-      return res.status(200).json({ success: true, matched: false })
-    }
-
-    const set = { zenxaiLastEvent: type, zenxaiLastEventAt: new Date() }
-    if (data.call_id && !callLog.zenxaiCallId) set.zenxaiCallId = String(data.call_id)
-    const incoming = String(data.status || '')
-    const currentIsFinal = ZENXAI_FINAL_STATUSES.has(callLog.zenxaiCallStatus)
-    if (incoming && (!currentIsFinal || ZENXAI_FINAL_STATUSES.has(incoming))) set.zenxaiCallStatus = incoming
-    if (Number.isFinite(Number(data.attempts)) && Number(data.attempts) >= (callLog.zenxaiAttempts || 0)) {
-      set.zenxaiAttempts = Number(data.attempts)
-    }
-    if (data.duration_sec !== null && data.duration_sec !== undefined) set.zenxaiDurationSec = Number(data.duration_sec) || 0
-    if (data.ended_reason) set.zenxaiEndedReason = String(data.ended_reason)
-    if (data.failure_reason) set.zenxaiFailureReason = String(data.failure_reason)
-    if (data.collected_data && typeof data.collected_data === 'object' && Object.keys(data.collected_data).length) {
-      set.zenxaiCollectedData = data.collected_data
-    }
-    if (data.summary) {
-      set.zenxaiSummary = String(data.summary)
-      set.overallConversation = String(data.summary)
-    }
-    if (data.recording_url) set.zenxaiRecordingUrl = String(data.recording_url)
-    if (data.ended_at) set.zenxaiEndedAt = new Date(data.ended_at)
-    if (type === 'call.completed' || type === 'call.analysis_ready') set.zenxaiConversationAt = new Date()
-    if (!callLog.customerName) {
-      const heardName = cleanValue(data.collected_data?.full_name?.value)
-      if (heardName) set.customerName = heardName
-    }
-    await TeleCMICallLog.findByIdAndUpdate(callLog._id, { $set: set })
-
-    // Append a note to the linked Lead only (never create one) — same rule as the legacy receiver.
-    let leadNoted = false
-    const noteLine = leadNoteForEvent(type, data)
-    if (noteLine && callLog.lead) {
-      // Isolated: a Lead that fails validation must not make ZenXAI retry the whole event for 12 h.
-      try {
-        const lead = await Lead.findById(callLog.lead)
-        if (lead) {
-          lead.notes = lead.notes ? `${lead.notes}\n${noteLine}` : noteLine
-          lead.lastInteraction = new Date()
-          await lead.save()
-          leadNoted = true
-        }
-      } catch (err) {
-        console.error(LOG, `ZenXAI ${type}: could not add note to lead ${callLog.lead}:`, err.message)
-      }
-    }
-
-    await ZenxaiWebhookEvent.updateOne(
-      { _id: eventRow._id },
-      { $set: { callLog: callLog._id, lead: callLog.lead || null } }
+    // One event per call at a time (see withZenxaiCallLock), so each sees the previous one's writes.
+    const outcome = await withZenxaiCallLock(String(data.call_id || ''), () =>
+      applyZenxaiEvent(type, data, eventId, eventRow)
     )
-    console.log(LOG, `ZenXAI ${type} applied to call log ${callLog._id}${leadNoted ? ` + note on lead ${callLog.lead}` : ''}`)
-    return res.status(200).json({ success: true, matched: true, callLogId: callLog._id, leadNoted })
+    return res.status(200).json(outcome)
   } catch (error) {
     console.error(LOG, 'ZenXAI event webhook ERROR:', error.message)
     // Drop the dedupe row so ZenXAI's retry is processed rather than ignored as a duplicate.

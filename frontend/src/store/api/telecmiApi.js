@@ -27,6 +27,10 @@ export const telecmiApi = apiSlice.injectEndpoints({
       },
       providesTags: ['TeleCMICallLog'],
     }),
+    getZenxaiCallsForLead: builder.query({
+      query: (leadId) => `/telecmi/zenxai-calls/lead/${leadId}`,
+      providesTags: ['TeleCMICallLog'],
+    }),
     getTeleCMICallLogsForLead: builder.query({
       query: (leadId) => `/telecmi/call-logs/lead/${leadId}`,
       providesTags: ['TeleCMICallLog'],
@@ -38,4 +42,5 @@ export const {
   useMakeTeleCMIAgentCallMutation,
   useGetTeleCMICallLogsQuery,
   useGetTeleCMICallLogsForLeadQuery,
+  useGetZenxaiCallsForLeadQuery,
 } = telecmiApi

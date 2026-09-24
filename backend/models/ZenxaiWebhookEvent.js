@@ -18,6 +18,7 @@ const zenxaiWebhookEventSchema = new mongoose.Schema(
     phone: { type: String, default: '' },
     reference: { type: String, default: '' },
     signatureValid: { type: Boolean, default: null }, // null = no secret configured, not checked
+    assistantKind: { type: String, default: '' }, // 'outbound' | 'feedback' (which ZenXAI assistant)
     callLog: { type: mongoose.Schema.Types.ObjectId, ref: 'TeleCMICallLog', default: null },
     lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null },
     payload: { type: mongoose.Schema.Types.Mixed, default: null },

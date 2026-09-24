@@ -107,6 +107,30 @@ const normalizeCallRecordStatus = (raw) => {
   return s
 }
 
+// ZenXAI Public Voice API call statuses (see backend handleZenxaiApiEvent)
+const ZENXAI_STATUS_LABELS = {
+  requested: 'Requested',
+  skipped: 'Skipped',
+  queued: 'Queued',
+  dialing: 'Dialing',
+  retry_scheduled: 'Retry scheduled',
+  completed: 'Answered',
+  no_answer: 'Not answered',
+  busy: 'Busy / declined',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+}
+const ZENXAI_STATUS_COLORS = {
+  queued: 'default',
+  dialing: 'processing',
+  retry_scheduled: 'gold',
+  completed: 'green',
+  no_answer: 'orange',
+  busy: 'orange',
+  failed: 'red',
+  cancelled: 'default',
+}
+
 const Calls = () => {
   const { message: messageApi } = App.useApp()
   const navigate = useNavigate()
@@ -246,26 +270,6 @@ const Calls = () => {
 
   const TELECMI_TYPE_COLORS = { inbound: 'green', outbound: 'blue', progressive: 'purple' }
   const TELECMI_TYPE_LABELS = { inbound: 'Inbound', outbound: 'Outbound', progressive: 'Progressive' }
-  const ZENXAI_STATUS_LABELS = {
-    queued: 'Queued',
-    dialing: 'Dialing',
-    retry_scheduled: 'Retry scheduled',
-    completed: 'Answered',
-    no_answer: 'Not answered',
-    busy: 'Busy / declined',
-    failed: 'Failed',
-    cancelled: 'Cancelled',
-  }
-  const ZENXAI_STATUS_COLORS = {
-    queued: 'default',
-    dialing: 'processing',
-    retry_scheduled: 'gold',
-    completed: 'green',
-    no_answer: 'orange',
-    busy: 'orange',
-    failed: 'red',
-    cancelled: 'default',
-  }
 
   const telecmiCalls = useMemo(() => {
     return telecmiCallLogs.map((log) => {
@@ -296,8 +300,23 @@ const Calls = () => {
               failureReason: log.zenxaiFailureReason || '',
               collectedData: log.zenxaiCollectedData || null,
               summary: log.zenxaiSummary || '',
-              recordingUrl: log.zenxaiRecordingUrl || '',
+              recordingUrl: log.zenxaiRecordingPlayUrl || '',
               endedAt: log.zenxaiEndedAt ? formatCallDateTime(log.zenxaiEndedAt) : '',
+            }
+          : null,
+        zenxaiFeedback: log.zenxaiFeedback?.callId || log.zenxaiFeedback?.requestedAt || log.zenxaiFeedback?.status
+          ? {
+              callId: log.zenxaiFeedback.callId || '',
+              status: log.zenxaiFeedback.status || (log.zenxaiFeedback.callId ? 'queued' : 'requested'),
+              attempts: log.zenxaiFeedback.attempts || 0,
+              durationSec: log.zenxaiFeedback.durationSec,
+              endedReason: log.zenxaiFeedback.endedReason || '',
+              failureReason: log.zenxaiFeedback.failureReason || '',
+              error: log.zenxaiFeedback.error || '',
+              collectedData: log.zenxaiFeedback.collectedData || null,
+              summary: log.zenxaiFeedback.summary || '',
+              recordingUrl: log.zenxaiFeedbackRecordingPlayUrl || '',
+              endedAt: log.zenxaiFeedback.endedAt ? formatCallDateTime(log.zenxaiFeedback.endedAt) : '',
             }
           : null,
         date: log.callTimestamp
@@ -362,6 +381,11 @@ const Calls = () => {
           {record.zenxai && (
             <Tag color={ZENXAI_STATUS_COLORS[record.zenxai.status] || 'default'} style={{ marginTop: 4 }}>
               AI: {ZENXAI_STATUS_LABELS[record.zenxai.status] || record.zenxai.status || 'Sent'}
+            </Tag>
+          )}
+          {record.zenxaiFeedback && (
+            <Tag color={ZENXAI_STATUS_COLORS[record.zenxaiFeedback.status] || 'default'} style={{ marginTop: 4 }}>
+              Feedback: {ZENXAI_STATUS_LABELS[record.zenxaiFeedback.status] || record.zenxaiFeedback.status}
             </Tag>
           )}
         </>
@@ -955,83 +979,90 @@ const Calls = () => {
               <p><strong>Status:</strong> <Tag color="cyan">{selectedTeleCMICall.status}</Tag></p>
             )}
             <p><strong>Date & Time:</strong> {selectedTeleCMICall.date}</p>
-            {selectedTeleCMICall.overallConversation && !selectedTeleCMICall.zenxai?.summary && (
+            {selectedTeleCMICall.overallConversation && (
               <div style={{ marginTop: 16 }}>
                 <strong>Notes:</strong>
                 <p style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{selectedTeleCMICall.overallConversation}</p>
               </div>
             )}
-            {selectedTeleCMICall.zenxai && (() => {
-              const z = selectedTeleCMICall.zenxai
-              const collected = z.collectedData && typeof z.collectedData === 'object'
-                ? Object.entries(z.collectedData)
-                    .map(([key, v]) => ({
-                      key,
-                      label: (v && typeof v === 'object' && v.label) || key,
-                      value: v && typeof v === 'object' ? v.value : v,
-                      heard: v && typeof v === 'object' ? v.heard : '',
-                    }))
-                    .filter((r) => r.value !== null && r.value !== undefined && String(r.value).trim() !== '')
-                : []
-              return (
-                <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
-                  <p style={{ marginBottom: 8 }}>
-                    <strong>AI Call-back (ZenXAI):</strong>{' '}
-                    <Tag color={ZENXAI_STATUS_COLORS[z.status] || 'default'}>
-                      {ZENXAI_STATUS_LABELS[z.status] || z.status || 'Sent'}
-                    </Tag>
-                    {z.attempts > 1 && <span className="mgmt-muted" style={{ fontSize: 12 }}>{z.attempts} attempts</span>}
-                  </p>
-                  {Number.isFinite(Number(z.durationSec)) && z.durationSec !== null && (
-                    <p><strong>AI call duration:</strong> {formatDuration(z.durationSec)}</p>
-                  )}
-                  {z.endedAt && <p><strong>Ended:</strong> {z.endedAt}</p>}
-                  {z.failureReason && <p><strong>Reason:</strong> {z.failureReason}</p>}
-                  {z.summary && (
-                    <div style={{ marginTop: 8 }}>
-                      <strong>Summary:</strong>
-                      <p style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{z.summary}</p>
-                    </div>
-                  )}
-                  {collected.length > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <strong>Collected by AI agent:</strong>
-                      <table style={{ width: '100%', marginTop: 4, fontSize: 13, borderCollapse: 'collapse' }}>
-                        <tbody>
-                          {collected.map((r) => (
-                            <tr key={r.key} style={{ borderBottom: '1px solid #f5f5f5' }}>
-                              <td style={{ padding: '4px 8px 4px 0', width: '40%', verticalAlign: 'top' }}>{r.label}</td>
-                              <td style={{ padding: '4px 0' }}>
-                                {String(r.value)}
-                                {r.heard && (
-                                  <div className="mgmt-muted" style={{ fontSize: 11 }}>heard: “{r.heard}”</div>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  {z.recordingUrl && (
-                    <div style={{ marginTop: 8 }}>
-                      <strong>AI call recording:</strong>
-                      <audio key={`zx-${selectedTeleCMICall._id}`} controls preload="none" style={{ width: '100%', marginTop: 4 }}>
-                        <source src={z.recordingUrl} />
-                        Your browser does not support the audio element.
-                      </audio>
-                      <p style={{ marginTop: 4, fontSize: 12 }}>
-                        <a href={z.recordingUrl} target="_blank" rel="noopener noreferrer">Open recording in new tab</a>
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
+            {selectedTeleCMICall.zenxai &&
+              renderZenxaiSection('AI Call-back (ZenXAI)', selectedTeleCMICall.zenxai, `zx-${selectedTeleCMICall._id}`)}
+            {selectedTeleCMICall.zenxaiFeedback &&
+              renderZenxaiSection('AI Feedback call (ZenXAI)', selectedTeleCMICall.zenxaiFeedback, `zxfb-${selectedTeleCMICall._id}`)}
           </div>
         )}
       </Modal>
     </PageLayout>
+  )
+}
+
+/** One ZenXAI call (AI call-back or feedback) in the TeleCMI Call Details modal. */
+function renderZenxaiSection(title, z, audioKey) {
+  const collected = z.collectedData && typeof z.collectedData === 'object'
+    ? Object.entries(z.collectedData)
+        .map(([key, v]) => ({
+          key,
+          label: (v && typeof v === 'object' && v.label) || key,
+          value: v && typeof v === 'object' ? v.value : v,
+          heard: v && typeof v === 'object' ? v.heard : '',
+        }))
+        .filter((r) => r.value !== null && r.value !== undefined && String(r.value).trim() !== '')
+    : []
+  return (
+    <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+      <p style={{ marginBottom: 8 }}>
+        <strong>{title}:</strong>{' '}
+        <Tag color={ZENXAI_STATUS_COLORS[z.status] || 'default'}>
+          {ZENXAI_STATUS_LABELS[z.status] || z.status || 'Sent'}
+        </Tag>
+        {z.attempts > 1 && <span className="mgmt-muted" style={{ fontSize: 12 }}>{z.attempts} attempts</span>}
+      </p>
+      {/* ZenXAI has reported 0 for real conversations — only show a duration it actually measured */}
+      {Number(z.durationSec) > 0 && (
+        <p><strong>AI call duration:</strong> {formatDuration(z.durationSec)}</p>
+      )}
+      {z.endedAt && <p><strong>Ended:</strong> {z.endedAt}</p>}
+      {z.failureReason && <p><strong>Reason:</strong> {z.failureReason}</p>}
+      {z.error && <p><strong>Not placed:</strong> {z.error}</p>}
+      {z.summary && (
+        <div style={{ marginTop: 8 }}>
+          <strong>Summary:</strong>
+          <p style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{z.summary}</p>
+        </div>
+      )}
+      {collected.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <strong>Collected by AI agent:</strong>
+          <table style={{ width: '100%', marginTop: 4, fontSize: 13, borderCollapse: 'collapse' }}>
+            <tbody>
+              {collected.map((r) => (
+                <tr key={r.key} style={{ borderBottom: '1px solid #f5f5f5' }}>
+                  <td style={{ padding: '4px 8px 4px 0', width: '40%', verticalAlign: 'top' }}>{r.label}</td>
+                  <td style={{ padding: '4px 0' }}>
+                    {String(r.value)}
+                    {r.heard && (
+                      <div className="mgmt-muted" style={{ fontSize: 11 }}>heard: “{r.heard}”</div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {z.recordingUrl && (
+        <div style={{ marginTop: 8 }}>
+          <strong>AI call recording:</strong>
+          <audio key={audioKey} controls preload="none" style={{ width: '100%', marginTop: 4 }}>
+            <source src={z.recordingUrl} />
+            Your browser does not support the audio element.
+          </audio>
+          <p style={{ marginTop: 4, fontSize: 12 }}>
+            <a href={z.recordingUrl} target="_blank" rel="noopener noreferrer">Open recording in new tab</a>
+          </p>
+        </div>
+      )}
+    </div>
   )
 }
 
