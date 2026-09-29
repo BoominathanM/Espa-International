@@ -12,6 +12,10 @@ import {
   getPublicBaseUrl,
 } from '../services/chatService.js'
 import { sendAskEvaMessage } from '../services/askevaMessageService.js'
+import {
+  isCloudinaryConfigured,
+  uploadChatFileToCloudinary,
+} from '../services/cloudinaryService.js'
 import { ensureCustomerLinkedToLead } from './leadController.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -57,6 +61,26 @@ function detectTypeFromMime(mime, fallback = 'document') {
   if (mime.startsWith('image/')) return 'image'
   if (mime.startsWith('video/')) return 'video'
   return 'document'
+}
+
+/**
+ * AskEVA accepts any link and replies with a wamid, but WhatsApp then silently drops
+ * the message if the link doesn't serve the actual file (e.g. the SPA's index.html).
+ * Returns a reason string only on a definitive bad response; network errors/timeouts
+ * return '' so a server that can't reach its own public domain still sends.
+ */
+async function findMediaUrlProblem(url) {
+  try {
+    const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8000) })
+    if (res.status === 405) return ''
+    if (!res.ok) return `media link returned HTTP ${res.status}`
+    const contentType = String(res.headers.get('content-type') || '').toLowerCase()
+    if (contentType.startsWith('text/html')) return 'media link returns a web page instead of the file'
+    return ''
+  } catch (err) {
+    console.warn('[Chat Send] Could not pre-check media URL, sending anyway:', url, err.message)
+    return ''
+  }
 }
 
 function previewForOutbound({ type, text, filename, mediaUrl }) {
@@ -124,13 +148,35 @@ export const sendChatMessage = async (req, res) => {
     let mediaUrl = String(req.body.mediaUrl || req.body.link || '').trim()
     let filename = String(req.body.filename || '').trim()
     let mediaMimeType = ''
+    let mediaStorage = mediaUrl ? 'external' : ''
+    let cloudinaryInfo = null
 
     if (req.file) {
       mediaMimeType = req.file.mimetype || ''
       type = detectTypeFromMime(mediaMimeType, type === 'text' ? 'document' : type)
       filename = filename || req.file.originalname || req.file.filename
       const base = getPublicBaseUrl(req)
-      mediaUrl = `${base}/uploads/chat/${req.file.filename}`
+      mediaUrl = `${base}/api/uploads/chat/${req.file.filename}`
+      mediaStorage = 'local'
+
+      // Prefer Cloudinary: a public CDN link AskEVA/WhatsApp can always fetch,
+      // independent of PUBLIC_BASE_URL / reverse-proxy routing of /uploads.
+      if (isCloudinaryConfigured()) {
+        try {
+          const uploaded = await uploadChatFileToCloudinary({
+            filePath: req.file.path,
+            mimeType: mediaMimeType,
+            originalName: req.file.originalname,
+          })
+          mediaUrl = uploaded.url
+          mediaStorage = 'cloudinary'
+          cloudinaryInfo = uploaded
+          fs.promises.unlink(req.file.path).catch(() => {})
+        } catch (err) {
+          cloudinaryInfo = { error: err.message, code: err.code }
+          console.error('[Chat Send] Cloudinary upload failed, using local URL:', err.message)
+        }
+      }
     }
 
     if (type === 'text' && !text) {
@@ -148,6 +194,25 @@ export const sendChatMessage = async (req, res) => {
     let askevaResult = null
     let sendError = null
     try {
+      if (type !== 'text') {
+        const problem = await findMediaUrlProblem(mediaUrl)
+        if (problem) {
+          let advice = 'Check that the media URL is public.'
+          if (mediaStorage === 'local') {
+            advice = cloudinaryInfo?.error
+              ? `Cloudinary upload failed first: ${cloudinaryInfo.error}` +
+                (/missing permissions/i.test(cloudinaryInfo.error)
+                  ? ' — the Cloudinary API key needs upload permission.'
+                  : '')
+              : 'Check the Cloudinary settings (CLOUDINARY_* in backend/.env) or PUBLIC_BASE_URL.'
+          }
+          const err = new Error(
+            `Attachment not sent: ${problem}, so WhatsApp cannot download it. ${advice}`
+          )
+          err.code = 'MEDIA_URL_UNREACHABLE'
+          throw err
+        }
+      }
       askevaResult = await sendAskEvaMessage({
         to,
         type,
@@ -208,6 +273,8 @@ export const sendChatMessage = async (req, res) => {
           mediaUrl,
           filename,
         },
+        mediaStorage,
+        cloudinary: cloudinaryInfo,
         askevaResponse: askevaResult?.data || null,
         askevaError: sendError
           ? { message: sendError.message, code: sendError.code, status: sendError.status }

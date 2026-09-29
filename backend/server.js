@@ -152,6 +152,9 @@ app.use(express.urlencoded({ extended: true, limit: '12mb' }))
 
 // Public chat media (AskEVA fetches image/PDF links from here)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
+// Same files under /api — the same-domain reverse proxy only forwards /api/* to Node,
+// so /uploads/* on the public domain falls through to the frontend's index.html.
+app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')))
 
 // Request logging middleware
 app.use((req, res, next) => {
