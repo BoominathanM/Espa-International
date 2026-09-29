@@ -37,6 +37,9 @@ const zenxaiInboundCallSchema = new mongoose.Schema(
     leadError: { type: String, default: '' },
     // Same shape as TeleCMICallLog.branches so applyCallLogBranchScope works unchanged.
     branches: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }],
+
+    // WhatsApp "AI Call Confirmation Message" for this call (see services/whatsappEventService.js).
+    whatsappConfirmation: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 )

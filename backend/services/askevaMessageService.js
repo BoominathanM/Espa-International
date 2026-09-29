@@ -1,6 +1,6 @@
 import WhatsAppSettings from '../models/WhatsAppSettings.js'
 
-function getMessageApiBase() {
+export function getMessageApiBase() {
   const fromEnv =
     process.env.ASKEVA_MESSAGE_API_URL ||
     process.env.ASKEVA_SYNC_API_URL ||
@@ -10,7 +10,7 @@ function getMessageApiBase() {
   return 'https://backend.askeva.io'
 }
 
-async function getAskEvaToken() {
+export async function getAskEvaToken() {
   const fromEnv =
     (process.env.ASKEVA_API_TOKEN || '').trim() ||
     (process.env.WHATSAPP_API_KEY || '').trim()

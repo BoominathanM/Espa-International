@@ -20,6 +20,9 @@ import {
   useUpdateTeleCMISettingsMutation,
 } from '../../store/api/telecmiSettingsApi'
 import { PageLayout, PageHeader } from '../../components/ds-layout'
+import WhatsAppTemplates from './WhatsAppTemplates'
+import WhatsAppEventMapping from './WhatsAppEventMapping'
+import WhatsAppQuickReplies from './WhatsAppQuickReplies'
 
 const API = () => {
   const { isMobile } = useResponsive()
@@ -380,6 +383,15 @@ const API = () => {
       key: 'whatsapp',
       label: 'WhatsApp API',
       children: (
+        <Tabs
+          type={isMobile ? 'card' : 'line'}
+          size="small"
+          className="mgmt-tabs"
+          items={[
+            {
+              key: 'whatsapp-config',
+              label: 'WhatsApp Configuration',
+              children: (
         <Card className="mgmt-settings-card">
           {isLoadingWhatsApp ? (
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
@@ -476,6 +488,43 @@ const API = () => {
             </>
           )}
         </Card>
+              ),
+            },
+            {
+              key: 'whatsapp-templates',
+              label: 'Sync Templates',
+              children: isSuperAdminUser ? (
+                <WhatsAppTemplates />
+              ) : (
+                <Card className="mgmt-settings-card">
+                  <p className="mgmt-modal-hint">Only Super Admin can sync WhatsApp templates.</p>
+                </Card>
+              ),
+            },
+            {
+              key: 'whatsapp-events',
+              label: 'Event Mapping',
+              children: isSuperAdminUser ? (
+                <WhatsAppEventMapping />
+              ) : (
+                <Card className="mgmt-settings-card">
+                  <p className="mgmt-modal-hint">Only Super Admin can configure WhatsApp event mappings.</p>
+                </Card>
+              ),
+            },
+            {
+              key: 'whatsapp-quick-replies',
+              label: 'Quick Replies',
+              children: isSuperAdminUser ? (
+                <WhatsAppQuickReplies />
+              ) : (
+                <Card className="mgmt-settings-card">
+                  <p className="mgmt-modal-hint">Only Super Admin can manage Live Chat quick replies.</p>
+                </Card>
+              ),
+            },
+          ]}
+        />
       ),
     },
     {

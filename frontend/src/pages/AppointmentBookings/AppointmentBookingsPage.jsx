@@ -42,6 +42,8 @@ import {
   MoreOutlined,
   SyncOutlined,
   CloseCircleOutlined,
+  ApartmentOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
@@ -111,6 +113,28 @@ function uiAppointmentStatus(status) {
   return { label: 'Current', color: 'blue' }
 }
 
+/** `q` must already be lower-cased. */
+function leadMatchesSearch(l, q) {
+  return (
+    (l.first_name && l.first_name.toLowerCase().includes(q)) ||
+    (l.last_name && l.last_name.toLowerCase().includes(q)) ||
+    (l.email && l.email.toLowerCase().includes(q)) ||
+    (l.phone && String(l.phone).includes(q)) ||
+    (l._id && String(l._id).toLowerCase().includes(q))
+  )
+}
+
+const getBranchId = (lead) => {
+  if (!lead?.branch) return null
+  if (typeof lead.branch === 'object') return lead.branch._id || lead.branch.id || null
+  return String(lead.branch)
+}
+
+const STATS_NO_BRANCH_KEY = '__no_branch__'
+const STATS_GROUP_PREVIEW_COUNT = 8
+
+const pluralAppointments = (n) => (n === 1 ? 'appointment' : 'appointments')
+
 /** Calendar day list: slot time on the left, guest + package + View on the right (one row, no header band). */
 function CalendarDayAppointmentCard({ slot, lead, onView }) {
   return (
@@ -173,6 +197,189 @@ function CalendarDayDurationSlotList({ slots, leadsBySlot, onView }) {
         ))
       })}
     </div>
+  )
+}
+
+/** One row of per-branch / per-agent count cards; long lists collapse to the busiest few. */
+function AppointmentStatsGroup({ icon, title, items, total, dayPhrase, emptyText }) {
+  const [expanded, setExpanded] = useState(false)
+  const canCollapse = items.length > STATS_GROUP_PREVIEW_COUNT
+  const visible = canCollapse && !expanded ? items.slice(0, STATS_GROUP_PREVIEW_COUNT) : items
+  return (
+    <div className="appt-stats-group">
+      <div className="appt-stats-group-head">
+        <span className="appt-stats-group-title">
+          {icon}
+          {title}
+        </span>
+        {canCollapse && (
+          <Button type="link" size="small" className="appt-btn-text-gold" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? 'Show less' : `Show all (${items.length})`}
+          </Button>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <div className="appt-stats-empty">{emptyText}</div>
+      ) : (
+        <div className="appt-stats-grid">
+          {visible.map((item) => {
+            const pct = total > 0 ? Math.round((item.count / total) * 100) : 0
+            return (
+              <div
+                key={item.key}
+                className={`appt-stats-item ${item.count === 0 ? 'appt-stats-item--zero' : ''}`}
+                title={`${item.name}: ${item.count} ${pluralAppointments(item.count)} ${dayPhrase}`}
+              >
+                <div className="appt-stats-item-name">{item.name}</div>
+                <div className="appt-stats-item-count">
+                  <span className="appt-stats-item-val">{item.count}</span>
+                  <span className="appt-stats-item-label">
+                    {pluralAppointments(item.count)} {dayPhrase}
+                  </span>
+                </div>
+                <div className="appt-stats-bar" aria-hidden="true">
+                  <span style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Stats for the selected day, computed from the same filtered list the page shows,
+ * so they follow the branch / agent / source / status / slot / search filters.
+ */
+function AppointmentStatsCards({
+  appointments,
+  fetching,
+  dayPhrase,
+  dayTitle,
+  branches,
+  users,
+  filterBranches,
+  filterAssignedTo,
+  activeFilterTags,
+}) {
+  const stats = useMemo(() => {
+    const branchNameById = new Map(branches.map((b) => [String(b._id || b.id), b.name]))
+    const userNameById = new Map(users.map((u) => [String(u._id || u.id), u.name]))
+    const byBranch = new Map()
+    const byAgent = new Map()
+    const status = { current: 0, rescheduled: 0, completed: 0, cancelled: 0 }
+    const bump = (map, key, name) => {
+      const entry = map.get(key)
+      if (entry) entry.count += 1
+      else map.set(key, { key, name, count: 1 })
+    }
+
+    appointments.forEach((l) => {
+      const bid = getBranchId(l)
+      const bKey = bid ? String(bid) : STATS_NO_BRANCH_KEY
+      bump(byBranch, bKey, l.branch?.name || branchNameById.get(bKey) || 'No branch')
+
+      const aid = getAssignedToId(l)
+      const aKey = aid ? String(aid) : FILTER_ASSIGNED_UNASSIGNED
+      bump(byAgent, aKey, l.assignedTo?.name || userNameById.get(aKey) || 'Unassigned')
+
+      const label = uiAppointmentStatus(l.status).label
+      if (label === 'Completed') status.completed += 1
+      else if (label === 'Cancelled') status.cancelled += 1
+      else if (label === 'Rescheduled') status.rescheduled += 1
+      else status.current += 1
+    })
+
+    const byCountDesc = (a, b) => b.count - a.count || String(a.name).localeCompare(String(b.name))
+
+    // A branch / agent picked in the filters always gets a card, even with zero appointments.
+    const branchItems = filterBranches.length
+      ? filterBranches
+          .map(
+            (id) =>
+              byBranch.get(String(id)) || {
+                key: String(id),
+                name: branchNameById.get(String(id)) || 'Unknown branch',
+                count: 0,
+              }
+          )
+          .sort(byCountDesc)
+      : [...byBranch.values()].sort(byCountDesc)
+
+    const agentKey = filterAssignedTo ? String(filterAssignedTo) : null
+    const agentItems = agentKey
+      ? [
+          byAgent.get(agentKey) || {
+            key: agentKey,
+            name:
+              agentKey === FILTER_ASSIGNED_UNASSIGNED ? 'Unassigned' : userNameById.get(agentKey) || 'Unknown agent',
+            count: 0,
+          },
+        ]
+      : [...byAgent.values()].sort(byCountDesc)
+
+    return { total: appointments.length, status, branchItems, agentItems }
+  }, [appointments, branches, users, filterBranches, filterAssignedTo])
+
+  const { total, status, branchItems, agentItems } = stats
+
+  return (
+    <ContentCard compact className="appt-stats-card">
+      <div className="appt-stats-head">
+        <span className="appt-stats-heading">
+          Appointment stats · {dayTitle}
+          {fetching && <Spin size="small" />}
+        </span>
+        <div className="appt-stats-filters">
+          {activeFilterTags.length ? (
+            activeFilterTags.map((t) => (
+              <Tag key={t} className="appt-stats-filter-tag">
+                {t}
+              </Tag>
+            ))
+          ) : (
+            <span className="appt-stats-filters-none">No filters applied · all branches &amp; agents</span>
+          )}
+        </div>
+      </div>
+      <div className="appt-stats-body">
+        <div className="appt-stats-total">
+          <div className="appt-stats-total-label">
+            <CalendarOutlined /> Total
+          </div>
+          <div className="appt-stats-total-val">{total}</div>
+          <div className="appt-stats-total-sub">
+            {pluralAppointments(total)} {dayPhrase}
+          </div>
+          <div className="appt-stats-total-breakdown">
+            <span className="appt-stats-dot appt-stats-dot--current">{status.current} current</span>
+            <span className="appt-stats-dot appt-stats-dot--rescheduled">{status.rescheduled} rescheduled</span>
+            <span className="appt-stats-dot appt-stats-dot--completed">{status.completed} completed</span>
+            <span className="appt-stats-dot appt-stats-dot--cancelled">{status.cancelled} cancelled</span>
+          </div>
+        </div>
+        <div className="appt-stats-groups">
+          <AppointmentStatsGroup
+            icon={<ApartmentOutlined />}
+            title="By Branch"
+            items={branchItems}
+            total={total}
+            dayPhrase={dayPhrase}
+            emptyText={`No appointments ${dayPhrase}`}
+          />
+          <AppointmentStatsGroup
+            icon={<TeamOutlined />}
+            title="By Agent"
+            items={agentItems}
+            total={total}
+            dayPhrase={dayPhrase}
+            emptyText={`No appointments ${dayPhrase}`}
+          />
+        </div>
+      </div>
+    </ContentCard>
   )
 }
 
@@ -683,7 +890,12 @@ const AppointmentBookingsPage = () => {
 
   const queryBranch = filterBranches.length ? filterBranches : undefined
 
-  const { data: leadsData, isLoading: leadsLoading, refetch: refetchLeads } = useGetLeadsQuery({
+  const {
+    data: leadsData,
+    isLoading: leadsLoading,
+    isFetching: leadsFetching,
+    refetch: refetchLeads,
+  } = useGetLeadsQuery({
     appointmentDate: dateStr,
     source: filterSource || undefined,
     branch: queryBranch,
@@ -762,15 +974,46 @@ const AppointmentBookingsPage = () => {
     const base = activeView === 'calendar' ? calendarBaseFiltered : listAttributeFiltered
     if (!searchText.trim()) return base
     const q = searchText.toLowerCase()
-    return base.filter(
-      (l) =>
-        (l.first_name && l.first_name.toLowerCase().includes(q)) ||
-        (l.last_name && l.last_name.toLowerCase().includes(q)) ||
-        (l.email && l.email.toLowerCase().includes(q)) ||
-        (l.phone && String(l.phone).includes(q)) ||
-        (l._id && String(l._id).toLowerCase().includes(q))
-    )
+    return base.filter((l) => leadMatchesSearch(l, q))
   }, [activeView, calendarBaseFiltered, listAttributeFiltered, searchText])
+
+  // Stats ignore the list status tabs (those are views, not filters) so both views show the same numbers.
+  const statsAppointments = useMemo(() => {
+    if (!searchText.trim()) return calendarBaseFiltered
+    const q = searchText.toLowerCase()
+    return calendarBaseFiltered.filter((l) => leadMatchesSearch(l, q))
+  }, [calendarBaseFiltered, searchText])
+
+  const isSelectedToday = selectedDate.isSame(dayjs(), 'day')
+  const statsDayPhrase = isSelectedToday ? 'today' : `on ${selectedDate.format('DD MMM')}`
+  const statsDayTitle = isSelectedToday
+    ? `Today, ${selectedDate.format('DD MMM YYYY')}`
+    : selectedDate.format('ddd, DD MMM YYYY')
+
+  const activeFilterTags = useMemo(() => {
+    const tags = []
+    if (filterBranches.length) {
+      const names = filterBranches.map(
+        (id) => branches.find((b) => String(b._id || b.id) === String(id))?.name || 'Unknown branch'
+      )
+      tags.push(names.length > 2 ? `Branches: ${names.length} selected` : `Branch: ${names.join(', ')}`)
+    }
+    if (filterAssignedTo) {
+      const agentName =
+        filterAssignedTo === FILTER_ASSIGNED_UNASSIGNED
+          ? 'Unassigned'
+          : users.find((u) => String(u._id || u.id) === String(filterAssignedTo))?.name || 'Unknown agent'
+      tags.push(`Agent: ${agentName}`)
+    }
+    if (filterSource) tags.push(`Source: ${filterSource}`)
+    if (filterStatuses.length) {
+      const labels = [...new Set(filterStatuses.map((s) => uiAppointmentStatus(s).label))]
+      tags.push(`Status: ${labels.join(', ')}`)
+    }
+    if (filterSlot) tags.push(`Slot: ${filterSlot}`)
+    if (searchText.trim()) tags.push(`Search: "${searchText.trim()}"`)
+    return tags
+  }, [branches, users, filterBranches, filterAssignedTo, filterSource, filterStatuses, filterSlot, searchText])
 
   const calendarLeadsFiltered = useMemo(() => {
     if (activeView !== 'calendar') return leads
@@ -1207,6 +1450,18 @@ const AppointmentBookingsPage = () => {
           </div>
         </ContentCard>
       )}
+
+      <AppointmentStatsCards
+        appointments={statsAppointments}
+        fetching={leadsFetching}
+        dayPhrase={statsDayPhrase}
+        dayTitle={statsDayTitle}
+        branches={branches}
+        users={users}
+        filterBranches={filterBranches}
+        filterAssignedTo={filterAssignedTo}
+        activeFilterTags={activeFilterTags}
+      />
 
       {activeView === 'calendar' && (
         <div

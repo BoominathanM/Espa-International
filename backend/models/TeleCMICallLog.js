@@ -107,6 +107,10 @@ const telecmiCallLogSchema = new mongoose.Schema(
       leadNote: { type: String, default: '' },
       error: { type: String, default: '' },
     },
+
+    // WhatsApp "AI Call Confirmation Message" sent after the AI call-back above was answered
+    // (see services/whatsappEventService.js) — the latest attempt; full history in whatsappeventlogs.
+    whatsappConfirmation: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 )

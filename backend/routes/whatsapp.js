@@ -13,7 +13,13 @@ import {
   listChatMessages,
 } from '../controllers/whatsappMetaWebhookController.js'
 import { sendChatMessage, chatUpload } from '../controllers/chatController.js'
-import { authenticate, authenticateWhatsAppApiKey } from '../middleware/auth.js'
+import {
+  listQuickReplies,
+  createQuickReply,
+  updateQuickReply,
+  deleteQuickReply,
+} from '../controllers/quickReplyController.js'
+import { authenticate, authenticateWhatsAppApiKey, isSuperAdmin } from '../middleware/auth.js'
 
 const router = express.Router()
 
@@ -38,6 +44,12 @@ router.post(
   chatUpload.single('file'),
   sendChatMessage
 )
+
+// Live Chat quick replies — list for everyone, manage in Settings (Super Admin)
+router.get('/quick-replies', authenticate, listQuickReplies)
+router.post('/quick-replies', authenticate, isSuperAdmin, createQuickReply)
+router.put('/quick-replies/:id', authenticate, isSuperAdmin, updateQuickReply)
+router.delete('/quick-replies/:id', authenticate, isSuperAdmin, deleteQuickReply)
 
 export default router
 

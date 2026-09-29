@@ -27,6 +27,7 @@ import Lead from '../models/Lead.js'
 import { applyCallLogBranchScope, getAccessibleBranchIds } from '../utils/branchAccess.js'
 import { parseIstDateRange } from '../utils/istDateRange.js'
 import { collectedValue, syncLeadForInboundCall } from '../services/zenxaiInboundLeadService.js'
+import { scheduleAiCallConfirmation } from '../services/whatsappEventService.js'
 
 const LOG = '[ZENXAI-INBOUND]'
 
@@ -227,6 +228,16 @@ const applyInboundEvent = async (type, data) => {
       console.error(LOG, `call ${callId}: could not link/create lead:`, err.message)
       await ZenxaiInboundCall.updateOne({ _id: call._id }, { $set: { leadError: String(err.message).slice(0, 500) } }).catch(() => {})
     }
+  }
+
+  // Answered → WhatsApp "AI Call Confirmation Message", when its AI-inbound trigger is on in
+  // Settings → WhatsApp API → Event Mapping. Sent once per call; never throws.
+  if (
+    call.status === 'completed' &&
+    (type === 'inbound.call.ended' || type === 'inbound.call.analysis_ready') &&
+    call.whatsappConfirmation?.status !== 'sent'
+  ) {
+    scheduleAiCallConfirmation('ai-inbound', call._id)
   }
 
   console.log(

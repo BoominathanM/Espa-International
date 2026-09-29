@@ -680,3 +680,247 @@
   padding-top: 8px;
   margin-top: 8px;
 }
+
+/* Stats strip: total + per-branch + per-agent counts for the selected day (follows filters) */
+.appointment-bookings-page .appt-stats-card {
+  margin-bottom: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.appointment-bookings-page .appt-stats-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.appointment-bookings-page .appt-stats-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.appointment-bookings-page .appt-stats-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.appointment-bookings-page .appt-stats-filter-tag.ant-tag {
+  margin-inline-end: 0;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+  background: transparent;
+}
+
+.appointment-bookings-page .appt-stats-filters-none {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.appointment-bookings-page .appt-stats-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .appointment-bookings-page .appt-stats-body {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .appointment-bookings-page .appt-stats-total {
+    flex: 0 0 220px;
+  }
+}
+
+.appointment-bookings-page .appt-stats-total {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--primary-color);
+  color: #fff;
+}
+
+.appointment-bookings-page .appt-stats-total-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.appointment-bookings-page .appt-stats-total-val {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #fff;
+}
+
+.appointment-bookings-page .appt-stats-total-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.95);
+  margin-bottom: 10px;
+}
+
+.appointment-bookings-page .appt-stats-total-breakdown {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.appointment-bookings-page .appt-stats-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.appointment-bookings-page .appt-stats-dot::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  flex-shrink: 0;
+}
+
+.appointment-bookings-page .appt-stats-dot--current::before { background: #1677ff; }
+.appointment-bookings-page .appt-stats-dot--rescheduled::before { background: #fa8c16; }
+.appointment-bookings-page .appt-stats-dot--completed::before { background: #52c41a; }
+.appointment-bookings-page .appt-stats-dot--cancelled::before { background: #ff4d4f; }
+
+.appointment-bookings-page .appt-stats-groups {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.appointment-bookings-page .appt-stats-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.appointment-bookings-page .appt-stats-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.appointment-bookings-page .appt-stats-group-title .anticon {
+  color: var(--primary-color);
+}
+
+.appointment-bookings-page .appt-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.appointment-bookings-page .appt-stats-item {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--table-header-bg);
+}
+
+.appointment-bookings-page .appt-stats-item--zero {
+  opacity: 0.75;
+}
+
+.appointment-bookings-page .appt-stats-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appointment-bookings-page .appt-stats-item-count {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.appointment-bookings-page .appt-stats-item-val {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary-color);
+  line-height: 1.2;
+}
+
+.appointment-bookings-page .appt-stats-item-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appointment-bookings-page .appt-stats-bar {
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+
+.appointment-bookings-page .appt-stats-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--primary-color);
+  transition: width 0.3s ease;
+}
+
+.appointment-bookings-page .appt-stats-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+@media (max-width: 575px) {
+  .appointment-bookings-page .appt-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .appointment-bookings-page .appt-stats-item-count {
+    flex-wrap: wrap;
+    gap: 0 6px;
+  }
+
+  .appointment-bookings-page .appt-stats-item-label {
+    white-space: normal;
+  }
+}

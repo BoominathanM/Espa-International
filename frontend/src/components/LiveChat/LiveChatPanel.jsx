@@ -1,21 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Spin, Empty, App } from 'antd'
+import { Spin, Empty, App, Popover, Input } from 'antd'
 import {
   InfoCircleOutlined,
   ReloadOutlined,
   MoreOutlined,
   PaperClipOutlined,
   PictureOutlined,
-  SmileOutlined,
+  ThunderboltOutlined,
   SendOutlined,
   FilePdfOutlined,
   DeleteOutlined,
   MessageOutlined,
+  SearchOutlined,
+  LinkOutlined,
 } from '@ant-design/icons'
 import {
   useGetChatMessagesQuery,
   useSendChatMessageMutation,
 } from '../../store/api/chatApi'
+import { useGetQuickRepliesQuery, composeQuickReplyText } from '../../store/api/quickReplyApi'
+import { isSuperAdmin } from '../../utils/permissions'
 import './LiveChatPanel.css'
 
 function formatMsgTime(value) {
@@ -48,9 +52,13 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
   const [draft, setDraft] = useState('')
   const [attachment, setAttachment] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [quickSearch, setQuickSearch] = useState('')
+  const [quickSendingId, setQuickSendingId] = useState(null)
   const imageInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
+  const inputRef = useRef(null)
 
   const displayName = name || 'Contact'
   const canIdentifyContact = Boolean(customerId || phone || leadId)
@@ -74,6 +82,23 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
   )
 
   const [sendChatMessage, { isLoading: sending }] = useSendChatMessageMutation()
+
+  // Quick replies (Settings → WhatsApp API → Quick Replies) — only the active ones come back
+  const {
+    data: quickData,
+    isLoading: quickLoading,
+    isFetching: quickFetching,
+    refetch: refetchQuickReplies,
+  } = useGetQuickRepliesQuery(undefined, { skip: !active })
+
+  const quickReplies = useMemo(() => {
+    const list = quickData?.quickReplies || []
+    const q = quickSearch.trim().toLowerCase()
+    if (!q) return list
+    return list.filter((r) =>
+      [r.title, r.message, r.link].some((v) => String(v || '').toLowerCase().includes(q))
+    )
+  }, [quickData?.quickReplies, quickSearch])
 
   const dbMessages = useMemo(() => {
     const list = chatData?.messages || []
@@ -143,6 +168,62 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
     setAttachment(file)
   }
 
+  const showSendError = (err) => {
+    const msg = err?.data?.message || err?.message || 'Failed to send message'
+    const code = err?.data?.code
+    if (code === 'SESSION_NOT_OPENED') {
+      messageApi.warning({
+        content: msg,
+        duration: 8,
+      })
+    } else {
+      messageApi.error(msg)
+    }
+  }
+
+  const handleQuickOpenChange = (open) => {
+    setQuickOpen(open)
+    if (open) {
+      setQuickSearch('')
+      // Pick up replies added/edited in Settings since this chat was opened
+      if (active) refetchQuickReplies()
+    }
+  }
+
+  // Put the reply in the composer so it can be edited before sending
+  const handleInsertQuickReply = (reply) => {
+    const text = composeQuickReplyText(reply)
+    if (!text) return
+    setDraft((prev) => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n${text}` : text))
+    setQuickOpen(false)
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
+  // Send the reply straight to the customer (draft / attachment in the composer are left alone)
+  const handleSendQuickReply = async (reply) => {
+    if (!customerId && !leadId) return
+    const text = composeQuickReplyText(reply)
+    if (!text) return
+    setQuickSendingId(reply._id)
+    try {
+      await sendChatMessage({
+        customerId: customerId || undefined,
+        leadId: !customerId ? leadId : undefined,
+        type: 'text',
+        text,
+      }).unwrap()
+      setQuickOpen(false)
+      messageApi.success('Quick reply sent')
+      refetchChat()
+    } catch (err) {
+      showSendError(err)
+      // Still refresh — failed outbound may be stored with status=failed
+      refetchChat()
+    } finally {
+      setQuickSendingId(null)
+    }
+  }
+
   const handleSend = async () => {
     if (!customerId && !leadId) return
     const text = draft.trim()
@@ -167,16 +248,7 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
       messageApi.success(type === 'text' ? 'Message sent' : 'Attachment sent')
       refetchChat()
     } catch (err) {
-      const msg = err?.data?.message || err?.message || 'Failed to send message'
-      const code = err?.data?.code
-      if (code === 'SESSION_NOT_OPENED') {
-        messageApi.warning({
-          content: msg,
-          duration: 8,
-        })
-      } else {
-        messageApi.error(msg)
-      }
+      showSendError(err)
       // Still refresh — failed outbound may be stored with status=failed
       refetchChat()
     }
@@ -216,6 +288,84 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
       </div>
     )
   }
+
+  const canSendToContact = Boolean(customerId || leadId)
+  const hasAnyQuickReplies = (quickData?.quickReplies || []).length > 0
+
+  const quickReplyContent = (
+    <div className="cd-quick">
+      <div className="cd-quick__header">
+        <span className="cd-quick__title">
+          <ThunderboltOutlined /> Quick Replies
+        </span>
+        {quickFetching && !quickLoading ? <Spin size="small" /> : null}
+      </div>
+      {hasAnyQuickReplies ? (
+        <Input
+          size="small"
+          allowClear
+          autoFocus
+          prefix={<SearchOutlined />}
+          placeholder="Search quick replies"
+          value={quickSearch}
+          onChange={(e) => setQuickSearch(e.target.value)}
+          className="cd-quick__search"
+        />
+      ) : null}
+      <div className="cd-quick__list">
+        {quickLoading ? (
+          <div className="cd-quick__empty">
+            <Spin size="small" />
+          </div>
+        ) : !hasAnyQuickReplies ? (
+          <div className="cd-quick__empty">
+            <p className="cd-quick__empty-title">No quick replies yet</p>
+            <p className="cd-quick__empty-sub">
+              {isSuperAdmin()
+                ? 'Add them in Settings → API & Integrations → WhatsApp API → Quick Replies.'
+                : 'Ask your Super Admin to add quick replies in Settings.'}
+            </p>
+          </div>
+        ) : !quickReplies.length ? (
+          <div className="cd-quick__empty">
+            <p className="cd-quick__empty-sub">No quick replies match “{quickSearch.trim()}”</p>
+          </div>
+        ) : (
+          quickReplies.map((reply) => (
+            <div key={reply._id} className="cd-quick__item">
+              <button
+                type="button"
+                className="cd-quick__item-body"
+                onClick={() => handleInsertQuickReply(reply)}
+                title="Insert into message box"
+              >
+                <span className="cd-quick__item-title">{reply.title}</span>
+                {reply.message ? <span className="cd-quick__item-text">{reply.message}</span> : null}
+                {reply.link ? (
+                  <span className="cd-quick__item-link">
+                    <LinkOutlined /> {reply.link}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                className="cd-quick__item-send"
+                aria-label={`Send quick reply ${reply.title}`}
+                title={canSendToContact ? 'Send now' : 'No contact to send to'}
+                onClick={() => handleSendQuickReply(reply)}
+                disabled={sending || !canSendToContact}
+              >
+                {quickSendingId === reply._id ? <Spin size="small" /> : <SendOutlined />}
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+      {hasAnyQuickReplies ? (
+        <div className="cd-quick__hint">Click a reply to edit it before sending, or ➤ to send now.</div>
+      ) : null}
+    </div>
+  )
 
   return (
     <section className="cd-main cd-main--standalone">
@@ -303,7 +453,7 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
           hidden
           onChange={handlePickImage}
         />
-        <div className="cd-chat__composer-tools">
+        <div className="cd-chat__composer-tools has-quick-reply">
           <button
             type="button"
             aria-label="Attach PDF or document"
@@ -320,11 +470,26 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
           >
             <PictureOutlined />
           </button>
-          <button type="button" aria-label="Emoji" disabled title="Coming soon">
-            <SmileOutlined />
-          </button>
+          <Popover
+            trigger="click"
+            placement="topLeft"
+            open={quickOpen && canIdentifyContact}
+            onOpenChange={handleQuickOpenChange}
+            content={quickReplyContent}
+          >
+            <button
+              type="button"
+              className={`cd-chat__quick-btn${quickOpen ? ' is-open' : ''}`}
+              aria-label="Quick replies"
+              title="Quick replies"
+              disabled={!canIdentifyContact}
+            >
+              <ThunderboltOutlined />
+            </button>
+          </Popover>
         </div>
         <textarea
+          ref={inputRef}
           className="cd-chat__input"
           rows={1}
           placeholder="Type a message... (Press Enter to send, Shift+Enter for new line)"

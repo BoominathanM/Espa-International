@@ -30,6 +30,8 @@ import {
 import { telecmiRecordingUrl } from '../utils/telecmiRecording.js'
 import { toTeleCMINumber } from '../services/telecmiAgentCallService.js'
 import { isZenxaiInboundEvent, handleZenxaiInboundEvent, isZenxaiTestEvent } from './zenxaiInboundController.js'
+import { scheduleAiCallConfirmation } from '../services/whatsappEventService.js'
+import { replaceNoteLine } from '../utils/leadNoteLine.js'
 
 const LOG = '[TELECMI]'
 
@@ -1222,14 +1224,8 @@ const applyZenxaiEvent = async (type, data, eventId, eventRow) => {
     try {
       const lead = await Lead.findById(callLog.lead)
       if (lead) {
-        const notes = lead.notes || ''
-        const prev = cur.leadNote
-        lead.notes =
-          prev && notes.includes(prev)
-            ? notes.replace(prev, () => noteLine) // function form: no "$&"-style expansion of the note text
-            : notes
-              ? `${notes}\n${noteLine}`
-              : noteLine
+        // Whole-line swap of THIS call's line — see replaceNoteLine for why a substring replace isn't safe.
+        lead.notes = replaceNoteLine(lead.notes, cur.leadNote, noteLine)
         lead.lastInteraction = new Date()
         await lead.save()
         await TeleCMICallLog.updateOne({ _id: callLog._id }, { $set: { [F.leadNote]: noteLine } })
@@ -1250,6 +1246,17 @@ const applyZenxaiEvent = async (type, data, eventId, eventRow) => {
     !callLog.zenxaiFeedback?.requestedAt
   ) {
     feedbackScheduled = scheduleZenxaiFeedbackCall(callLog._id)
+  }
+
+  // …and the WhatsApp "AI Call Confirmation Message" (Settings → WhatsApp API → Event Mapping).
+  // Sent once per call; never throws. Not for the feedback call.
+  if (
+    kind === 'outbound' &&
+    statusNow === 'completed' &&
+    (type === 'call.completed' || type === 'call.analysis_ready') &&
+    callLog.whatsappConfirmation?.status !== 'sent'
+  ) {
+    scheduleAiCallConfirmation('ai-callback', callLog._id)
   }
 
   await ZenxaiWebhookEvent.updateOne(

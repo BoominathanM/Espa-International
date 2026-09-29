@@ -1,6 +1,7 @@
 import Lead from '../models/Lead.js'
 import Branch from '../models/Branch.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
+import { replaceNoteLine } from '../utils/leadNoteLine.js'
 
 /**
  * Lead side of the ZenXAI INBOUND assistant (see controllers/zenxaiInboundController.js).
@@ -175,13 +176,8 @@ export const syncLeadForInboundCall = async (call, { noteLine, previousNote = ''
     }
   }
   if (noteLine && noteLine !== previousNote) {
-    const notes = lead.notes || ''
-    lead.notes =
-      previousNote && notes.includes(previousNote)
-        ? notes.replace(previousNote, () => noteLine) // function form: no "$&"-style expansion of the note text
-        : notes
-          ? `${notes}\n${noteLine}`
-          : noteLine
+    // Whole-line swap of THIS call's line — see replaceNoteLine for why a substring replace isn't safe.
+    lead.notes = replaceNoteLine(lead.notes, previousNote, noteLine)
   }
   if (noteLine && !previousNote) {
     lead.activityLogs.push({ action: 'AI Inbound Call', details: noteLine.slice(0, 500), performedBy: BY })
