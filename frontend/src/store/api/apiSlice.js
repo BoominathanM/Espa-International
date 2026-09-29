@@ -17,7 +17,7 @@ const getApiBaseUrl = () => {
   }
 }
 
-const API_BASE_URL = getApiBaseUrl()
+export const API_BASE_URL = getApiBaseUrl()
 
 const baseQuery = fetchBaseQuery({
   baseUrl: API_BASE_URL,
@@ -31,6 +31,6 @@ const baseQuery = fetchBaseQuery({
 
 export const apiSlice = createApi({
   baseQuery,
-  tagTypes: ['User', 'Branch', 'Auth', 'Role', 'Notification', 'LoginHistory', 'WebsiteSettings', 'WhatsAppSettings', 'OzonetelSettings', 'TeleCMISettings', 'Lead', 'LeadStage', 'CallLog', 'TeleCMICallLog', 'Dashboard', 'Report', 'Customer', 'Chat', 'WhatsAppTemplate', 'WhatsAppEvent', 'WhatsAppEventLog'],
+  tagTypes: ['User', 'Branch', 'Auth', 'Role', 'Notification', 'LoginHistory', 'WebsiteSettings', 'WhatsAppSettings', 'OzonetelSettings', 'TeleCMISettings', 'Lead', 'LeadStage', 'CallLog', 'TeleCMICallLog', 'Dashboard', 'Report', 'Customer', 'Chat', 'WhatsAppTemplate', 'WhatsAppEvent', 'WhatsAppEventLog', 'UserActivity'],
   endpoints: (builder) => ({}),
 })

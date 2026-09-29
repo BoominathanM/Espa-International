@@ -28,6 +28,15 @@ export function parseIstDayEnd(dateStr) {
 }
 
 /**
+ * IST calendar day (YYYY-MM-DD) that a timestamp falls on.
+ */
+export function istDateKey(dateLike = new Date()) {
+  const t = dateLike instanceof Date ? dateLike.getTime() : Number(dateLike)
+  if (!Number.isFinite(t)) return null
+  return new Date(t + IST_OFFSET_MS).toISOString().slice(0, 10)
+}
+
+/**
  * Inclusive IST date range for CRM list filters (call logs, etc.).
  */
 export function parseIstDateRange(fromStr, toStr) {

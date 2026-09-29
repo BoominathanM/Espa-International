@@ -27,6 +27,7 @@ import dashboardRoutes from './routes/dashboard.js'
 import reportRoutes from './routes/reports.js'
 import customerRoutes from './routes/customers.js'
 import webhookRoutes from './routes/webhook.js'
+import userActivityRoutes from './routes/userActivity.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
 import Branch from './models/Branch.js'
@@ -163,7 +164,9 @@ app.use((req, res, next) => {
   
   // Log incoming request
   console.log(`[${timestamp}] 📥 ${req.method} ${req.originalUrl}`)
-  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+  // Activity heartbeats arrive every minute from every open CRM tab — skip their body dump.
+  const isActivityHeartbeat = req.originalUrl.startsWith('/api/activity/')
+  if (!isActivityHeartbeat && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')) {
     // Log request body (excluding sensitive data)
     const logBody = { ...req.body }
     if (logBody.password) logBody.password = '***'
@@ -210,6 +213,7 @@ app.use('/api/calls', telecmiWebhookRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/customers', customerRoutes)
+app.use('/api/activity', userActivityRoutes)
 app.use('/webhook', webhookRoutes)
 
 // 404 handler for undefined routes

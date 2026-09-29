@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import AppThemeConfig from './components/AppThemeConfig'
 import AppRouter from './router/AppRouter'
+import ActivityTracker from './components/ActivityTracker'
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
         <ThemeProvider>
           <AppThemeConfig>
             <AuthProvider>
+              <ActivityTracker />
               <AppRouter />
             </AuthProvider>
           </AppThemeConfig>

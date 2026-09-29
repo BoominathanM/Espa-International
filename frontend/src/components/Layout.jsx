@@ -38,6 +38,7 @@ import {
 import dayjs from 'dayjs'
 import { useThemeMode } from '../hooks/useThemeMode'
 import AnimatedWrapper from './AnimatedWrapper'
+import { endActivitySession } from '../utils/activityTracker'
 
 const { Header, Sider, Content } = AntLayout
 const PERMISSION_LABELS = {
@@ -185,6 +186,8 @@ const Layout = ({ children }) => {
   }
 
   const handleLogout = async () => {
+    // Close the activity session while the auth cookie is still valid (never throws).
+    await endActivitySession()
     try {
       await logoutMutation().unwrap()
     } catch (error) {

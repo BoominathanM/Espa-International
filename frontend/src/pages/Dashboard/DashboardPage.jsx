@@ -32,6 +32,7 @@ import dayjs from 'dayjs'
 import AnimatedWrapper from '../../components/AnimatedWrapper'
 import MotionButton from '../../components/MotionButton'
 import { PageLayout, PageHeader } from '../../components/ds-layout'
+import UserActivitySection, { StatusTag, STATUS_META, STATUS_ORDER } from './UserActivitySection'
 import './dashboard-page.css'
 
 const { Option } = Select
@@ -183,10 +184,19 @@ const Dashboard = () => {
         String(a.role || '').localeCompare(String(b.role || ''), undefined, { sensitivity: 'base' }),
     },
     {
-      title: 'Actions',
+      title: 'Status',
+      dataIndex: 'presence',
+      key: 'presence',
+      render: (v, r) => <StatusTag status={v} moduleKey={r.currentModule} tab={r.currentTab} />,
+      filters: Object.entries(STATUS_META).map(([value, meta]) => ({ text: meta.label, value })),
+      onFilter: (value, r) => (r.presence || 'offline') === value,
+      sorter: (a, b) => (STATUS_ORDER[a.presence] ?? 3) - (STATUS_ORDER[b.presence] ?? 3),
+    },
+    {
+      title: 'Lead actions',
       dataIndex: 'actions',
       key: 'actions',
-      
+
       sorter: (a, b) => (Number(a.actions) || 0) - (Number(b.actions) || 0),
     },
     {
@@ -319,7 +329,7 @@ const Dashboard = () => {
                     value={liveAgentsCount}
                     prefix={<TeamOutlined />}
                   />
-                  <div className="dashboard-stat-meta dashboard-stat-meta--muted">Last 30 mins (lead create/edit)</div>
+                  <div className="dashboard-stat-meta dashboard-stat-meta--muted">Active in CRM · last 30 mins</div>
                 </Card>
               </Col>
             </Row>
@@ -473,7 +483,7 @@ const Dashboard = () => {
                     pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'] }}
                     size="small"
                     scroll={{ x: 'max-content' }}
-                    locale={{ emptyText: 'No lead create/edit activity in the last 30 minutes' }}
+                    locale={{ emptyText: 'No agents active in the CRM in the last 30 minutes' }}
                   />
                 </div>
               </Card>
@@ -481,6 +491,8 @@ const Dashboard = () => {
           </Row>
         </>
       )}
+
+      <UserActivitySection branch={branchParam} />
     </PageLayout>
   )
 }

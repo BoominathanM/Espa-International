@@ -1,9 +1,132 @@
+import mongoose from 'mongoose'
 import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
 import User from '../models/User.js'
 import Branch from '../models/Branch.js'
+import UserSession from '../models/UserSession.js'
 import { getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
 import { normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
+import { ONLINE_WINDOW_MS, presenceFromSessions } from '../utils/userPresence.js'
+
+const PRESENCE_ORDER = { online: 0, away: 1, offline: 2 }
+
+const latestDate = (...dates) => {
+  const t = Math.max(0, ...dates.map((d) => (d ? new Date(d).getTime() : 0)))
+  return t ? new Date(t) : null
+}
+
+/**
+ * Live agents for the dashboard card: real users who, in the last 30 minutes, either
+ * worked in the CRM (activity heartbeats — any module) or performed any lead action,
+ * plus anyone online right now. Automated performers ("System", "ZenXAI AI Inbound",
+ * webhooks) are not users, so they never appear.
+ *
+ * branchCond is the dashboard's Lead.branch condition (ObjectId, { $in: [...] } or undefined).
+ */
+async function loadLiveAgents({ branchCond, liveSince }) {
+  const nowMs = Date.now()
+
+  // aggregate() does not cast like find(): branch ids may arrive as strings for branch-limited users.
+  const branchIds = branchCond ? (branchCond.$in ? branchCond.$in : [branchCond]).map(String) : null
+  const leadMatch = { 'activityLogs.createdAt': { $gte: liveSince } }
+  if (branchIds) {
+    leadMatch.branch = {
+      $in: branchIds.filter((id) => mongoose.Types.ObjectId.isValid(id)).map((id) => new mongoose.Types.ObjectId(id)),
+    }
+  }
+
+  const [leadActions, sessions] = await Promise.all([
+    Lead.aggregate([
+      { $match: leadMatch },
+      { $project: { activityLogs: 1 } },
+      { $unwind: '$activityLogs' },
+      { $match: { 'activityLogs.createdAt': { $gte: liveSince } } },
+      {
+        $group: {
+          _id: '$activityLogs.performedBy',
+          actions: { $sum: 1 },
+          lastActionAt: { $max: '$activityLogs.createdAt' },
+        },
+      },
+    ]),
+    UserSession.find({
+      $or: [
+        { lastActiveAt: { $gte: liveSince } },
+        { endedAt: null, lastSeenAt: { $gte: new Date(nowMs - ONLINE_WINDOW_MS) } },
+      ],
+    })
+      .select('user lastSeenAt lastActiveAt endedAt currentModule currentTab')
+      .lean(),
+  ])
+
+  const sessionsByUser = new Map()
+  for (const s of sessions) {
+    const id = String(s.user)
+    if (!sessionsByUser.has(id)) sessionsByUser.set(id, [])
+    sessionsByUser.get(id).push(s)
+  }
+  const performerNames = leadActions.map((r) => String(r._id || '').trim()).filter(Boolean)
+  if (!sessionsByUser.size && !performerNames.length) return []
+
+  const users = await User.find({
+    $or: [{ _id: { $in: [...sessionsByUser.keys()] } }, { name: { $in: performerNames } }],
+  })
+    .select('name email role status branch branches')
+    .lean()
+
+  // Activity logs only store the performer's name: attribute by name when it is unambiguous.
+  const byName = new Map()
+  for (const u of users) {
+    const name = String(u.name || '').trim()
+    byName.set(name, byName.has(name) ? null : u)
+  }
+  const byId = new Map(users.map((u) => [String(u._id), u]))
+  const branchSet = branchIds ? new Set(branchIds) : null
+  const inBranchScope = (u) =>
+    !branchSet || [u.branch, ...(u.branches || [])].some((b) => b && branchSet.has(String(b)))
+
+  const rows = new Map()
+  const rowFor = (u) => {
+    const id = String(u._id)
+    if (!rows.has(id)) rows.set(id, { user: u, actions: 0, lastLeadActionAt: null })
+    return rows.get(id)
+  }
+  for (const r of leadActions) {
+    const u = byName.get(String(r._id || '').trim())
+    if (!u) continue
+    const row = rowFor(u)
+    row.actions += r.actions
+    row.lastLeadActionAt = latestDate(row.lastLeadActionAt, r.lastActionAt)
+  }
+  for (const id of sessionsByUser.keys()) {
+    const u = byId.get(id)
+    if (u && inBranchScope(u)) rowFor(u)
+  }
+
+  return [...rows.values()]
+    .map(({ user, actions, lastLeadActionAt }) => {
+      const userSessions = sessionsByUser.get(String(user._id)) || []
+      const presence = presenceFromSessions(userSessions, nowMs)
+      const lastActiveAt = latestDate(...userSessions.map((s) => s.lastActiveAt))
+      return {
+        key: String(user._id),
+        name: user.name || 'Unknown',
+        email: user.email || '-',
+        role: user.role || '-',
+        status: user.status || '-',
+        actions,
+        lastActionAt: latestDate(lastActiveAt, lastLeadActionAt),
+        presence: presence.status,
+        currentModule: presence.currentModule,
+        currentTab: presence.currentTab,
+      }
+    })
+    .sort(
+      (a, b) =>
+        PRESENCE_ORDER[a.presence] - PRESENCE_ORDER[b.presence] ||
+        new Date(b.lastActionAt || 0) - new Date(a.lastActionAt || 0)
+    )
+}
 
 /**
  * Build base filter for leads/calls based on branch and optional date.
@@ -131,46 +254,8 @@ export const getDashboard = async (req, res) => {
             }
           : {}),
       }),
-      // Live agents: any user who created/updated a lead in the last 30 minutes (Lead management activity)
-      Lead.aggregate([
-        { $match: branchFilterForLeads },
-        { $unwind: '$activityLogs' },
-        {
-          $match: {
-            'activityLogs.action': { $in: ['Lead Created', 'Lead Updated'] },
-            'activityLogs.createdAt': { $gte: liveSince },
-          },
-        },
-        {
-          $group: {
-            _id: '$activityLogs.performedBy',
-            actions: { $sum: 1 },
-            lastActionAt: { $max: '$activityLogs.createdAt' },
-          },
-        },
-        { $sort: { lastActionAt: -1 } },
-        { $limit: 50 },
-        {
-          $lookup: {
-            from: 'users',
-            localField: '_id',
-            foreignField: 'name',
-            as: 'user',
-          },
-        },
-        { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-        {
-          $project: {
-            performedBy: '$_id',
-            actions: 1,
-            lastActionAt: 1,
-            userId: '$user._id',
-            email: '$user.email',
-            role: '$user.role',
-            status: '$user.status',
-          },
-        },
-      ]),
+      // Live agents: users working in the CRM (activity heartbeats) or acting on leads in the last 30 minutes
+      loadLiveAgents({ branchCond: branchFilterForLeads.branch, liveSince }),
       Lead.aggregate([
         { $match: branchFilterForLeads },
         {
@@ -347,19 +432,8 @@ export const getDashboard = async (req, res) => {
       date: l.createdAt,
     }))
 
-    const liveAgents = (liveAgentsRaw || [])
-      .map((r) => ({
-        key: String(r.userId || r.performedBy || ''),
-        name: r.performedBy || 'Unknown',
-        email: r.email || '-',
-        role: r.role || '-',
-        status: r.status || '-',
-        actions: r.actions || 0,
-        lastActionAt: r.lastActionAt || null,
-      }))
-      .filter((r) => String(r.name || '').trim())
-
-    const liveAgentsCount = new Set(liveAgents.map((a) => String(a.name).trim().toLowerCase())).size
+    const liveAgents = liveAgentsRaw || []
+    const liveAgentsCount = liveAgents.length
 
     const alerts = []
     if (callsMissed > 0) {
