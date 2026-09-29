@@ -48,6 +48,19 @@ const telecmiCallLogSchema = new mongoose.Schema(
     requestId: { type: String, trim: true, default: undefined },
     status: { type: String, default: '' },
 
+    // Click-to-call leg "a": TeleCMI rings the staff member's own follow-me phone first and only
+    // dials the customer (leg "b") once that is answered. Leg "a"'s `to` is the STAFF number, so
+    // it is kept here instead of overwriting the customer fields above.
+    agentLeg: {
+      callId: { type: String, default: '' },
+      status: { type: String, default: '' }, // answered | missed | <raw non-final status>
+      number: { type: String, default: '' },
+      hangupReason: { type: String, default: '' },
+      answeredSec: { type: Number, default: null },
+      at: { type: Date, default: null },
+      rawPayload: { type: mongoose.Schema.Types.Mixed, default: null },
+    },
+
     // ZenXAI AI call-back for missed calls (see services/zenxaiMissedCallService.js).
     // `zenxaiCallbackAt` doubles as a guard so a redelivered "missed" webhook can't trigger
     // a second AI call-back for the same record.

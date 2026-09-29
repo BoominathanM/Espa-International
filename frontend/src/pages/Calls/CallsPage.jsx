@@ -317,6 +317,9 @@ const Calls = () => {
         name: log.customerName || '-',
         phoneNumber: log.customerNumber || '-',
         agentCode: log.agentCode || '-',
+        // Click-to-call rings the staff phone first (leg "a"); missed there = customer never dialled.
+        agentNumber: log.agentLeg?.number || '',
+        staffMissed: log.agentLeg?.status === 'missed',
         duration: formatDuration(log.duration),
         recordingFile: log.recordingFile || '',
         recordingUrl: log.recordingUrl || '',
@@ -412,6 +415,9 @@ const Calls = () => {
       render: (s, record) => (
         <>
           {s ? <Tag color="cyan">{s}</Tag> : '-'}
+          {record.staffMissed && (
+            <Tag color="orange" style={{ marginTop: 4 }}>Staff didn&apos;t answer</Tag>
+          )}
           {record.zenxai && (
             <Tag color={ZENXAI_STATUS_COLORS[record.zenxai.status] || 'default'} style={{ marginTop: 4 }}>
               AI: {ZENXAI_STATUS_LABELS[record.zenxai.status] || record.zenxai.status || 'Sent'}
@@ -1140,6 +1146,14 @@ const Calls = () => {
             <p><strong>Phone:</strong> {selectedTeleCMICall.phoneNumber}</p>
             {selectedTeleCMICall.agentCode && selectedTeleCMICall.agentCode !== '-' && (
               <p><strong>Agent:</strong> {selectedTeleCMICall.agentCode}</p>
+            )}
+            {selectedTeleCMICall.agentNumber && (
+              <p><strong>Staff phone (rings first):</strong> {selectedTeleCMICall.agentNumber}</p>
+            )}
+            {selectedTeleCMICall.staffMissed && (
+              <p className="mgmt-muted" style={{ fontSize: 12 }}>
+                The staff phone was not answered, so TeleCMI never dialled the customer.
+              </p>
             )}
             {selectedTeleCMICall.duration && selectedTeleCMICall.duration !== '00:00' && (
               <p><strong>Duration:</strong> {selectedTeleCMICall.duration}</p>

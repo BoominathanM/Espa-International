@@ -7,7 +7,7 @@ import User from '../models/User.js'
 import { applyCallLogBranchScope, canAccessBranch, getAccessibleBranchIds } from '../utils/branchAccess.js'
 import { parseIstDateRange } from '../utils/istDateRange.js'
 import { RECORDING_NAME_RE, telecmiRecordingUrl } from '../utils/telecmiRecording.js'
-import { placeAgentCall, TeleCMIAgentCallError } from '../services/telecmiAgentCallService.js'
+import { placeAgentCall, TeleCMIAgentCallError, toTeleCMINumber } from '../services/telecmiAgentCallService.js'
 import {
   pushMissedCallToZenxai,
   callLogFieldsFromPush,
@@ -43,7 +43,7 @@ const phoneTail = (v) => normalizeDigits(v).slice(-10)
  *  - recordingFile  <- rawPayload.filename   (playable recording)
  *  - duration       <- rawPayload.answeredsec / duration / billedsec  (Duration column)
  */
-const shapeCallLogs = (logs, req) => {
+const shapeCallLogs = (logs, req, { leadPhone } = {}) => {
   const firstNum = (...vals) => {
     for (const v of vals) {
       if (v === undefined || v === null || v === '') continue
@@ -60,6 +60,14 @@ const shapeCallLogs = (logs, req) => {
     obj.recordingUrl = buildRecordingUrl(req, fileName)
     obj.duration = firstNum(obj.duration, rp.answeredsec, rp.duration, rp.billedsec)
     obj.billedSeconds = firstNum(obj.billedSeconds, rp.billedsec, rp.answeredsec, rp.duration)
+    // Rows saved before agent legs were split out (saveChubAgentLegEvent) hold click-to-call
+    // leg "a" — the staff member's own phone — as the customer number. Show the lead's number.
+    if (String(rp.leg ?? '').toLowerCase() === 'a' && rp.direction !== 'inbound' && rp.request_id && !obj.agentLeg?.number) {
+      const agentNumber = String(rp.to ?? '')
+      obj.agentLeg = { ...(obj.agentLeg || {}), number: agentNumber, status: rp.status || '', hangupReason: rp.hangup_reason || '' }
+      const realPhone = String(obj.lead?.phone || leadPhone || '').trim()
+      if (realPhone && phoneTail(obj.customerNumber) === phoneTail(agentNumber)) obj.customerNumber = realPhone
+    }
     // Playable ZenXAI AI call-back recording (via our proxy, so an expiring upstream URL is refreshed).
     obj.zenxaiRecordingPlayUrl =
       obj.zenxaiCallId && obj.zenxaiRecordingUrl ? buildZenxaiRecordingUrl(req, obj.zenxaiCallId) : ''
@@ -180,7 +188,9 @@ export const makeAgentCall = async (req, res) => {
     const placeholderRow = await TeleCMICallLog.create({
       variant: 'outbound',
       customerName: lead.first_name || '',
-      customerNumber: lead.phone.trim(),
+      // Exactly the number TeleCMI dials (lead phones may be "63925 46658" / "0994…" / "a/b"):
+      // the ZenXAI duplicate-call checks match customerNumber by a trailing-digits regex.
+      customerNumber: String(toTeleCMINumber(lead.phone) || normalizeDigits(lead.phone)),
       agentCode: agentUser.telecmiAgentId,
       requestId,
       status: 'initiated',
@@ -347,7 +357,7 @@ export const getCallLogsForLead = async (req, res) => {
       .limit(parsedLimit)
       .populate('branches', 'name')
 
-    res.json({ success: true, callLogs: shapeCallLogs(logs, req) })
+    res.json({ success: true, callLogs: shapeCallLogs(logs, req, { leadPhone: lead.phone }) })
   } catch (error) {
     console.error('Get TeleCMI call logs for lead error:', error.message)
     res.status(500).json({ success: false, message: 'Failed to fetch TeleCMI call logs for this lead' })

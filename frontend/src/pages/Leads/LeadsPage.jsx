@@ -654,13 +654,13 @@ const Leads = () => {
     }
     Modal.confirm({
       title: 'Call via TeleCMI',
-      content: `This will ring ${record.assignedTo}'s TeleCMI phone first, then connect to ${record.name || 'the lead'}. Continue?`,
+      content: `${record.assignedTo}'s TeleCMI phone will ring first — answer it and TeleCMI then dials ${record.name || 'the lead'} (${record.mobile || record.phone}). If the call is not answered, the AI assistant calls the customer back. Continue?`,
       okText: 'Call',
       onOk: async () => {
         setCallingViaTeleCMILeadId(record._id)
         try {
           await makeTeleCMIAgentCall({ leadId: record._id }).unwrap()
-          messageApi.success(`Calling ${record.assignedTo}'s TeleCMI phone now...`)
+          messageApi.success(`Ringing ${record.assignedTo}'s TeleCMI phone — answer it to be connected to ${record.name || 'the lead'}.`)
         } catch (error) {
           messageApi.error(error?.data?.message || 'Call failed')
         } finally {

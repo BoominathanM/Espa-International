@@ -28,6 +28,7 @@ import {
   zenxaiAssistantKindFor,
 } from '../services/zenxaiMissedCallService.js'
 import { telecmiRecordingUrl } from '../utils/telecmiRecording.js'
+import { toTeleCMINumber } from '../services/telecmiAgentCallService.js'
 import { isZenxaiInboundEvent, handleZenxaiInboundEvent, isZenxaiTestEvent } from './zenxaiInboundController.js'
 
 const LOG = '[TELECMI]'
@@ -445,7 +446,136 @@ const scheduleZenxaiMissedPush = (callLogId, { fromPhoneNumber } = {}) => {
   console.log(LOG, `ZenXAI missed-call push for ${callLogId} scheduled in ${delayMs}ms`)
 }
 
+/**
+ * Click-to-call runs as two legs sharing one request_id: leg "a" rings the staff member's own
+ * TeleCMI follow-me phone, and leg "b" dials the customer only after leg "a" is answered. Leg
+ * "a"'s `to` is therefore the STAFF number — it must never become the row's customerNumber or
+ * outcome, or the Calls page shows the staff number and the ZenXAI call-back rings staff.
+ * Only click-to-call events carry request_id (TeleCMI docs), so a call a staff member dials
+ * straight from the TeleCMI app keeps the original handling below.
+ */
+const isChubAgentLeg = (body) =>
+  body?.direction !== 'inbound' &&
+  String(body?.leg ?? '').trim().toLowerCase() === 'a' &&
+  !!body?.request_id
+
+/** Row statuses set from the customer leg — an agent-leg event never overrides these. */
+const CUSTOMER_LEG_OUTCOMES = ['answered', 'missed']
+
+const saveChubAgentLegEvent = async (body, settings) => {
+  const callId = body.call_id ? String(body.call_id) : undefined
+  const requestId = body.request_id ? String(body.request_id) : undefined
+  const isFinal = isFinalChubEvent(body)
+  const rawStatus = cleanValue(body.status)
+  const legStatus = isFinal ? (rawStatus === 'answered' ? 'answered' : 'missed') : rawStatus || 'started'
+  const talkRaw = [body.answeredsec, body.duration, body.billedsec].find((v) => v !== undefined && v !== null && v !== '')
+
+  const set = {
+    agentLeg: {
+      callId: callId || '',
+      status: legStatus,
+      number: cleanValue(body.to),
+      hangupReason: cleanValue(body.hangup_reason),
+      answeredSec: talkRaw !== undefined ? Number(talkRaw) || 0 : null,
+      at: toDateFromEpoch(body.time),
+      rawPayload: body,
+    },
+  }
+  const agentCode = cleanValue(body.user)
+  if (agentCode) set.agentCode = agentCode
+
+  const orConditions = []
+  if (requestId) orConditions.push({ requestId })
+  if (callId) orConditions.push({ 'agentLeg.callId': callId }, { callId })
+  if (!orConditions.length) {
+    console.warn(LOG, 'CHUB agent-leg event without call_id/request_id — ignored')
+    return
+  }
+  const query = orConditions.length === 1 ? orConditions[0] : { $or: orConditions }
+  const prev = await TeleCMICallLog.findOne(query).select('_id status recordingFile callTimestamp callId').lean()
+
+  // Keep a call time on rows that only ever get the agent leg (staff never answered).
+  if (prev && !prev.callTimestamp && body.time) set.callTimestamp = toDateFromEpoch(body.time)
+  // Like before, a row still gets a callId from its first leg (the customer leg replaces it).
+  if (prev && !prev.callId && callId) set.callId = callId
+  if (body.filename !== undefined && String(body.filename).trim() && !prev?.recordingFile) {
+    set.recordingFile = String(body.filename).trim()
+    if (body.record !== undefined) set.isRecorded = String(body.record).toLowerCase() === 'true'
+  }
+
+  // No placeholder (call not placed from the CRM, or request_id mismatch): start the row from
+  // the lead carried in extra_params, never from this leg's `to` (the staff number).
+  const onInsert = { variant: 'outbound', status: 'initiated' }
+  if (!set.callTimestamp) onInsert.callTimestamp = toDateFromEpoch(body.time)
+  if (requestId) onInsert.requestId = requestId
+  if (!prev && callId) onInsert.callId = callId
+  if (!prev) {
+    const leadId = String(body.extra_params?.leadId || '')
+    const lead = /^[0-9a-fA-F]{24}$/.test(leadId)
+      ? await Lead.findById(leadId).select('first_name phone branch').lean()
+      : null
+    if (lead) {
+      onInsert.lead = lead._id
+      onInsert.customerName = lead.first_name || ''
+      onInsert.customerNumber = String(toTeleCMINumber(lead.phone) || normalizeDigits(lead.phone))
+      onInsert.branches = lead.branch ? [lead.branch] : []
+    }
+  }
+
+  let saved
+  try {
+    saved = await TeleCMICallLog.findOneAndUpdate(
+      query,
+      { $set: set, $setOnInsert: onInsert },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    )
+  } catch (err) {
+    // Two events for a brand-new call raced into the insert — the row exists now, just update it.
+    if (err?.code !== 11000) throw err
+    saved = await TeleCMICallLog.findOneAndUpdate(query, { $set: set }, { new: true })
+  }
+
+  // Same as the customer-leg path: a recording linked to a lead shows on the Lead detail card.
+  if (set.recordingFile && saved?.lead) {
+    await linkRecordingToLead(saved.lead, set.recordingFile, {
+      direction: saved.variant,
+      status: saved.status,
+      startedAt: saved.callTimestamp,
+    })
+  }
+
+  // Staff did not answer, so TeleCMI never dialled the customer: that is still a missed call for
+  // the customer → mark the row missed and let ZenXAI call the CUSTOMER back. Conditional +
+  // atomic, so a customer-leg answered/missed that already landed is never overridden.
+  let rowStatus = saved?.status
+  if (isFinal && legStatus === 'missed' && saved) {
+    const missedRow = await TeleCMICallLog.findOneAndUpdate(
+      { _id: saved._id, status: { $nin: CUSTOMER_LEG_OUTCOMES } },
+      { $set: { status: 'missed' } },
+      { new: true }
+    )
+    if (missedRow) {
+      rowStatus = 'missed'
+      if (missedRow.customerNumber) {
+        console.log(LOG, `CHUB agent leg MISSED for row ${missedRow._id} — staff did not answer; arranging ZenXAI call-back to customer ${missedRow.customerNumber}`)
+        maybeTriggerMissedZenxai(missedRow, settings)
+      } else {
+        console.warn(LOG, `CHUB agent leg MISSED for row ${missedRow._id} — no customer number on the row, no ZenXAI call-back`)
+      }
+    }
+  }
+
+  console.log(
+    LOG,
+    `CHUB agent leg => ${prev ? `matched row ${prev._id}` : `created row ${saved?._id}`}: agent ${agentCode || '—'} ` +
+      `(${set.agentLeg.number || '—'}) leg "${legStatus}"${set.agentLeg.hangupReason ? ` [${set.agentLeg.hangupReason}]` : ''}; ` +
+      `row status "${prev?.status ?? '(new)'}" => "${rowStatus}" | requestId=${requestId || '—'} callId=${callId || '—'}`
+  )
+}
+
 const saveChubCallEvent = async (body, settings = {}) => {
+  if (isChubAgentLeg(body)) return saveChubAgentLegEvent(body, settings)
+
   const callId = body.call_id ? String(body.call_id) : undefined
   const requestId = body.request_id ? String(body.request_id) : undefined
   const isFinal = isFinalChubEvent(body)

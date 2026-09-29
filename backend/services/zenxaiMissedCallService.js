@@ -142,6 +142,17 @@ export const pushMissedCallToZenxai = async (callLog, opts = {}) => {
     await recordSend({ ...baseEntryFrom(callLog, { assistant, source }, ''), pushStatus: 'skipped', skippedReason: reason })
     return { skipped: true, missing: [reason] }
   }
+  // ...nor the staff member's own follow-me phone: a click-to-call agent leg ("a") dials the
+  // staff, not the customer. Rows saved before the agent-leg fix hold that number as customer.
+  const rp = callLog?.rawPayload || {}
+  const legacyAgentLeg = String(rp.leg ?? '').toLowerCase() === 'a' && rp.direction !== 'inbound' && !!rp.request_id
+  const agentLegTail = tail(callLog?.agentLeg?.number || (legacyAgentLeg ? rp.to : ''))
+  if (target && agentLegTail && target === agentLegTail) {
+    const reason = "customer number is the staff member's own TeleCMI (agent-leg) phone"
+    console.warn(LOG, `push skipped for ${callLog?.callId || callLog?._id || '(unknown)'} — ${reason}`)
+    await recordSend({ ...baseEntryFrom(callLog, { assistant, source }, ''), pushStatus: 'skipped', skippedReason: reason })
+    return { skipped: true, missing: [reason] }
+  }
   // A Public API key only works for its own assistant, so each kind uses its own key; a kind
   // without Public API credentials keeps using the legacy make_call (unchanged behaviour).
   const api = publicApiFor(assistant, cfg)
