@@ -15,6 +15,9 @@ import {
   zenxaiAuthHeadersFor,
 } from '../services/zenxaiMissedCallService.js'
 import ZenxaiWebhookEvent from '../models/ZenxaiWebhookEvent.js'
+import ZenxaiInboundCall from '../models/ZenxaiInboundCall.js'
+import { shapeInboundCallForLead } from './zenxaiInboundController.js'
+import { phoneTailRegex } from '../services/zenxaiInboundLeadService.js'
 
 const escapeRegExp = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -623,6 +626,7 @@ export const getZenxaiCallsForLead = async (req, res) => {
             phone: new RegExp(`${tail}$`),
             zenxaiCallId: { $nin: ['', null, 'run_test'] },
             type: { $ne: 'call.test' }, // dashboard "Send test" events stored before they were ignored
+            assistantKind: { $ne: 'inbound' }, // inbound calls are listed from zenxaiinboundcalls below
           },
         },
         { $sort: { eventCreatedAt: -1, createdAt: -1 } },
@@ -633,6 +637,12 @@ export const getZenxaiCallsForLead = async (req, res) => {
         if (!known.has(doc.zenxaiCallId)) calls.push(shapeZenxaiCallFromEvent(doc, req))
       }
     }
+
+    // Calls this customer made to the ZenXAI inbound assistant's number.
+    const inboundWho = [{ lead: lead._id }]
+    if (tail) inboundWho.push({ callerPhone: new RegExp(`${tail}$`) })
+    const inboundCalls = await ZenxaiInboundCall.find({ $or: inboundWho }).sort({ createdAt: -1 }).limit(50).lean()
+    for (const c of inboundCalls) calls.push(shapeInboundCallForLead(c, req))
 
     calls.sort((a, b) => new Date(b.sortAt || 0) - new Date(a.sortAt || 0))
     res.json({ success: true, calls })
@@ -655,7 +665,7 @@ const canAccessZenxaiCall = async (user, { callLog, phone }) => {
   }
   const tail = phoneTail(phone)
   if (!tail) return false
-  return !!(await Lead.exists({ phone: new RegExp(`${tail}$`), branch: { $in: accessible } }))
+  return !!(await Lead.exists({ phone: phoneTailRegex(tail), branch: { $in: accessible } }))
 }
 
 /**

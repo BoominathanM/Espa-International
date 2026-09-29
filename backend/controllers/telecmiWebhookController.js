@@ -28,6 +28,7 @@ import {
   zenxaiAssistantKindFor,
 } from '../services/zenxaiMissedCallService.js'
 import { telecmiRecordingUrl } from '../utils/telecmiRecording.js'
+import { isZenxaiInboundEvent, handleZenxaiInboundEvent } from './zenxaiInboundController.js'
 
 const LOG = '[TELECMI]'
 
@@ -1140,6 +1141,9 @@ export const handleZenxaiApiEvent = async (req, res) => {
   let eventRow = null
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {}
+
+    // The INBOUND assistant's events (inbound.call.*) have their own receiver and signing secret.
+    if (isZenxaiInboundEvent(body)) return handleZenxaiInboundEvent(req, res)
 
     const signatureValid = verifyZenxaiSignature(req)
     if (signatureValid === false) {

@@ -35,6 +35,22 @@ export const telecmiApi = apiSlice.injectEndpoints({
       query: (leadId) => `/telecmi/call-logs/lead/${leadId}`,
       providesTags: ['TeleCMICallLog'],
     }),
+    getZenxaiInboundCalls: builder.query({
+      query: (params = {}) => {
+        const { page, limit, status, search, branch, callDateFrom, callDateTo } = params
+        const queryParams = new URLSearchParams()
+        if (page) queryParams.append('page', page)
+        if (limit) queryParams.append('limit', limit)
+        if (status) queryParams.append('status', status)
+        if (search) queryParams.append('search', search)
+        if (callDateFrom) queryParams.append('callDateFrom', callDateFrom)
+        if (callDateTo) queryParams.append('callDateTo', callDateTo)
+        appendBranchQueryParams(queryParams, branch)
+        const qs = queryParams.toString()
+        return `/telecmi/zenxai-inbound-calls${qs ? `?${qs}` : ''}`
+      },
+      providesTags: ['TeleCMICallLog'],
+    }),
   }),
 })
 
@@ -43,4 +59,5 @@ export const {
   useGetTeleCMICallLogsQuery,
   useGetTeleCMICallLogsForLeadQuery,
   useGetZenxaiCallsForLeadQuery,
+  useGetZenxaiInboundCallsQuery,
 } = telecmiApi

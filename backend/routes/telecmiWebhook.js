@@ -17,6 +17,7 @@ import {
   handleZenxaiConversationWebhook,
   handleZenxaiApiEvent,
 } from '../controllers/telecmiWebhookController.js'
+import { handleZenxaiInboundEvent, pingZenxaiInboundWebhook } from '../controllers/zenxaiInboundController.js'
 
 const router = express.Router()
 
@@ -36,5 +37,10 @@ router.get('/zenxai-events', (req, res) =>
   res.status(200).json({ success: true, message: 'ZenXAI events webhook is active (use POST)' })
 )
 router.post('/zenxai-events', handleZenxaiApiEvent)
+
+// Public receiver for the ZenXAI INBOUND assistant (inbound.call.started / ended / analysis_ready),
+// signed with the inbound assistant's own secret — the URL for its Inbound API → Webhook.
+router.get('/zenxai-inbound', pingZenxaiInboundWebhook)
+router.post('/zenxai-inbound', handleZenxaiInboundEvent)
 
 export default router

@@ -10,6 +10,7 @@ import {
   getZenxaiCallsForLead,
   streamZenxaiRecording,
 } from '../controllers/telecmiCallController.js'
+import { getZenxaiInboundCalls, streamZenxaiInboundRecording } from '../controllers/zenxaiInboundController.js'
 import { authenticate, isSuperAdmin } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -23,5 +24,7 @@ router.get('/zenxai-sends', authenticate, getZenxaiSends)
 router.post('/zenxai-backfill', authenticate, isSuperAdmin, backfillZenxaiSends)
 router.get('/zenxai-calls/lead/:leadId', authenticate, getZenxaiCallsForLead)
 router.get('/zenxai-recording/:zenxaiCallId', authenticate, streamZenxaiRecording)
+router.get('/zenxai-inbound-calls', authenticate, getZenxaiInboundCalls)
+router.get('/zenxai-inbound-recording/:id', authenticate, streamZenxaiInboundRecording)
 
 export default router

@@ -133,6 +133,7 @@ const ZENXAI_STATUS_LABELS = {
   queued: 'Queued',
   dialing: 'Dialing',
   retry_scheduled: 'Retry scheduled',
+  in_progress: 'In progress',
   completed: 'Answered',
   no_answer: 'Not answered',
   busy: 'Busy / declined',
@@ -142,6 +143,7 @@ const ZENXAI_STATUS_LABELS = {
 const ZENXAI_STATUS_COLORS = {
   queued: 'default',
   dialing: 'processing',
+  in_progress: 'processing',
   retry_scheduled: 'gold',
   completed: 'green',
   no_answer: 'orange',
@@ -1623,12 +1625,14 @@ const Leads = () => {
                     return (
                       <div key={call.key} style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: 10 }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                          <Tag color={call.source === 'feedback' ? 'magenta' : 'purple'}>
+                          <Tag color={call.source === 'feedback' ? 'magenta' : call.source === 'inbound' ? 'geekblue' : 'purple'}>
                             {call.source === 'missed-call-callback'
                               ? 'AI call-back (missed call)'
                               : call.source === 'feedback'
                                 ? 'AI feedback call'
-                                : 'AI call'}
+                                : call.source === 'inbound'
+                                  ? 'AI inbound call'
+                                  : 'AI call'}
                           </Tag>
                           <Tag color={ZENXAI_STATUS_COLORS[call.status] || 'default'}>
                             {ZENXAI_STATUS_LABELS[call.status] || call.status || 'Sent'}

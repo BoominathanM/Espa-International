@@ -25,7 +25,7 @@ import { useNavigate } from 'react-router-dom'
 import { useResponsive } from '../../hooks/useResponsive'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import { useGetCallLogsQuery } from '../../store/api/cloudAgentApi'
-import { useGetTeleCMICallLogsQuery } from '../../store/api/telecmiApi'
+import { useGetTeleCMICallLogsQuery, useGetZenxaiInboundCallsQuery } from '../../store/api/telecmiApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
 import { useMergeCallAudioMutation } from '../../store/api/leadApi'
@@ -114,6 +114,7 @@ const ZENXAI_STATUS_LABELS = {
   queued: 'Queued',
   dialing: 'Dialing',
   retry_scheduled: 'Retry scheduled',
+  in_progress: 'In progress',
   completed: 'Answered',
   no_answer: 'Not answered',
   busy: 'Busy / declined',
@@ -123,6 +124,7 @@ const ZENXAI_STATUS_LABELS = {
 const ZENXAI_STATUS_COLORS = {
   queued: 'default',
   dialing: 'processing',
+  in_progress: 'processing',
   retry_scheduled: 'gold',
   completed: 'green',
   no_answer: 'orange',
@@ -160,6 +162,14 @@ const Calls = () => {
   const [telecmiPageSize, setTelecmiPageSize] = useState(10)
   const [selectedTeleCMICall, setSelectedTeleCMICall] = useState(null)
   const [isTeleCMIDetailsVisible, setIsTeleCMIDetailsVisible] = useState(false)
+
+  // ZenXAI AI inbound calls (customers ringing the AI assistant's number) — own filters/pagination/modal
+  const [inboundFilterStatus, setInboundFilterStatus] = useState(undefined)
+  const [inboundSearchInput, setInboundSearchInput] = useState('')
+  const [inboundSearchText, setInboundSearchText] = useState('')
+  const [inboundPage, setInboundPage] = useState(1)
+  const [inboundPageSize, setInboundPageSize] = useState(10)
+  const [selectedInboundCall, setSelectedInboundCall] = useState(null)
 
   const stopRecordingPlayback = useCallback(() => {
     const audio = recordingAudioRef.current
@@ -218,6 +228,30 @@ const Calls = () => {
           : undefined,
     },
     { skip: callsProvider !== 'telecmi' }
+  )
+
+  const {
+    data: inboundCallsData,
+    isLoading: inboundCallsLoading,
+    isFetching: inboundCallsFetching,
+    refetch: refetchInboundCalls,
+  } = useGetZenxaiInboundCallsQuery(
+    {
+      page: inboundPage,
+      limit: inboundPageSize,
+      status: inboundFilterStatus || undefined,
+      search: inboundSearchText?.trim() || undefined,
+      branch: filterBranches.length ? filterBranches : undefined,
+      callDateFrom:
+        filterCallDateRange?.[0] && filterCallDateRange?.[1]
+          ? dayjs(filterCallDateRange[0]).format('YYYY-MM-DD')
+          : undefined,
+      callDateTo:
+        filterCallDateRange?.[0] && filterCallDateRange?.[1]
+          ? dayjs(filterCallDateRange[1]).format('YYYY-MM-DD')
+          : undefined,
+    },
+    { skip: callsProvider !== 'zenxai-inbound' }
   )
 
   const { data: branchesData } = useGetBranchesQuery()
@@ -424,6 +458,82 @@ const Calls = () => {
     },
   ]
 
+  const inboundCallLogs = inboundCallsData?.calls || []
+  const inboundPagination = inboundCallsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
+
+  const inboundCalls = useMemo(() => {
+    return inboundCallLogs.map((c) => {
+      const leadName = c.lead ? `${c.lead.first_name || ''} ${c.lead.last_name || ''}`.trim() : ''
+      return {
+        key: c._id,
+        _id: c._id,
+        name: c.callerName || leadName || '-',
+        phoneNumber: c.callerPhone || '-',
+        calledNumber: c.calledNumber || '',
+        assistantName: c.assistantName || '',
+        duration: formatDuration(c.durationSec),
+        branch: getBranchDisplay(c),
+        status: c.status || '',
+        endedReason: c.endedReason || '',
+        date: formatCallDateTime(c.startedAt || c.createdAt),
+        leadLinked: !!c.lead,
+        leadCreated: !!c.leadCreated,
+        leadName,
+        leadError: c.leadError || '',
+        zenxai: {
+          callId: c.callId || '',
+          status: c.status || '',
+          attempts: 0,
+          durationSec: c.durationSec,
+          endedReason: c.endedReason || '',
+          failureReason: '',
+          collectedData: c.collectedData || null,
+          summary: c.summary || '',
+          recordingUrl: c.recordingPlayUrl || '',
+          endedAt: c.endedAt ? formatCallDateTime(c.endedAt) : '',
+        },
+      }
+    })
+  }, [inboundCallLogs])
+
+  const inboundColumns = [
+    { title: 'Name', dataIndex: 'name', key: 'name' },
+    { title: 'Caller Number', dataIndex: 'phoneNumber', key: 'phoneNumber' },
+    { title: 'Duration', dataIndex: 'duration', key: 'duration' },
+    {
+      title: 'Branch',
+      dataIndex: 'branch',
+      key: 'branch',
+      render: (text) => (text ? <Tag color="blue">{text}</Tag> : <span className="mgmt-muted">—</span>),
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (s) =>
+        s ? <Tag color={ZENXAI_STATUS_COLORS[s] || 'default'}>{ZENXAI_STATUS_LABELS[s] || s}</Tag> : '-',
+    },
+    { title: 'Date & Time', dataIndex: 'date', key: 'date' },
+    {
+      title: 'Lead',
+      key: 'lead',
+      render: (_, record) => (
+        <Tag color={record.leadCreated ? 'green' : record.leadLinked ? 'blue' : 'default'}>
+          {record.leadCreated ? 'Created' : record.leadLinked ? 'Linked' : 'No'}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, record) => (
+        <Button type="link" icon={<EyeOutlined />} onClick={() => setSelectedInboundCall(record)}>
+          View Details
+        </Button>
+      ),
+    },
+  ]
+
   const columns = [
     {
       title: 'Type',
@@ -592,6 +702,10 @@ const Calls = () => {
     setTelecmiFilterVariant(undefined)
     setTelecmiSearchInput('')
     setTelecmiSearchText('')
+    setInboundPage(1)
+    setInboundFilterStatus(undefined)
+    setInboundSearchInput('')
+    setInboundSearchText('')
   }
 
   const handleRefreshCalls = async () => {
@@ -650,6 +764,34 @@ const Calls = () => {
   }
 
   useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setInboundPage(1)
+      setInboundSearchText(inboundSearchInput)
+    }, 350)
+
+    return () => clearTimeout(timeoutId)
+  }, [inboundSearchInput])
+
+  const handleRefreshInboundCalls = async () => {
+    try {
+      await refetchInboundCalls()
+      messageApi.success('Call logs refreshed')
+    } catch {
+      messageApi.error('Failed to refresh call logs')
+    }
+  }
+
+  // Toolbar search/refresh follow the selected provider tab.
+  const toolbarSearchValue =
+    callsProvider === 'ozonetel' ? searchInput : callsProvider === 'telecmi' ? telecmiSearchInput : inboundSearchInput
+  const setToolbarSearchValue =
+    callsProvider === 'ozonetel' ? setSearchInput : callsProvider === 'telecmi' ? setTelecmiSearchInput : setInboundSearchInput
+  const handleToolbarRefresh =
+    callsProvider === 'ozonetel' ? handleRefreshCalls : callsProvider === 'telecmi' ? handleRefreshTeleCMICalls : handleRefreshInboundCalls
+  const toolbarRefreshing =
+    callsProvider === 'ozonetel' ? callsFetching : callsProvider === 'telecmi' ? telecmiCallsFetching : inboundCallsFetching
+
+  useEffect(() => {
     if (!isRecordingVisible) {
       stopRecordingPlayback()
     }
@@ -672,12 +814,8 @@ const Calls = () => {
               className="calls-toolbar__search"
               placeholder={callsProvider === 'ozonetel' ? 'Search by phone number' : 'Search by name or phone number'}
               prefix={<SearchOutlined />}
-              value={callsProvider === 'ozonetel' ? searchInput : telecmiSearchInput}
-              onChange={(e) =>
-                callsProvider === 'ozonetel'
-                  ? setSearchInput(e.target.value)
-                  : setTelecmiSearchInput(e.target.value)
-              }
+              value={toolbarSearchValue}
+              onChange={(e) => setToolbarSearchValue(e.target.value)}
               allowClear
             />
             <Select
@@ -698,9 +836,9 @@ const Calls = () => {
               ))}
             </Select>
             <Button
-              onClick={callsProvider === 'ozonetel' ? handleRefreshCalls : handleRefreshTeleCMICalls}
+              onClick={handleToolbarRefresh}
               icon={<ReloadOutlined />}
-              loading={callsProvider === 'ozonetel' ? callsFetching : telecmiCallsFetching}
+              loading={toolbarRefreshing}
               size={isMobile ? 'small' : 'middle'}
             >
               Refresh
@@ -719,6 +857,7 @@ const Calls = () => {
           options={[
             { label: 'Ozonetel', value: 'ozonetel' },
             { label: 'TeleCMI', value: 'telecmi' },
+            { label: 'AI Inbound', value: 'zenxai-inbound' },
           ]}
           size={isMobile ? 'small' : 'middle'}
         />
@@ -796,6 +935,38 @@ const Calls = () => {
         </ContentCard>
       )}
 
+      {showFilters && callsProvider === 'zenxai-inbound' && (
+        <ContentCard staggerIndex={0} compact>
+          <div className="ds-filters-row ds-filters-row--responsive">
+            <RangePicker
+              className="ds-filter-fixed"
+              value={filterCallDateRange}
+              onChange={handleFilterCallDateRangeChange}
+              allowClear
+              format="YYYY-MM-DD"
+              placeholder={['Call date from', 'Call date to']}
+            />
+            <Select
+              className="ds-filter-fixed"
+              placeholder="Filter by Status"
+              allowClear
+              value={inboundFilterStatus}
+              onChange={(value) => {
+                setInboundPage(1)
+                setInboundFilterStatus(value)
+              }}
+            >
+              <Option value="in_progress">In progress</Option>
+              <Option value="completed">Answered</Option>
+              <Option value="no_answer">Not answered</Option>
+              <Option value="busy">Busy</Option>
+              <Option value="failed">Failed</Option>
+            </Select>
+            <Button onClick={handleClearFilters}>Clear filters</Button>
+          </div>
+        </ContentCard>
+      )}
+
       {callsProvider === 'ozonetel' ? (
         <ContentCard staggerIndex={showFilters ? 1 : 0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
           <div className="table-responsive-wrapper">
@@ -818,6 +989,36 @@ const Calls = () => {
                   onChange: (page, size) => {
                     setCallPage(page)
                     setCallPageSize(size)
+                  },
+                }}
+                scroll={{ x: 'max-content' }}
+                size={isMobile ? 'small' : 'middle'}
+              />
+            )}
+          </div>
+        </ContentCard>
+      ) : callsProvider === 'zenxai-inbound' ? (
+        <ContentCard staggerIndex={showFilters ? 1 : 0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
+          <div className="table-responsive-wrapper">
+            {inboundCallsLoading ? (
+              <div className="ds-loading-block">
+                <Spin size="large" />
+                <p className="mgmt-loading-text">Loading AI inbound calls...</p>
+              </div>
+            ) : (
+              <Table
+                columns={inboundColumns}
+                dataSource={inboundCalls}
+                rowKey="key"
+                pagination={{
+                  current: inboundPagination.page,
+                  pageSize: inboundPagination.limit,
+                  total: inboundPagination.total,
+                  showSizeChanger: true,
+                  showTotal: (total) => `Total ${total} calls`,
+                  onChange: (page, size) => {
+                    setInboundPage(page)
+                    setInboundPageSize(size)
                   },
                 }}
                 scroll={{ x: 'max-content' }}
@@ -989,6 +1190,51 @@ const Calls = () => {
               renderZenxaiSection('AI Call-back (ZenXAI)', selectedTeleCMICall.zenxai, `zx-${selectedTeleCMICall._id}`)}
             {selectedTeleCMICall.zenxaiFeedback &&
               renderZenxaiSection('AI Feedback call (ZenXAI)', selectedTeleCMICall.zenxaiFeedback, `zxfb-${selectedTeleCMICall._id}`)}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        title="AI Inbound Call Details"
+        open={!!selectedInboundCall}
+        onCancel={() => setSelectedInboundCall(null)}
+        footer={null}
+        width={isMobile ? '95%' : 600}
+      >
+        {selectedInboundCall && (
+          <div>
+            <p><strong>Name:</strong> {selectedInboundCall.name}</p>
+            <p><strong>Caller number:</strong> {selectedInboundCall.phoneNumber}</p>
+            {selectedInboundCall.calledNumber && (
+              <p><strong>Called our number:</strong> {selectedInboundCall.calledNumber}</p>
+            )}
+            {selectedInboundCall.assistantName && (
+              <p><strong>AI assistant:</strong> {selectedInboundCall.assistantName}</p>
+            )}
+            {selectedInboundCall.branch && (
+              <p><strong>Branch:</strong> {selectedInboundCall.branch}</p>
+            )}
+            <p><strong>Date & Time:</strong> {selectedInboundCall.date}</p>
+            {selectedInboundCall.endedReason && (
+              <p><strong>Ended reason:</strong> {selectedInboundCall.endedReason}</p>
+            )}
+            <p>
+              <strong>Lead:</strong>{' '}
+              {selectedInboundCall.leadLinked ? (
+                <>
+                  {selectedInboundCall.leadName || 'Linked'}{' '}
+                  <Tag color={selectedInboundCall.leadCreated ? 'green' : 'blue'}>
+                    {selectedInboundCall.leadCreated ? 'Created from this call' : 'Existing lead'}
+                  </Tag>
+                </>
+              ) : (
+                <span className="mgmt-muted">Not linked</span>
+              )}
+            </p>
+            {selectedInboundCall.leadError && (
+              <p><strong>Lead not updated:</strong> {selectedInboundCall.leadError}</p>
+            )}
+            {renderZenxaiSection('AI inbound call (ZenXAI)', selectedInboundCall.zenxai, `zxin-${selectedInboundCall._id}`)}
           </div>
         )}
       </Modal>
