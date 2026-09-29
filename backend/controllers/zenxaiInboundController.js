@@ -50,6 +50,25 @@ const toDate = (v) => {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+/**
+ * ZenXAI's dashboard "Send test" delivery. Seen live (outbound assistant, 2026-09-23):
+ * { id: "evt_test_<ms>", type: "call.test", data: { call_id: "run_test", reference: "TEST-001",
+ *   metadata: { test: true }, summary: "This is a test event from ZenX.", phone: sample number } }.
+ * The inbound test's exact shape is unknown, so ANY of these markers counts — a test that looked
+ * like a real answered call would otherwise create a fake Lead.
+ */
+export const isZenxaiTestEvent = (body) => {
+  const d = body?.data && typeof body.data === 'object' ? body.data : {}
+  return (
+    /^evt_test/i.test(String(body?.id || '')) ||
+    /\.test$/i.test(String(body?.type || '')) ||
+    String(d.call_id || '') === 'run_test' ||
+    d.metadata?.test === true ||
+    String(d.reference || '') === 'TEST-001' ||
+    /test event from zenx/i.test(String(d.summary || ''))
+  )
+}
+
 /** True when the body is a ZenXAI inbound-assistant event (inbound.call.*). */
 export const isZenxaiInboundEvent = (body) =>
   !!body && typeof body.type === 'string' && body.type.startsWith('inbound.') && !!body.data && typeof body.data === 'object'
@@ -239,7 +258,7 @@ export const handleZenxaiInboundEvent = async (req, res) => {
     const data = body.data || {}
     const callId = str(data.call_id)
     // Unknown types (e.g. a dashboard test) are acknowledged, never stored against a customer.
-    if (!isZenxaiInboundEvent(body) || !INBOUND_EVENT_TYPES.has(body.type) || !callId || callId === 'run_test') {
+    if (!isZenxaiInboundEvent(body) || !INBOUND_EVENT_TYPES.has(body.type) || !callId || isZenxaiTestEvent(body)) {
       console.log(LOG, `<= inbound non-call event acknowledged | type=${body.type || '—'} keys: [${Object.keys(body).join(', ')}]`)
       return res.status(200).json({ success: true, ignored: true })
     }

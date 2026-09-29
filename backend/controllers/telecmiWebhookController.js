@@ -28,7 +28,7 @@ import {
   zenxaiAssistantKindFor,
 } from '../services/zenxaiMissedCallService.js'
 import { telecmiRecordingUrl } from '../utils/telecmiRecording.js'
-import { isZenxaiInboundEvent, handleZenxaiInboundEvent } from './zenxaiInboundController.js'
+import { isZenxaiInboundEvent, handleZenxaiInboundEvent, isZenxaiTestEvent } from './zenxaiInboundController.js'
 
 const LOG = '[TELECMI]'
 
@@ -1154,7 +1154,7 @@ export const handleZenxaiApiEvent = async (req, res) => {
     // Anything that isn't a real call event is acknowledged, not processed — including the
     // dashboard's "Send test", which arrives as type "call.test" with a fake call_id/phone and
     // must never bind to (or show up on) a real customer's call.
-    if (!isZenxaiApiEvent(body) || body.type === 'call.test') {
+    if (!isZenxaiApiEvent(body) || body.type === 'call.test' || isZenxaiTestEvent(body)) {
       console.log(LOG, `<= ZenXAI non-call event acknowledged | type=${body.type || '—'} keys: [${Object.keys(body).join(', ')}]`)
       return res.status(200).json({ success: true, ignored: true })
     }
