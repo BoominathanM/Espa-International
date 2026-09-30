@@ -154,7 +154,7 @@ const SessionsTable = ({ sessions, timeFormat }) => {
       columns={columns}
       rowKey="id"
       size="small"
-      pagination={sessions.length > 5 ? { pageSize: 5, size: 'small' } : false}
+      pagination={sessions.length > 10 ? { defaultPageSize: 10, size: 'small', showSizeChanger: false } : false}
       scroll={{ x: 'max-content' }}
       locale={{ emptyText: 'No login sessions in this period' }}
     />
@@ -432,7 +432,12 @@ const UserActivitySection = ({ branch }) => {
             rowKey="userId"
             size="small"
             scroll={{ x: 'max-content' }}
-            pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'] }}
+            pagination={{
+              defaultPageSize: 10,
+              showSizeChanger: !isMobile,
+              pageSizeOptions: ['10', '20', '50'],
+              showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+            }}
             expandable={{
               expandedRowRender: (r) => <UserActivityDetail user={r} timeFormat={timeFormat} />,
             }}

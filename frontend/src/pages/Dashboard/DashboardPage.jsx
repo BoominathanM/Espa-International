@@ -98,6 +98,17 @@ const Dashboard = () => {
 
   const chartHeight = getChartHeight()
 
+  // Shared by every dashboard table: 10 rows per page. defaultPageSize (not pageSize) keeps the size changer working.
+  const tablePagination = useMemo(
+    () => ({
+      defaultPageSize: 10,
+      showSizeChanger: !isMobile,
+      pageSizeOptions: ['10', '20', '50'],
+      showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+    }),
+    [isMobile]
+  )
+
   const topAgentsColumns = [
     { title: 'Agent', dataIndex: 'agent', key: 'agent' },
     { title: 'Branch', dataIndex: 'branch', key: 'branch' },
@@ -267,72 +278,61 @@ const Dashboard = () => {
             ))}
           </Row>
 
-          <AnimatedWrapper variant="fadeUp">
-            <Row gutter={[16, 16]} className="dashboard-row dashboard-stats-row">
-              <Col xs={24} sm={12} md={8}>
-                <Card hoverable onClick={() => navigate('/leads')} className="dashboard-card dashboard-card--interactive">
-                  <Statistic
-                    title={<span className="dashboard-stat-title">Today&apos;s Leads</span>}
-                    value={todayLeads}
-                    prefix={<UserAddOutlined className="dashboard-stat-prefix" />}
-                    suffix={todayLeads > 0 ? <ArrowUpOutlined className="dashboard-stat-suffix-success" /> : null}
-                  />
-                  <div className="dashboard-stat-spacer" />
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} md={8}>
-                <Card hoverable onClick={() => navigate('/calls')} className="dashboard-card dashboard-card--interactive">
-                  <Statistic
-                    title={<span className="dashboard-stat-title">Calls Received</span>}
-                    value={callsReceived}
-                    prefix={<PhoneOutlined className="dashboard-stat-prefix" />}
-                  />
-                  <div className="dashboard-stat-meta dashboard-stat-meta--danger">
-                    {callsMissed} missed
-                  </div>
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} md={8}>
-                <Card className="dashboard-card dashboard-card--interactive dashboard-card--stat-green">
-                  <Statistic
-                    title={<span className="dashboard-stat-title">Active Agents</span>}
-                    value={totalAgents}
-                    prefix={<TeamOutlined />}
-                  />
-                  <div className="dashboard-stat-spacer" />
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} md={8}>
-                <Card className="dashboard-card dashboard-card--interactive">
-                  <Statistic
-                    title={<span className="dashboard-stat-title">Front Office</span>}
-                    value={frontOfficeAgents}
-                    prefix={<UserOutlined />}
-                  />
-                  <div className="dashboard-stat-meta dashboard-stat-meta--muted">Active</div>
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} md={8}>
-                <Card hoverable onClick={() => navigate('/appointment-bookings')} className="dashboard-card dashboard-card--interactive dashboard-card--stat-green">
-                  <Statistic
-                    title={<span className="dashboard-stat-title">Appointments</span>}
-                    value={appointmentsToday}
-                    prefix={<CalendarOutlined />}
-                  />
-                  <div className="dashboard-stat-meta dashboard-stat-meta--muted">Today</div>
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} md={8}>
-                <Card className="dashboard-card dashboard-card--interactive">
-                  <Statistic
-                    title={<span className="dashboard-stat-title">Live Agents</span>}
-                    value={liveAgentsCount}
-                    prefix={<TeamOutlined />}
-                  />
-                  <div className="dashboard-stat-meta dashboard-stat-meta--muted">Active in CRM · last 30 mins</div>
-                </Card>
-              </Col>
-            </Row>
+          {/* All 6 stat cards share one row whenever the content area is wide enough (see dashboard-page.css) */}
+          <AnimatedWrapper variant="fadeUp" className="dashboard-stats-container">
+            <div className="dashboard-stats-grid">
+              <Card hoverable onClick={() => navigate('/leads')} className="dashboard-card dashboard-card--interactive">
+                <Statistic
+                  title={<span className="dashboard-stat-title" title="Today's Leads">Today&apos;s Leads</span>}
+                  value={todayLeads}
+                  prefix={<UserAddOutlined className="dashboard-stat-prefix" />}
+                  suffix={todayLeads > 0 ? <ArrowUpOutlined className="dashboard-stat-suffix-success" /> : null}
+                />
+                <div className="dashboard-stat-spacer" />
+              </Card>
+              <Card hoverable onClick={() => navigate('/calls')} className="dashboard-card dashboard-card--interactive">
+                <Statistic
+                  title={<span className="dashboard-stat-title" title="Calls Received">Calls Received</span>}
+                  value={callsReceived}
+                  prefix={<PhoneOutlined className="dashboard-stat-prefix" />}
+                />
+                <div className="dashboard-stat-meta dashboard-stat-meta--danger">
+                  {callsMissed} missed
+                </div>
+              </Card>
+              <Card className="dashboard-card dashboard-card--interactive dashboard-card--stat-green">
+                <Statistic
+                  title={<span className="dashboard-stat-title" title="Active Agents">Active Agents</span>}
+                  value={totalAgents}
+                  prefix={<TeamOutlined />}
+                />
+                <div className="dashboard-stat-spacer" />
+              </Card>
+              <Card className="dashboard-card dashboard-card--interactive">
+                <Statistic
+                  title={<span className="dashboard-stat-title" title="Front Office">Front Office</span>}
+                  value={frontOfficeAgents}
+                  prefix={<UserOutlined />}
+                />
+                <div className="dashboard-stat-meta dashboard-stat-meta--muted">Active</div>
+              </Card>
+              <Card hoverable onClick={() => navigate('/appointment-bookings')} className="dashboard-card dashboard-card--interactive dashboard-card--stat-green">
+                <Statistic
+                  title={<span className="dashboard-stat-title" title="Appointments">Appointments</span>}
+                  value={appointmentsToday}
+                  prefix={<CalendarOutlined />}
+                />
+                <div className="dashboard-stat-meta dashboard-stat-meta--muted">Today</div>
+              </Card>
+              <Card className="dashboard-card dashboard-card--interactive">
+                <Statistic
+                  title={<span className="dashboard-stat-title" title="Live Agents">Live Agents</span>}
+                  value={liveAgentsCount}
+                  prefix={<TeamOutlined />}
+                />
+                <div className="dashboard-stat-meta dashboard-stat-meta--muted">Active in CRM · last 30 mins</div>
+              </Card>
+            </div>
           </AnimatedWrapper>
 
           <Row gutter={[16, 16]} className="dashboard-row">
@@ -424,11 +424,26 @@ const Dashboard = () => {
                   <Table
                     dataSource={recentLeads}
                     columns={columns}
-                    pagination={false}
+                    pagination={tablePagination}
                     size="small"
                     scroll={{ x: 'max-content', y: chartHeight }}
                     onRow={(record) => ({
-                      onClick: () => record.key && navigate(`/leads/${record.key}`),
+                      // Leads page opens this lead's details modal (there is no /leads/:id route)
+                      onClick: () =>
+                        record.key &&
+                        navigate('/leads', {
+                          state: {
+                            openLeadId: record.key,
+                            openLead: {
+                              name: record.name && record.name !== '-' ? record.name : '',
+                              branch: record.branch && record.branch !== '-' ? record.branch : 'Unassigned',
+                              status: record.status,
+                              mobile: record.mobile && record.mobile !== '-' ? record.mobile : '',
+                              phone: record.mobile && record.mobile !== '-' ? record.mobile : '',
+                              whatsapp: record.whatsapp || '',
+                            },
+                          },
+                        }),
                       style: { cursor: record.key ? 'pointer' : 'default' },
                     })}
                   />
@@ -460,7 +475,8 @@ const Dashboard = () => {
                   <Table
                     dataSource={topAgentsData}
                     columns={topAgentsColumns}
-                    pagination={false}
+                    rowKey="key"
+                    pagination={tablePagination}
                     size="small"
                     scroll={{ x: 'max-content', y: chartHeight }}
                   />
@@ -480,9 +496,9 @@ const Dashboard = () => {
                     dataSource={liveAgents}
                     columns={liveAgentColumns}
                     rowKey="key"
-                    pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'] }}
+                    pagination={tablePagination}
                     size="small"
-                    scroll={{ x: 'max-content' }}
+                    scroll={{ x: 'max-content', y: chartHeight }}
                     locale={{ emptyText: 'No agents active in the CRM in the last 30 minutes' }}
                   />
                 </div>

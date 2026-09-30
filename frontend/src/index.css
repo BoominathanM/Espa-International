@@ -1076,18 +1076,19 @@ body {
     position: relative !important;
   }
   
-  .recharts-surface {
+  /* Main chart surface only (direct child): legend icons also use .recharts-surface and must stay 14px */
+  .recharts-wrapper > .recharts-surface {
     width: 100% !important;
     max-height: 280px !important;
     height: auto !important;
   }
-  
+
   .recharts-line,
   .recharts-bar,
   .recharts-pie {
     width: 100% !important;
   }
-  
+
   .ant-card-body .recharts-wrapper,
   .ant-card-body .recharts-responsive-container {
     width: 100% !important;
@@ -1096,11 +1097,11 @@ body {
     max-height: 280px !important;
     overflow: hidden !important;
   }
-  
+
   [class*="recharts-responsive-container"] {
     height: 280px !important;
   }
-  
+
   .ant-card-body > div[class*="recharts"],
   .ant-card-body > .recharts-wrapper,
   .ant-card-body > .recharts-responsive-container {
@@ -1129,8 +1130,8 @@ body {
     position: relative !important;
   }
   
-  /* SVG surface container */
-  .recharts-surface {
+  /* SVG surface container (main chart only — legend icons also use .recharts-surface and must stay 14px) */
+  .recharts-wrapper > .recharts-surface {
     width: 100% !important;
     max-height: 280px !important;
     height: auto !important;

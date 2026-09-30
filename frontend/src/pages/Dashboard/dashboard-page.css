@@ -198,10 +198,11 @@
   color: var(--color-success);
 }
 
+/* The tables scroll themselves (scroll.x / scroll.y) so the header stays fixed and the pager
+   stays visible; clipping the wrapper here would hide the pagination behind a second scrollbar. */
 .dashboard-table-wrap {
   flex: 1;
-  overflow: auto;
-  max-height: var(--dashboard-chart-h, 280px);
+  min-width: 0;
 }
 
 /* Subtle scrollbar for dashboard tables (avoid thick bright yellow) */
@@ -246,17 +247,104 @@
 .dashboard-card--pie .recharts-legend-item .recharts-surface {
   margin-right: 6px;
 }
-
 .dashboard-row {
   margin-bottom: 24px;
 }
 
-/* 5-card stats row: equal columns on lg+, 2-col on sm/md, 1-col on xs */
-@media (min-width: 992px) {
-  .dashboard-stats-row > .ant-col {
-    flex: 0 0 20% !important;
-    max-width: 20% !important;
+/* 6-card stats row. Sized by the dashboard's own content width (container query), so it follows the
+   sidebar opening/collapsing as well as the screen: all 6 in one row from 640px of content,
+   3 per row on small tablets, 2 per row on phones. */
+.dashboard-stats-container {
+  container-type: inline-size;
+  container-name: dashboard-stats;
+  margin-bottom: 24px;
+}
+
+.dashboard-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dashboard-stats-grid > .dashboard-card {
+  min-width: 0;
+}
+
+.dashboard-stats-grid .ant-card-body {
+  padding: 16px;
+}
+
+.dashboard-stats-grid .ant-statistic-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dashboard-stats-grid .ant-statistic-content {
+  white-space: nowrap;
+}
+
+@container dashboard-stats (min-width: 440px) {
+  .dashboard-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+@container dashboard-stats (min-width: 640px) {
+  .dashboard-stats-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* Six narrow cards (tablets, small laptops with the sidebar open): tighter padding and type,
+   titles may wrap onto two lines (space reserved so the values stay aligned). */
+@container dashboard-stats (min-width: 640px) and (max-width: 959px) {
+  .dashboard-stats-grid .ant-card-body {
+    padding: 12px 10px;
+  }
+
+  .dashboard-stats-grid .ant-statistic-title {
+    min-height: 2.7em;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: normal;
+    overflow-wrap: break-word;
+    hyphens: auto;
+  }
+
+  .dashboard-stats-grid .ant-statistic-content {
+    font-size: 20px;
+  }
+
+  .dashboard-stats-grid .ant-statistic-content-prefix {
+    margin-inline-end: 4px;
+  }
+
+  .dashboard-stats-grid .dashboard-stat-meta {
+    font-size: 11px;
+  }
+}
+
+/* Browsers without container queries: fall back to screen-width breakpoints */
+@supports not (container-type: inline-size) {
+  @media (min-width: 576px) {
+    .dashboard-stats-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .dashboard-stats-grid {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+}
+
+/* Paginated tables inside flush (padding: 0) table cards: keep the pager off the card edge */
+.dashboard-card--table .ant-table-wrapper .ant-table-pagination.ant-pagination {
+  margin: 12px 0;
+  padding: 0 12px;
+  row-gap: 8px;
 }
 
 .dashboard-select-clear {

@@ -7,8 +7,15 @@ import UserSession from '../models/UserSession.js'
 import { getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
 import { normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
 import { ONLINE_WINDOW_MS, presenceFromSessions } from '../utils/userPresence.js'
+import { parseIstDayStart, parseIstDayEnd, istDateKey } from '../utils/istDateRange.js'
 
 const PRESENCE_ORDER = { online: 0, away: 1, offline: 2 }
+
+// Dashboard tables are paginated 10 per page on the client; these caps give them several pages.
+const RECENT_LEADS_LIMIT = 50
+const TOP_AGENTS_LIMIT = 50
+// The Agent Performance chart keeps showing only the top 10 agents.
+const AGENT_CHART_LIMIT = 10
 
 const latestDate = (...dates) => {
   const t = Math.max(0, ...dates.map((d) => (d ? new Date(d).getTime() : 0)))
@@ -170,16 +177,21 @@ function buildBaseFilter(req, options = {}) {
 export const getDashboard = async (req, res) => {
   try {
     const branchParam = req.query.branch
-    const dateStr = req.query.date || new Date().toISOString().split('T')[0]
+    // "Today" is the IST calendar day (a UTC date would still be yesterday until 05:30 IST)
+    const dateStr = req.query.date || istDateKey()
     const user = req.user
 
     const leadFilter = { ...buildBaseFilter(req, { useDate: false }) }
     const branchFilterForLeads = leadFilter.branch ? { branch: leadFilter.branch } : {}
 
+    // appointment_date is a date-only value stored at UTC midnight: same day bounds as Appointment Bookings
     const todayStart = new Date(dateStr)
     todayStart.setUTCHours(0, 0, 0, 0)
     const todayEnd = new Date(dateStr)
     todayEnd.setUTCHours(23, 59, 59, 999)
+    // Lead/call timestamps: the IST day, like the Calls and Reports date filters
+    const istDayStart = parseIstDayStart(dateStr) || todayStart
+    const istDayEnd = parseIstDayEnd(dateStr) || todayEnd
 
     let callFilter = {}
     if (branchFilterForLeads.branch) {
@@ -187,16 +199,30 @@ export const getDashboard = async (req, res) => {
       callFilter = { lead: { $in: leadIdsForBranch } }
     }
 
-    const todayLeadFilter = { ...branchFilterForLeads, createdAt: { $gte: todayStart, $lte: todayEnd } }
+    const todayLeadFilter = { ...branchFilterForLeads, createdAt: { $gte: istDayStart, $lte: istDayEnd } }
     const todayCallFilter = {
       ...callFilter,
       $or: [
-        { startTime: { $gte: todayStart, $lte: todayEnd } },
-        { createdAt: { $gte: todayStart, $lte: todayEnd } },
+        { startTime: { $gte: istDayStart, $lte: istDayEnd } },
+        { createdAt: { $gte: istDayStart, $lte: istDayEnd } },
       ],
     }
 
+    // Lead Trend (last 7 days): bucket by IST day so the last bar matches "Today's Leads"
+    const trendDayKeys = []
+    for (let i = 6; i >= 0; i--) trendDayKeys.push(istDateKey(Date.now() - i * 24 * 60 * 60 * 1000))
+    const trendSince = parseIstDayStart(trendDayKeys[0])
+
     const liveSince = new Date(Date.now() - 30 * 60 * 1000)
+
+    // Recent Leads: when a date is picked the client shows only that day's leads, so fetch that
+    // IST day instead of the latest N overall (older days would otherwise always come back empty).
+    const recentLeadsDateFilter = {}
+    if (req.query.date) {
+      const dayStart = parseIstDayStart(req.query.date)
+      const dayEnd = parseIstDayEnd(req.query.date)
+      if (dayStart && dayEnd) recentLeadsDateFilter.createdAt = { $gte: dayStart, $lte: dayEnd }
+    }
 
     const [
       todayLeads,
@@ -261,14 +287,14 @@ export const getDashboard = async (req, res) => {
         {
           $match: {
             createdAt: {
-              $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+              $gte: trendSince,
               $lte: new Date(),
             },
           },
         },
         {
           $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+05:30' } },
             leads: { $sum: 1 },
           },
         },
@@ -313,8 +339,9 @@ export const getDashboard = async (req, res) => {
             converted: { $sum: { $cond: [{ $eq: ['$status', 'Converted'] }, 1, 0] } },
           },
         },
-        { $sort: { leads: -1 } },
-        { $limit: 10 },
+        // _id tie-breaker: agents with equal lead counts keep a stable order across refreshes/pages
+        { $sort: { leads: -1, _id: 1 } },
+        { $limit: TOP_AGENTS_LIMIT },
         {
           $lookup: {
             from: 'users',
@@ -349,34 +376,30 @@ export const getDashboard = async (req, res) => {
           },
         },
       ]),
-      Lead.find(branchFilterForLeads)
+      Lead.find({ ...branchFilterForLeads, ...recentLeadsDateFilter })
         .populate('branch', 'name')
         .populate('assignedTo', 'name')
         .sort({ createdAt: -1 })
-        .limit(10)
+        .limit(RECENT_LEADS_LIMIT)
         .lean(),
       Lead.countDocuments({ ...branchFilterForLeads, assignedTo: null }),
     ])
 
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-    const last7 = []
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date()
-      d.setDate(d.getDate() - i)
-      const key = d.toISOString().split('T')[0]
+    const last7 = trendDayKeys.map((key) => {
       const found = leadTrendRaw.find((r) => r._id === key)
-      last7.push({
-        name: dayNames[d.getDay()],
+      return {
+        name: dayNames[new Date(`${key}T00:00:00Z`).getUTCDay()],
         dateKey: key,
         leads: found ? found.leads : 0,
         calls: 0,
-      })
-    }
+      }
+    })
     const callTrendByDay = await CallLog.aggregate([
-      { $match: { ...callFilter, createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
+      { $match: { ...callFilter, createdAt: { $gte: trendSince } } },
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: { $ifNull: ['$startTime', '$createdAt'] } } },
+          _id: { $dateToString: { format: '%Y-%m-%d', date: { $ifNull: ['$startTime', '$createdAt'] }, timezone: '+05:30' } },
           calls: { $sum: 1 },
         },
       },
@@ -409,7 +432,7 @@ export const getDashboard = async (req, res) => {
         value,
         fillVar: sourceMap[name] || '--chart-pie-web',
       }))
-      .sort((a, b) => b.value - a.value)
+      .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name))
 
     const topAgentsData = agentPerformanceRaw.map((r, i) => ({
       key: String(i + 1),
@@ -425,6 +448,8 @@ export const getDashboard = async (req, res) => {
       key: (l._id || i).toString(),
       name: [l.first_name, l.last_name].filter(Boolean).join(' ') || '-',
       mobile: l.phone || '-',
+      // lets the Leads page open this lead's chat straight away (row click → Lead Details)
+      whatsapp: l.whatsapp || l.phone || '',
       source: normalizeLeadSourceForReport(l.source || ''),
       status: l.status || '-',
       branch: l.branch?.name || '-',
@@ -462,7 +487,7 @@ export const getDashboard = async (req, res) => {
         leadTrend: last7,
         sourceDistribution: sourceData,
         branchActivity: branchActivityRaw,
-        agentPerformance: agentPerformanceRaw.map((r, i) => ({
+        agentPerformance: agentPerformanceRaw.slice(0, AGENT_CHART_LIMIT).map((r, i) => ({
           name: r.agent,
           leads: r.leads,
           calls: 0,

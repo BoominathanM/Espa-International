@@ -230,6 +230,17 @@ const Leads = () => {
     }
   }, [form, location.state, location.pathname, navigate])
 
+  // Open a lead's details modal when coming from another page (e.g. Dashboard "Recent Leads" row click)
+  useEffect(() => {
+    const state = location.state
+    if (state?.openLeadId) {
+      setFollowUpLead({ ...(state.openLead || {}), _id: state.openLeadId, key: state.openLeadId })
+      setFollowUpTab('liveChat')
+      setIsFollowUpVisible(true)
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [location.state, location.pathname, navigate])
+
   // API hooks
   const { data: leadsData, isLoading: leadsLoading, refetch: refetchLeads } = useGetLeadsQuery({
     search: searchText || undefined,
