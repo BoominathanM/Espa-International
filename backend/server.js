@@ -32,6 +32,7 @@ import User from './models/User.js'
 import Role from './models/Role.js'
 import Branch from './models/Branch.js'
 import LeadStage from './models/LeadStage.js'
+import { startMissedCallMessageSweep } from './services/whatsappMissedCallService.js'
 
 dotenv.config()
 
@@ -491,6 +492,8 @@ mongoose
       console.log('='.repeat(60))
       console.log('📝 Server logs will appear below:')
       console.log('='.repeat(60))
+      // WhatsApp "Missed Call Hi Message": re-check recent missed calls every 5 minutes
+      startMissedCallMessageSweep()
     })
     
     server.on('error', (error) => {

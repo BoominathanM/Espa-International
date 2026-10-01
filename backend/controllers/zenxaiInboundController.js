@@ -28,6 +28,7 @@ import { applyCallLogBranchScope, getAccessibleBranchIds } from '../utils/branch
 import { parseIstDateRange } from '../utils/istDateRange.js'
 import { collectedValue, syncLeadForInboundCall } from '../services/zenxaiInboundLeadService.js'
 import { scheduleAiCallConfirmation } from '../services/whatsappEventService.js'
+import { isAiInboundMissedStatus, scheduleMissedCallMessage } from '../services/whatsappMissedCallService.js'
 
 const LOG = '[ZENXAI-INBOUND]'
 
@@ -239,6 +240,10 @@ const applyInboundEvent = async (type, data) => {
   ) {
     scheduleAiCallConfirmation('ai-inbound', call._id)
   }
+
+  // Not answered (no_answer / busy / failed) → WhatsApp "Missed Call Hi Message" to the caller.
+  // Re-checked before sending (once per customer); never throws.
+  if (isAiInboundMissedStatus(call.status)) scheduleMissedCallMessage('ai-inbound-missed', call._id)
 
   console.log(
     LOG,

@@ -31,6 +31,11 @@ import { telecmiRecordingUrl } from '../utils/telecmiRecording.js'
 import { toTeleCMINumber } from '../services/telecmiAgentCallService.js'
 import { isZenxaiInboundEvent, handleZenxaiInboundEvent, isZenxaiTestEvent } from './zenxaiInboundController.js'
 import { scheduleAiCallConfirmation } from '../services/whatsappEventService.js'
+import {
+  isAiCallbackMissedStatus,
+  isTelecmiMissedStatus,
+  scheduleMissedCallMessage,
+} from '../services/whatsappMissedCallService.js'
 import { replaceNoteLine } from '../utils/leadNoteLine.js'
 
 const LOG = '[TELECMI]'
@@ -226,6 +231,10 @@ const saveCdrEntry = async (entry, settings) => {
     console.log(LOG, `CDR terminal MISSED for lead-linked row ${savedRow._id} — arranging ZenXAI call-back`)
     maybeTriggerMissedZenxai(savedRow, settings)
   }
+
+  // WhatsApp "Missed Call Hi Message" (Settings → WhatsApp API → Event Mapping). Re-checked
+  // before sending and never throws.
+  if (savedRow && isTelecmiMissedStatus(savedRow.status)) scheduleMissedCallMessage('telecmi-missed', savedRow._id)
 }
 
 /** Epoch time from CHUB events may arrive as seconds or milliseconds — normalize to ms. */
@@ -564,6 +573,7 @@ const saveChubAgentLegEvent = async (body, settings) => {
       } else {
         console.warn(LOG, `CHUB agent leg MISSED for row ${missedRow._id} — no customer number on the row, no ZenXAI call-back`)
       }
+      scheduleMissedCallMessage('telecmi-missed', missedRow._id)
     }
   }
 
@@ -691,6 +701,7 @@ const saveChubCallEvent = async (body, settings = {}) => {
       // only once (the scheduler re-checks before firing), never breaks the webhook response.
       console.log(LOG, `CHUB terminal MISSED for row ${saved._id} — arranging ZenXAI call-back`)
       maybeTriggerMissedZenxai(saved, settings)
+      scheduleMissedCallMessage('telecmi-missed', saved._id)
     }
   } else if (fields.status === 'missed' && !isFinal) {
     console.log(LOG, `CHUB non-terminal event with status "missed" for row ${saved?._id} — waiting for a terminal event before ZenXAI`)
@@ -1257,6 +1268,12 @@ const applyZenxaiEvent = async (type, data, eventId, eventRow) => {
     callLog.whatsappConfirmation?.status !== 'sent'
   ) {
     scheduleAiCallConfirmation('ai-callback', callLog._id)
+  }
+
+  // The AI call-back was NOT answered (no_answer / busy) → WhatsApp "Missed Call Hi Message".
+  // Re-checked before sending (once per customer); never throws. Not for the feedback call.
+  if (kind === 'outbound' && isAiCallbackMissedStatus(statusNow)) {
+    scheduleMissedCallMessage('ai-callback-missed', callLog._id)
   }
 
   await ZenxaiWebhookEvent.updateOne(

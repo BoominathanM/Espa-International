@@ -20,6 +20,7 @@ import {
   Modal,
   Empty,
   Tooltip,
+  InputNumber,
   message,
 } from 'antd'
 import {
@@ -45,6 +46,7 @@ import {
   useGetRecentAiCallsForEventQuery,
   usePreviewWhatsAppEventForCallMutation,
   useSendWhatsAppEventForCallMutation,
+  useRunWhatsAppEventCheckMutation,
   useGetWhatsAppEventLogsQuery,
 } from '../../store/api/whatsappAutomationApi'
 import { formatDateTime, variableTag, TemplateText } from './WhatsAppTemplates'
@@ -52,7 +54,23 @@ import { formatDateTime, variableTag, TemplateText } from './WhatsAppTemplates'
 const PLACEHOLDER_RE = /\{\{\s*([^{}]+?)\s*\}\}/g
 const MEDIA_HEADERS = ['IMAGE', 'VIDEO', 'DOCUMENT']
 const LOG_STATUS_COLORS = { sent: 'green', failed: 'red', skipped: 'orange', pending: 'blue' }
-const SOURCE_LABELS = { 'ai-callback': 'AI call-back', 'ai-inbound': 'AI inbound', test: 'Test' }
+const SOURCE_LABELS = {
+  'ai-callback': 'AI call-back',
+  'ai-inbound': 'AI inbound',
+  test: 'Test',
+  'telecmi-missed': 'TeleCMI missed',
+  'ai-callback-missed': 'AI call-back missed',
+  'ai-inbound-missed': 'AI inbound missed',
+}
+// "Missed Call Hi Message" (backend services/whatsappMissedCallService.js)
+const MISSED_CALL_EVENT = 'missed_call_message'
+const DEFAULT_MISSED_TEXT = 'Hi'
+const MISSED_TRIGGER_LABELS = {
+  telecmi: 'TeleCMI call missed',
+  aiCallback: 'AI call-back not answered',
+  aiInbound: 'AI inbound call not answered',
+}
+const MISSED_VALUE_KEYS = ['name', 'mobile', 'branch']
 const VALUE_LABELS = {
   name: 'Customer Name',
   mobile: 'Mobile Number',
@@ -61,6 +79,9 @@ const VALUE_LABELS = {
   appointment: 'Appointment Date & Time',
   payment_link: 'Payment Link',
 }
+
+/** Picker value of a recent call — a TeleCMI row can be missed twice (the call + its AI call-back). */
+const callKey = (c) => c.key || String(c.refId)
 
 const sameVar = (a, b) =>
   a.component === b.component && String(a.key) === String(b.key) && (a.component !== 'button' || Number(a.buttonIndex) === Number(b.buttonIndex))
@@ -107,10 +128,10 @@ const EMPTY_SAMPLE = {
   appointment: 'tomorrow 10 a.m.',
 }
 
-const ValuesTable = ({ values }) => (
+const ValuesTable = ({ values, keys }) => (
   <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
     <tbody>
-      {Object.entries(VALUE_LABELS).map(([k, label]) => (
+      {Object.entries(VALUE_LABELS).filter(([k]) => !keys || keys.includes(k)).map(([k, label]) => (
         <tr key={k} style={{ borderBottom: '1px solid var(--border-color)' }}>
           <td style={{ padding: '4px 8px 4px 0', width: '40%' }} className="mgmt-muted">{label}</td>
           <td style={{ padding: '4px 0', wordBreak: 'break-all' }}>
@@ -154,6 +175,7 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
   const { isMobile } = useResponsive()
   const [form] = Form.useForm()
   const mapping = event.mapping
+  const isMissed = event.key === MISSED_CALL_EVENT
   const [variables, setVariables] = useState([])
   const [templateId, setTemplateId] = useState('')
   const [dirty, setDirty] = useState(false)
@@ -182,6 +204,7 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
   const [testMapping, { isLoading: isTesting }] = useTestWhatsAppEventMappingMutation()
   const [previewForCall, { isLoading: isPreviewing }] = usePreviewWhatsAppEventForCallMutation()
   const [sendForCall, { isLoading: isSendingForCall }] = useSendWhatsAppEventForCallMutation()
+  const [runCheck, { isLoading: isRunningCheck }] = useRunWhatsAppEventCheckMutation()
   // Recent calls / message log load only once the card has been opened.
   const { data: recentData, isFetching: isFetchingRecent, refetch: refetchRecent } = useGetRecentAiCallsForEventQuery(
     event.key,
@@ -203,6 +226,19 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
       triggerAiCallback: mapping ? mapping.triggerAiCallback !== false : true,
       triggerAiInbound: !!mapping?.triggerAiInbound,
       resolveRelativeDates: mapping ? mapping.resolveRelativeDates !== false : true,
+      ...(isMissed
+        ? {
+            messageType: mapping?.messageType || 'text',
+            textMessage: mapping?.textMessage || DEFAULT_MISSED_TEXT,
+            missedTriggers: {
+              telecmi: mapping?.missedTriggers?.telecmi !== false,
+              aiCallback: mapping?.missedTriggers?.aiCallback !== false,
+              aiInbound: mapping?.missedTriggers?.aiInbound !== false,
+            },
+            cooldownHours: mapping?.cooldownHours ?? 24,
+            skipIfAnswered: mapping ? mapping.skipIfAnswered !== false : true,
+          }
+        : {}),
     })
     setTemplateId(mapping?.templateId || '')
     setVariables((mapping?.variables || []).map((v) => ({ ...v })))
@@ -222,6 +258,11 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
   const needsMedia = MEDIA_HEADERS.includes(headerFormat)
   const paymentLink = Form.useWatch('paymentLink', form)
   const resolveRelativeDates = Form.useWatch('resolveRelativeDates', form)
+  const messageType = Form.useWatch('messageType', form)
+  const textMessage = Form.useWatch('textMessage', form)
+  // Missed-call event in plain-text mode: the template is only the (optional) fallback.
+  const isTextMode = isMissed && messageType === 'text'
+  const canSendWithoutTemplate = isTextMode
 
   const templateOptions = useMemo(() => {
     const opts = templates.map((t) => ({
@@ -239,13 +280,23 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
 
   const handleTemplateChange = (id) => {
     const t = templates.find((x) => x.templateId === id)
+    // Only guess a value this event offers (the missed-call event has no therapy / payment link…)
+    const allowed = new Set((event.sources || []).map((s) => s.key))
     setTemplateId(id || '')
     setVariables(
       (t?.variables || []).map((tv) => {
         const prev = variables.find((p) => sameVar(p, tv))
+        const guess = guessSource(tv)
         return prev
           ? { ...prev }
-          : { component: tv.component, key: tv.key, buttonIndex: tv.buttonIndex ?? null, source: guessSource(tv), staticValue: '', fallback: '' }
+          : {
+              component: tv.component,
+              key: tv.key,
+              buttonIndex: tv.buttonIndex ?? null,
+              source: allowed.has(guess) ? guess : '',
+              staticValue: '',
+              fallback: '',
+            }
       })
     )
     markDirty()
@@ -342,11 +393,11 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
 
   const handlePreview = async () => {
     setPreview(null)
-    const call = (recentData?.calls || []).find((c) => String(c.refId) === String(selectedCall))
+    const call = (recentData?.calls || []).find((c) => callKey(c) === String(selectedCall))
     try {
       const result = await previewForCall({ ...buildBody(), source: call?.source, refId: call?.refId }).unwrap()
       setPreview(result)
-      if (!selectedCall && result.refId) setSelectedCall(String(result.refId))
+      if (!selectedCall && result.refId) setSelectedCall(result.key || String(result.refId))
     } catch (err) {
       message.error(err?.data?.message || 'Preview failed')
     }
@@ -363,6 +414,18 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
     } catch (err) {
       message.error(err?.data?.message || 'Send failed')
       refetchLogs()
+    }
+  }
+
+  // Missed-call event: run the 5-minute check right now
+  const handleRunCheck = async () => {
+    try {
+      const result = await runCheck(event.key).unwrap()
+      message.success(result.message || 'Check finished')
+      refetchRecent()
+      refetchLogs()
+    } catch (err) {
+      message.error(err?.data?.message || 'Check failed')
     }
   }
 
@@ -445,7 +508,15 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
     { title: 'Trigger', dataIndex: 'source', key: 'source', width: 110, render: (s) => SOURCE_LABELS[s] || s },
     { title: 'To', dataIndex: 'to', key: 'to', width: 130 },
     { title: 'Customer', dataIndex: 'customerName', key: 'customerName', width: 130, render: (v) => v || '—' },
-    { title: 'Template', dataIndex: 'templateName', key: 'templateName', width: 140 },
+    {
+      title: 'Template',
+      dataIndex: 'templateName',
+      key: 'templateName',
+      width: 140,
+      // Missed-call event in plain-text mode logs the text instead of a template
+      render: (v, r) =>
+        v || (r.requestPayload?.type === 'text' ? `Text: ${r.requestPayload?.text?.body || ''}` : '—'),
+    },
     {
       title: 'Status',
       dataIndex: 'status',
@@ -461,16 +532,22 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
     {
       title: 'Details',
       key: 'details',
-      render: (_, r) => r.skippedReason || r.error || (r.messageId ? `Message id ${r.messageId}` : '—'),
+      render: (_, r) =>
+        r.skippedReason ||
+        r.error ||
+        [r.note, r.messageId ? `Message id ${r.messageId}` : ''].filter(Boolean).join(' · ') ||
+        '—',
     },
   ]
 
-  const triggerSummary = [
-    mapping?.triggerAiCallback !== false && 'AI call-back answered',
-    mapping?.triggerAiInbound && 'AI inbound answered',
-  ]
+  const triggerSummary = (
+    isMissed
+      ? Object.entries(MISSED_TRIGGER_LABELS).map(([k, label]) => mapping?.missedTriggers?.[k] !== false && label)
+      : [mapping?.triggerAiCallback !== false && 'AI call-back answered', mapping?.triggerAiInbound && 'AI inbound answered']
+  )
     .filter(Boolean)
     .join(', ')
+  const sweep = event.sweep || null
 
   return (
     <Card className="mgmt-settings-card" style={{ marginBottom: 16 }}>
@@ -496,8 +573,17 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
             <p className="mgmt-muted" style={{ margin: '4px 0 0', fontSize: 13 }}>{event.description}</p>
           ) : (
             <p className="mgmt-muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
-              Template: <strong>{mapping.templateName || 'not selected'}</strong>
-              {mapping.templateName && mapping.templateLanguage ? ` (${mapping.templateLanguage})` : ''}
+              {isMissed && mapping.messageType === 'text' ? (
+                <>
+                  Message: <strong>“{mapping.textMessage || DEFAULT_MISSED_TEXT}”</strong>
+                  {mapping.templateName ? ` (fallback template ${mapping.templateName})` : ''}
+                </>
+              ) : (
+                <>
+                  Template: <strong>{mapping.templateName || 'not selected'}</strong>
+                  {mapping.templateName && mapping.templateLanguage ? ` (${mapping.templateLanguage})` : ''}
+                </>
+              )}
               {' · '}Sends when: {triggerSummary || 'no trigger'}
               {' · '}Updated {formatDateTime(mapping.updatedAt)}
             </p>
@@ -537,8 +623,39 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
               <Switch checkedChildren="On" unCheckedChildren="Off" />
             </Form.Item>
           </Col>
+          {isMissed && (
+            <Col xs={24} md={12}>
+              <Form.Item name="messageType" label="Message to send">
+                <Radio.Group>
+                  <Radio value="text">Plain text (e.g. “Hi”)</Radio>
+                  <Radio value="template">WhatsApp template</Radio>
+                </Radio.Group>
+              </Form.Item>
+            </Col>
+          )}
+          {isMissed && (
+            <Col xs={24} md={12}>
+              {/* hidden, not unmounted, in template mode — so the text is kept on Save */}
+              <Form.Item
+                name="textMessage"
+                label="Message text"
+                hidden={!isTextMode}
+                rules={[{ max: 4096, message: 'At most 4096 characters' }]}
+              >
+                <Input.TextArea autoSize={{ minRows: 1, maxRows: 4 }} placeholder={DEFAULT_MISSED_TEXT} />
+              </Form.Item>
+            </Col>
+          )}
           <Col xs={24} md={12}>
-            <Form.Item label="WhatsApp template" required>
+            <Form.Item
+              label={isTextMode ? 'Fallback template (recommended)' : 'WhatsApp template'}
+              required={!isTextMode}
+              help={
+                isTextMode
+                  ? 'Sent instead of the text when WhatsApp refuses it because the customer has not messaged you in the last 24 hours'
+                  : undefined
+              }
+            >
               <Select
                 showSearch
                 allowClear
@@ -551,6 +668,28 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
             </Form.Item>
           </Col>
         </Row>
+
+        {isTextMode && (
+          <Alert
+            type={templateId ? 'info' : 'warning'}
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={
+              templateId
+                ? 'The text is tried first. Customers who have not messaged your WhatsApp number in the last 24 hours get the fallback template instead.'
+                : 'WhatsApp only delivers plain text to customers who messaged your business number in the last 24 hours — for everyone else AskEVA refuses it. Select a fallback template so every missed caller gets a message.'
+            }
+          />
+        )}
+
+        {isTextMode && (
+          <div style={{ marginBottom: 16, maxWidth: 420 }}>
+            <div className="mgmt-muted" style={{ fontSize: 12, marginBottom: 4 }}>Message preview</div>
+            <div style={{ padding: 12, borderRadius: 8, background: '#dcf8c6', color: '#111', whiteSpace: 'pre-wrap', fontSize: 13 }}>
+              {String(textMessage || '').trim() || DEFAULT_MISSED_TEXT}
+            </div>
+          </div>
+        )}
 
         {template && (
           <Row gutter={16}>
@@ -639,6 +778,36 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
           </Row>
         )}
 
+        {isMissed ? (
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item label="Send when">
+                {Object.entries(MISSED_TRIGGER_LABELS).map(([k, label]) => (
+                  <div key={k}>
+                    <Form.Item name={['missedTriggers', k]} valuePropName="checked" noStyle>
+                      <Checkbox>{label}</Checkbox>
+                    </Form.Item>
+                  </div>
+                ))}
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="Once per customer every"
+                help="A customer who misses several calls gets only one message in this time (0 = every missed call)"
+              >
+                <Form.Item name="cooldownHours" noStyle>
+                  <InputNumber min={0} max={720} style={{ width: 120 }} />
+                </Form.Item>
+                <span style={{ marginLeft: 8 }}>hours</span>
+              </Form.Item>
+              <Form.Item name="skipIfAnswered" valuePropName="checked" style={{ marginTop: 8 }}>
+                <Checkbox>Don’t send if the customer answered another call (e.g. the AI call-back) around or after the missed one</Checkbox>
+              </Form.Item>
+            </Col>
+          </Row>
+        ) : (
+        <>
         <Row gutter={16}>
           <Col xs={24} md={12}>
             <Form.Item
@@ -683,6 +852,8 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
             </Form.Item>
           </Col>
         </Row>
+        </>
+        )}
 
         {canEdit ? (
           <Button
@@ -736,7 +907,7 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
             onChange={(e) => setSample((s) => ({ ...s, to: e.target.value }))}
           />
         </Col>
-        {['name', 'mobile', 'branch', 'therapy', 'appointment'].map((k) => (
+        {(isMissed ? (templateId ? MISSED_VALUE_KEYS : []) : ['name', 'mobile', 'branch', 'therapy', 'appointment']).map((k) => (
           <Col xs={24} md={k === 'appointment' ? 8 : 4} key={k}>
             <Input
               placeholder={VALUE_LABELS[k]}
@@ -748,9 +919,18 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
         ))}
       </Row>
       <p className="mgmt-muted" style={{ fontSize: 12, margin: '6px 0 8px' }}>
-        Uses the mapping above (saved or not) with these sample values. Payment Link comes from the field above.
+        {isMissed
+          ? isTextMode
+            ? 'Sends the text above (saved or not); if WhatsApp refuses it, the fallback template with these sample values.'
+            : 'Uses the mapping above (saved or not) with these sample values.'
+          : 'Uses the mapping above (saved or not) with these sample values. Payment Link comes from the field above.'}
       </p>
-      <Button icon={<SendOutlined />} loading={isTesting} onClick={handleTest} disabled={!canEdit || !templateId}>
+      <Button
+        icon={<SendOutlined />}
+        loading={isTesting}
+        onClick={handleTest}
+        disabled={!canEdit || (!templateId && !canSendWithoutTemplate)}
+      >
         Send Test
       </Button>
       {testResult && (
@@ -771,12 +951,48 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
         />
       )}
 
-      <Divider orientation="left" style={{ fontSize: 14 }}>Check against a real answered AI call</Divider>
+      {isMissed && (
+        <>
+          <Divider orientation="left" style={{ fontSize: 14 }}>Automatic check</Divider>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ flex: 1, minWidth: 260, fontSize: 13 }}>
+              {sweep?.enabled ? (
+                <>
+                  Missed calls are checked right after the call and again every{' '}
+                  <strong>{Math.round((sweep.everyMs || 300000) / 60000)} min</strong> (calls from the last{' '}
+                  {sweep.lookbackHours || 6} h, missed after the event was switched on).
+                </>
+              ) : (
+                <>Missed calls are checked right after the call. The periodic check is switched off on the server.</>
+              )}
+              <div className="mgmt-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                {sweep?.last
+                  ? `Last check ${formatDateTime(sweep.last.finishedAt || sweep.last.at)}: ${
+                      sweep.last.note
+                        ? sweep.last.note
+                        : `${sweep.last.checked} missed call(s) — sent ${sweep.last.sent}, not sent ${sweep.last.skipped}, failed ${sweep.last.failed}`
+                    }`
+                  : 'No check has run since the server started.'}
+              </div>
+            </div>
+            {canEdit && (
+              <Button icon={<ReloadOutlined />} loading={isRunningCheck} onClick={handleRunCheck} disabled={dirty}>
+                Check missed calls now
+              </Button>
+            )}
+          </div>
+          {dirty && <div className="mgmt-muted" style={{ fontSize: 12, marginTop: 4 }}>Save the mapping first to run the check.</div>}
+        </>
+      )}
+
+      <Divider orientation="left" style={{ fontSize: 14 }}>
+        {isMissed ? 'Check against a recent missed call' : 'Check against a real answered AI call'}
+      </Divider>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Select
           allowClear
           style={{ flex: 1, minWidth: 260 }}
-          placeholder="Latest answered AI call"
+          placeholder={isMissed ? 'Latest missed call' : 'Latest answered AI call'}
           value={selectedCall}
           onChange={(v) => {
             setSelectedCall(v)
@@ -784,14 +1000,19 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
           }}
           loading={isFetchingRecent}
           options={recentCalls.map((c) => ({
-            value: String(c.refId),
-            label: `${c.name || 'Unknown'} · ${c.phone || '—'} · ${formatDateTime(c.at)} · ${SOURCE_LABELS[c.source]}${
+            value: callKey(c),
+            label: `${c.name || 'Unknown'} · ${c.phone || '—'} · ${formatDateTime(c.at)} · ${SOURCE_LABELS[c.source] || c.source}${
               c.whatsappStatus ? ` · WhatsApp ${c.whatsappStatus}` : ''
             }`,
           }))}
         />
         <Button icon={<ReloadOutlined />} onClick={() => refetchRecent()} />
-        <Button icon={<EyeOutlined />} loading={isPreviewing} onClick={handlePreview} disabled={!templateId}>
+        <Button
+          icon={<EyeOutlined />}
+          loading={isPreviewing}
+          onClick={handlePreview}
+          disabled={!templateId && !canSendWithoutTemplate}
+        >
           Preview
         </Button>
       </div>
@@ -803,11 +1024,18 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
         <div style={{ marginTop: 12 }}>
           <Row gutter={16}>
             <Col xs={24} md={12}>
-              <div className="mgmt-muted" style={{ fontSize: 12, marginBottom: 4 }}>Values resolved from the AI call</div>
-              <ValuesTable values={preview.values} />
+              <div className="mgmt-muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                {isMissed ? 'Values resolved from the missed call' : 'Values resolved from the AI call'}
+              </div>
+              <ValuesTable values={preview.values} keys={isMissed ? MISSED_VALUE_KEYS : undefined} />
               <p style={{ marginTop: 8 }}>
                 <strong>Send to:</strong> {preview.to || <span className="mgmt-muted">no valid number</span>}
               </p>
+              {isMissed && preview.mode === 'text' && (
+                <p>
+                  <strong>Text:</strong> {preview.text}
+                </p>
+              )}
               {preview.whatsappConfirmation?.status && (
                 <p>
                   <strong>Already on this call:</strong>{' '}
@@ -833,11 +1061,28 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
               ) : (
                 <Alert type="success" showIcon message="Ready — this message would be sent" />
               )}
+              {preview.notes?.length > 0 && (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginTop: 8 }}
+                  message={
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {preview.notes.map((n) => <li key={n}>{n}</li>)}
+                    </ul>
+                  }
+                />
+              )}
               <Collapse
                 ghost
                 size="small"
                 style={{ marginTop: 8 }}
-                items={[{ key: 'p', label: 'Request to AskEVA', children: <JsonBlock value={preview.payload} /> }]}
+                items={[
+                  { key: 'p', label: 'Request to AskEVA', children: <JsonBlock value={preview.payload} /> },
+                  ...(preview.fallbackPayload
+                    ? [{ key: 'f', label: 'Fallback template request', children: <JsonBlock value={preview.fallbackPayload} /> }]
+                    : []),
+                ]}
               />
               {canEdit && (
                 <Popconfirm
@@ -886,7 +1131,7 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
           expandedRowRender: (r) => (
             <Row gutter={16}>
               <Col xs={24} md={10}>
-                <ValuesTable values={r.values} />
+                <ValuesTable values={r.values} keys={isMissed ? MISSED_VALUE_KEYS : undefined} />
               </Col>
               <Col xs={24} md={14}>
                 <JsonBlock value={r.requestPayload} />

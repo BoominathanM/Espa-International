@@ -11,7 +11,8 @@ const whatsappEventLogSchema = new mongoose.Schema(
   {
     eventKey: { type: String, required: true },
     dedupeKey: { type: String, default: undefined },
-    source: { type: String, default: '' }, // 'ai-callback' | 'ai-inbound' | 'test'
+    // 'ai-callback' | 'ai-inbound' | 'test' | missed-call event: 'telecmi-missed' | 'ai-callback-missed' | 'ai-inbound-missed'
+    source: { type: String, default: '' },
     status: { type: String, enum: ['pending', 'sent', 'failed', 'skipped'], default: 'pending' },
     attempts: { type: Number, default: 1 },
 
@@ -31,6 +32,8 @@ const whatsappEventLogSchema = new mongoose.Schema(
     responseStatus: { type: Number, default: null },
     responseData: { type: mongoose.Schema.Types.Mixed, default: null },
     messageId: { type: String, default: '' },
+    // e.g. "Text refused by WhatsApp (…) — sent template "x" instead" (missed-call event)
+    note: { type: String, default: '' },
     sentAt: { type: Date, default: null },
     triggeredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // test sends
   },
@@ -41,5 +44,7 @@ whatsappEventLogSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true })
 whatsappEventLogSchema.index({ eventKey: 1, createdAt: -1 })
 whatsappEventLogSchema.index({ telecmiCallLog: 1 })
 whatsappEventLogSchema.index({ zenxaiInboundCall: 1 })
+// "Once per customer every N hours" lookup of the missed-call event
+whatsappEventLogSchema.index({ eventKey: 1, to: 1, createdAt: -1 })
 
 export default mongoose.model('WhatsAppEventLog', whatsappEventLogSchema, 'whatsappeventlogs')

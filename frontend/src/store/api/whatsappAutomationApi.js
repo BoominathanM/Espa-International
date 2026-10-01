@@ -38,6 +38,11 @@ export const whatsappAutomationApi = apiSlice.injectEndpoints({
       query: ({ eventKey, ...body }) => ({ url: `/whatsapp-settings/events/${eventKey}/send-for-call`, method: 'POST', body }),
       invalidatesTags: ['WhatsAppEventLog', 'TeleCMICallLog'],
     }),
+    // Missed Call Hi Message: run the 5-minute missed-call check now
+    runWhatsAppEventCheck: builder.mutation({
+      query: (eventKey) => ({ url: `/whatsapp-settings/events/${eventKey}/run-check`, method: 'POST' }),
+      invalidatesTags: ['WhatsAppEvent', 'WhatsAppEventLog', 'TeleCMICallLog'],
+    }),
     getWhatsAppEventLogs: builder.query({
       query: ({ eventKey, page = 1, limit = 20 } = {}) => ({
         url: '/whatsapp-settings/event-logs',
@@ -58,5 +63,6 @@ export const {
   useGetRecentAiCallsForEventQuery,
   usePreviewWhatsAppEventForCallMutation,
   useSendWhatsAppEventForCallMutation,
+  useRunWhatsAppEventCheckMutation,
   useGetWhatsAppEventLogsQuery,
 } = whatsappAutomationApi

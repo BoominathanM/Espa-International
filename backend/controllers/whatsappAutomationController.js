@@ -17,7 +17,18 @@ import {
   runAiCallConfirmation,
   sendEventTestMessage,
   AI_CALL_CONFIRMATION,
+  MISSED_CALL_MESSAGE,
 } from '../services/whatsappEventService.js'
+import {
+  DEFAULT_MISSED_TEXT,
+  getMissedCallSweepStatus,
+  isMissedSource,
+  previewMissedCallMessage,
+  recentMissedCalls,
+  runMissedCallMessage,
+  runMissedCallSweep,
+  sendMissedCallTestMessage,
+} from '../services/whatsappMissedCallService.js'
 
 const LOG = '[WA-SETTINGS]'
 const isObjectId = (v) => /^[0-9a-fA-F]{24}$/.test(String(v || ''))
@@ -52,7 +63,12 @@ export const syncTemplatesFromAskEva = async (req, res) => {
 export const listWhatsAppEvents = async (req, res) => {
   try {
     const mappings = await WhatsAppEventMapping.find({}).lean()
-    const events = WHATSAPP_EVENTS.map((e) => ({ ...e, mapping: mappings.find((m) => m.eventKey === e.key) || null }))
+    const events = WHATSAPP_EVENTS.map((e) => ({
+      ...e,
+      mapping: mappings.find((m) => m.eventKey === e.key) || null,
+      // The missed-call event's 5-minute check (is it running, what did the last one do)
+      ...(e.key === MISSED_CALL_MESSAGE ? { sweep: getMissedCallSweepStatus() } : {}),
+    }))
     res.json({ success: true, events })
   } catch (error) {
     console.error(LOG, 'list events error:', error.message)
@@ -93,6 +109,24 @@ const mappingFromBody = (eventKey, body = {}) => {
     triggerAiInbound: !!body.triggerAiInbound,
     resolveRelativeDates: body.resolveRelativeDates !== false,
   }
+  // Missed Call Hi Message only: plain text ("Hi") or template, which missed calls, how often.
+  const isMissedEvent = eventKey === MISSED_CALL_MESSAGE
+  if (isMissedEvent) {
+    const triggers = body.missedTriggers && typeof body.missedTriggers === 'object' ? body.missedTriggers : {}
+    const hours = Number(body.cooldownHours)
+    mapping.messageType = body.messageType === 'template' ? 'template' : 'text'
+    mapping.textMessage = (str(body.textMessage) || DEFAULT_MISSED_TEXT).slice(0, 4096)
+    mapping.missedTriggers = {
+      telecmi: triggers.telecmi !== false,
+      aiCallback: triggers.aiCallback !== false,
+      aiInbound: triggers.aiInbound !== false,
+    }
+    mapping.cooldownHours =
+      body.cooldownHours === undefined || body.cooldownHours === null || body.cooldownHours === '' || !Number.isFinite(hours)
+        ? 24
+        : Math.min(720, Math.max(0, hours))
+    mapping.skipIfAnswered = body.skipIfAnswered !== false
+  }
 
   const errors = []
   for (const v of variables) {
@@ -103,7 +137,10 @@ const mappingFromBody = (eventKey, body = {}) => {
 
   const activationProblems = []
   if (mapping.isActive) {
-    if (!mapping.templateName) activationProblems.push('Select a WhatsApp template')
+    // Plain-text mode needs no template (an optional one is the fallback)
+    if (!mapping.templateName && !(isMissedEvent && mapping.messageType === 'text')) {
+      activationProblems.push('Select a WhatsApp template')
+    }
     for (const v of variables) {
       if (!v.source) activationProblems.push(`Map {{${v.key}}} to a value`)
       else if (v.source === 'static' && !v.staticValue) activationProblems.push(`Enter the custom text for {{${v.key}}}`)
@@ -114,7 +151,12 @@ const mappingFromBody = (eventKey, body = {}) => {
     if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(mapping.headerFormat) && !mapping.headerMediaUrl) {
       activationProblems.push(`The template has a ${mapping.headerFormat.toLowerCase()} header — enter the header media URL`)
     }
-    if (!mapping.triggerAiCallback && !mapping.triggerAiInbound) activationProblems.push('Choose at least one "Send when" option')
+    if (isMissedEvent) {
+      const t = mapping.missedTriggers
+      if (!t.telecmi && !t.aiCallback && !t.aiInbound) activationProblems.push('Choose at least one "Send when" option')
+    } else if (!mapping.triggerAiCallback && !mapping.triggerAiInbound) {
+      activationProblems.push('Choose at least one "Send when" option')
+    }
   }
   return { mapping, errors, activationProblems }
 }
@@ -134,6 +176,12 @@ export const saveWhatsAppEventMapping = async (req, res) => {
 
     const wantedActive = mapping.isActive
     if (activationProblems.length) mapping.isActive = false
+    // Remember when automatic sending was switched on (the missed-call event never messages
+    // calls missed before that).
+    if (mapping.isActive) {
+      const prev = await WhatsAppEventMapping.findOne({ eventKey }).select('isActive').lean()
+      if (!prev?.isActive) mapping.activatedAt = new Date()
+    }
     const saved = await WhatsAppEventMapping.findOneAndUpdate(
       { eventKey },
       { $set: { ...mapping, lastUpdatedBy: req.user?._id || null } },
@@ -178,13 +226,19 @@ export const testWhatsAppEventMapping = async (req, res) => {
     if (!isKnownEvent(eventKey)) return res.status(404).json({ success: false, message: 'Unknown event' })
     const { mapping, errors } = mappingFromBody(eventKey, { ...req.body, isActive: false })
     if (errors.length) return res.status(400).json({ success: false, message: errors.join('. '), errors })
-    if (!mapping.templateName) return res.status(400).json({ success: false, message: 'Select a template first' })
+    const isMissedText = eventKey === MISSED_CALL_MESSAGE && mapping.messageType === 'text'
+    if (!mapping.templateName && !isMissedText) return res.status(400).json({ success: false, message: 'Select a template first' })
     if (!str(req.body?.to)) return res.status(400).json({ success: false, message: 'Enter the WhatsApp number to send the test to' })
 
-    const result = await sendEventTestMessage(mapping, { to: req.body.to, sample: req.body.sample || {} }, req.user?._id || null)
+    const send = eventKey === MISSED_CALL_MESSAGE ? sendMissedCallTestMessage : sendEventTestMessage
+    const result = await send(mapping, { to: req.body.to, sample: req.body.sample || {} }, req.user?._id || null)
     res.status(result.sent ? 200 : 400).json({
       success: !!result.sent,
-      message: result.sent ? 'Test message sent' : `Test message not sent: ${result.reason || 'unknown error'}`,
+      message: result.sent
+        ? result.note
+          ? `Test message sent — ${result.note}`
+          : 'Test message sent'
+        : `Test message not sent: ${result.reason || 'unknown error'}`,
       ...result,
     })
   } catch (error) {
@@ -232,6 +286,7 @@ const recentAnsweredAiCalls = async (limit = 10) => {
 // @route GET /api/whatsapp-settings/events/:eventKey/recent-calls
 export const listRecentAiCallsForEvent = async (req, res) => {
   try {
+    if (req.params.eventKey === MISSED_CALL_MESSAGE) return res.json({ success: true, calls: await recentMissedCalls(15) })
     res.json({ success: true, calls: await recentAnsweredAiCalls(15) })
   } catch (error) {
     console.error(LOG, 'recent AI calls error:', error.message)
@@ -246,6 +301,7 @@ export const listRecentAiCallsForEvent = async (req, res) => {
 export const previewWhatsAppEventForCall = async (req, res) => {
   try {
     const { eventKey } = req.params
+    if (eventKey === MISSED_CALL_MESSAGE) return await previewMissedCall(req, res)
     if (eventKey !== AI_CALL_CONFIRMATION) return res.status(404).json({ success: false, message: 'Unknown event' })
     const { mapping, errors } = mappingFromBody(eventKey, { ...req.body, isActive: false })
     if (errors.length) return res.status(400).json({ success: false, message: errors.join('. '), errors })
@@ -283,6 +339,7 @@ export const previewWhatsAppEventForCall = async (req, res) => {
 export const sendWhatsAppEventForCall = async (req, res) => {
   try {
     const { eventKey } = req.params
+    if (eventKey === MISSED_CALL_MESSAGE) return await sendMissedCallNow(req, res)
     if (eventKey !== AI_CALL_CONFIRMATION) return res.status(404).json({ success: false, message: 'Unknown event' })
     const { source, refId } = req.body || {}
     if (!isObjectId(refId)) return res.status(400).json({ success: false, message: 'refId (call id) is required' })
@@ -297,6 +354,59 @@ export const sendWhatsAppEventForCall = async (req, res) => {
   } catch (error) {
     console.error(LOG, 'send-for-call error:', error.message)
     res.status(500).json({ success: false, message: error.message || 'Send failed' })
+  }
+}
+
+/* ------------------------------------------------------------------------------------------
+ * Missed Call Hi Message (services/whatsappMissedCallService.js)
+ * ------------------------------------------------------------------------------------------ */
+
+/** Preview for one recent missed call (body.source + body.refId; the latest one when omitted). */
+const previewMissedCall = async (req, res) => {
+  const { mapping, errors } = mappingFromBody(MISSED_CALL_MESSAGE, { ...req.body, isActive: false })
+  if (errors.length) return res.status(400).json({ success: false, message: errors.join('. '), errors })
+  let { source, refId } = req.body || {}
+  if (!isMissedSource(source) || !isObjectId(refId)) {
+    const latest = (await recentMissedCalls(1))[0]
+    if (!latest) return res.status(404).json({ success: false, message: 'No missed call yet' })
+    source = latest.source
+    refId = latest.refId
+  }
+  const preview = await previewMissedCallMessage(mapping, source, refId)
+  if (!preview) return res.status(404).json({ success: false, message: 'Call not found' })
+  res.json({ success: true, ...preview })
+}
+
+/** "Send now" for one real missed call with the SAVED mapping — never twice for the same call. */
+const sendMissedCallNow = async (req, res) => {
+  const { source, refId } = req.body || {}
+  if (!isMissedSource(source)) return res.status(400).json({ success: false, message: 'source (kind of missed call) is required' })
+  if (!isObjectId(refId)) return res.status(400).json({ success: false, message: 'refId (call id) is required' })
+  const result = await runMissedCallMessage(source, refId, { manual: true, userId: req.user?._id || null })
+  const message = result.sent
+    ? `Message sent to ${result.to}`
+    : `Not sent: ${String(result.reason || 'unknown error').replace(/^Not sent: /, '')}`
+  res.status(result.sent ? 200 : 400).json({ success: !!result.sent, message, ...result })
+}
+
+/**
+ * Run the missed-call check now (the same one that runs every 5 minutes) and report what it did.
+ * @route POST /api/whatsapp-settings/events/:eventKey/run-check
+ */
+export const runWhatsAppEventCheck = async (req, res) => {
+  try {
+    if (req.params.eventKey !== MISSED_CALL_MESSAGE) {
+      return res.status(404).json({ success: false, message: 'This event has no periodic check' })
+    }
+    const result = await runMissedCallSweep({ trigger: 'manual' })
+    if (result.busy) return res.status(409).json({ success: false, message: result.message })
+    const message = result.note
+      ? `Nothing checked — ${result.note}`
+      : `Checked ${result.checked} missed call(s): sent ${result.sent}, not sent ${result.skipped}, failed ${result.failed}`
+    res.json({ success: true, message, result, sweep: getMissedCallSweepStatus() })
+  } catch (error) {
+    console.error(LOG, 'run check error:', error.message)
+    res.status(500).json({ success: false, message: `Check failed: ${error.message}` })
   }
 }
 

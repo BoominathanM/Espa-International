@@ -364,6 +364,7 @@ const Calls = () => {
         leadLinked: !!log.lead,
         leadId: log.lead?._id,
         whatsappConfirmation: log.whatsappConfirmation || null,
+        whatsappMissedCall: log.whatsappMissedCall || null,
       }
     })
   }, [telecmiCallLogs])
@@ -484,6 +485,7 @@ const Calls = () => {
         endedReason: c.endedReason || '',
         date: formatCallDateTime(c.startedAt || c.createdAt),
         whatsappConfirmation: c.whatsappConfirmation || null,
+        whatsappMissedCall: c.whatsappMissedCall || null,
         leadLinked: !!c.lead,
         leadCreated: !!c.leadCreated,
         leadName,
@@ -1205,6 +1207,8 @@ const Calls = () => {
             {selectedTeleCMICall.zenxai &&
               renderZenxaiSection('AI Call-back (ZenXAI)', selectedTeleCMICall.zenxai, `zx-${selectedTeleCMICall._id}`)}
             {renderWhatsappConfirmation(selectedTeleCMICall.whatsappConfirmation)}
+            {renderWhatsappMissedCall('WhatsApp missed-call message', selectedTeleCMICall.whatsappMissedCall?.telecmi)}
+            {renderWhatsappMissedCall('WhatsApp message (AI call-back not answered)', selectedTeleCMICall.whatsappMissedCall?.aiCallback)}
             {selectedTeleCMICall.zenxaiFeedback &&
               renderZenxaiSection('AI Feedback call (ZenXAI)', selectedTeleCMICall.zenxaiFeedback, `zxfb-${selectedTeleCMICall._id}`)}
           </div>
@@ -1253,6 +1257,7 @@ const Calls = () => {
             )}
             {renderZenxaiSection('AI inbound call (ZenXAI)', selectedInboundCall.zenxai, `zxin-${selectedInboundCall._id}`)}
             {renderWhatsappConfirmation(selectedInboundCall.whatsappConfirmation)}
+            {renderWhatsappMissedCall('WhatsApp missed-call message', selectedInboundCall.whatsappMissedCall)}
           </div>
         )}
       </Modal>
@@ -1275,6 +1280,33 @@ function renderWhatsappConfirmation(wc) {
         </Tag>
       </p>
       {wc.templateName && <p style={{ marginBottom: 4 }}><strong>Template:</strong> {wc.templateName}</p>}
+      {wc.to && <p style={{ marginBottom: 4 }}><strong>To:</strong> {wc.to}</p>}
+      {(wc.sentAt || wc.at) && (
+        <p style={{ marginBottom: 4 }}><strong>{wc.sentAt ? 'Sent' : 'At'}:</strong> {formatCallDateTime(wc.sentAt || wc.at)}</p>
+      )}
+      {wc.reason && <p style={{ marginBottom: 4 }}><strong>Reason:</strong> {wc.reason}</p>}
+    </div>
+  )
+}
+
+/** The WhatsApp "Missed Call Hi Message" sent after a missed call (Settings → WhatsApp API → Event Mapping). */
+function renderWhatsappMissedCall(title, wc) {
+  if (!wc?.status) return null
+  return (
+    <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+      <p style={{ marginBottom: 4 }}>
+        <strong>{title}:</strong>{' '}
+        <Tag color={WHATSAPP_CONFIRMATION_COLORS[wc.status] || 'default'}>
+          {WHATSAPP_CONFIRMATION_LABELS[wc.status] || wc.status}
+        </Tag>
+      </p>
+      {wc.via === 'text' && wc.text && <p style={{ marginBottom: 4 }}><strong>Message:</strong> {wc.text}</p>}
+      {wc.templateName && (
+        <p style={{ marginBottom: 4 }}>
+          <strong>Template:</strong> {wc.templateName}
+          {wc.via === 'template-fallback' ? ' (text was refused — sent as template)' : ''}
+        </p>
+      )}
       {wc.to && <p style={{ marginBottom: 4 }}><strong>To:</strong> {wc.to}</p>}
       {(wc.sentAt || wc.at) && (
         <p style={{ marginBottom: 4 }}><strong>{wc.sentAt ? 'Sent' : 'At'}:</strong> {formatCallDateTime(wc.sentAt || wc.at)}</p>

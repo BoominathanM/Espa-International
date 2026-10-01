@@ -41,6 +41,26 @@ const whatsappEventMappingSchema = new mongoose.Schema(
     triggerAiInbound: { type: Boolean, default: false },
     // "tomorrow 10 a.m." → "Wed, 30 Sep 2026 10 a.m." (relative to the day of the call, IST)
     resolveRelativeDates: { type: Boolean, default: true },
+
+    // ---- "Missed Call Hi Message" event only (see services/whatsappMissedCallService.js) ----
+    // 'text' = plain WhatsApp text (textMessage, e.g. "Hi") — WhatsApp only delivers it when the
+    // customer messaged us in the last 24 h, so the template above (if any) is sent instead when
+    // AskEVA refuses the text; 'template' = always the template above.
+    messageType: { type: String, enum: ['template', 'text'], default: 'template' },
+    textMessage: { type: String, default: '' },
+    // Which missed calls fire the event
+    missedTriggers: {
+      telecmi: { type: Boolean, default: true }, // TeleCMI call status "missed"
+      aiCallback: { type: Boolean, default: true }, // ZenXAI AI call-back not answered / busy
+      aiInbound: { type: Boolean, default: true }, // ZenXAI AI inbound call not answered / busy / failed
+    },
+    // At most one message per customer number within this many hours (0 = no limit)
+    cooldownHours: { type: Number, default: 24 },
+    // Don't send when the customer answered another call around / after the missed one
+    skipIfAnswered: { type: Boolean, default: true },
+    // When automatic sending was last switched on — calls missed before that are not messaged
+    activatedAt: { type: Date, default: null },
+
     lastUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true }

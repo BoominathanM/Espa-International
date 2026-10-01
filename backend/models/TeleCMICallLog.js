@@ -111,6 +111,14 @@ const telecmiCallLogSchema = new mongoose.Schema(
     // WhatsApp "AI Call Confirmation Message" sent after the AI call-back above was answered
     // (see services/whatsappEventService.js) — the latest attempt; full history in whatsappeventlogs.
     whatsappConfirmation: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    // WhatsApp "Missed Call Hi Message" (services/whatsappMissedCallService.js) — the latest
+    // attempt for each way this row can be a missed call: the TeleCMI call itself (status
+    // "missed") and the ZenXAI AI call-back (not answered). Full history in whatsappeventlogs.
+    whatsappMissedCall: {
+      telecmi: { type: mongoose.Schema.Types.Mixed, default: null },
+      aiCallback: { type: mongoose.Schema.Types.Mixed, default: null },
+    },
   },
   { timestamps: true }
 )

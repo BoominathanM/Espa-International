@@ -14,6 +14,7 @@ import {
   previewWhatsAppEventForCall,
   sendWhatsAppEventForCall,
   listWhatsAppEventLogs,
+  runWhatsAppEventCheck,
 } from '../controllers/whatsappAutomationController.js'
 import { authenticate, isSuperAdmin } from '../middleware/auth.js'
 
@@ -35,6 +36,7 @@ router.post('/events/:eventKey/test', authenticate, isSuperAdmin, testWhatsAppEv
 router.get('/events/:eventKey/recent-calls', authenticate, isSuperAdmin, listRecentAiCallsForEvent)
 router.post('/events/:eventKey/preview', authenticate, isSuperAdmin, previewWhatsAppEventForCall)
 router.post('/events/:eventKey/send-for-call', authenticate, isSuperAdmin, sendWhatsAppEventForCall)
+router.post('/events/:eventKey/run-check', authenticate, isSuperAdmin, runWhatsAppEventCheck)
 router.get('/event-logs', authenticate, isSuperAdmin, listWhatsAppEventLogs)
 
 export default router

@@ -40,6 +40,8 @@ const zenxaiInboundCallSchema = new mongoose.Schema(
 
     // WhatsApp "AI Call Confirmation Message" for this call (see services/whatsappEventService.js).
     whatsappConfirmation: { type: mongoose.Schema.Types.Mixed, default: null },
+    // WhatsApp "Missed Call Hi Message" when this call was not answered (services/whatsappMissedCallService.js).
+    whatsappMissedCall: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true }
 )

@@ -25,9 +25,11 @@ import { buildTemplatePayload, sendAskEvaTemplate } from './whatsappTemplateServ
 
 const LOG = '[WA-EVENTS]'
 const DEFAULT_DELAY_MS = 10000
-const MAX_ATTEMPTS = 3
+export const MAX_ATTEMPTS = 3
 
 export const AI_CALL_CONFIRMATION = 'ai_call_confirmation'
+// Handled by services/whatsappMissedCallService.js (sending, triggers, 5-minute check).
+export const MISSED_CALL_MESSAGE = 'missed_call_message'
 
 /** Where a template variable can take its value from. */
 export const EVENT_VARIABLE_SOURCES = [
@@ -49,6 +51,13 @@ export const WHATSAPP_EVENTS = [
       'Sent to the customer on WhatsApp once a ZenXAI AI call is answered, filled with the details the AI agent collected (name, mobile, branch, therapy, appointment date & time) and your payment link.',
     sources: EVENT_VARIABLE_SOURCES,
   },
+  {
+    key: MISSED_CALL_MESSAGE,
+    name: 'Missed Call Hi Message',
+    description:
+      'Sent to the customer on WhatsApp when a call is missed — a TeleCMI call with status Missed, a ZenXAI AI call-back that was not answered, or an AI inbound call that was not answered. Checked right after the call and again every 5 minutes; at most one message per customer within the cooldown.',
+    sources: EVENT_VARIABLE_SOURCES.filter((s) => ['name', 'mobile', 'branch', 'static'].includes(s.key)),
+  },
 ]
 
 export const isKnownEvent = (key) => WHATSAPP_EVENTS.some((e) => e.key === key)
@@ -58,7 +67,7 @@ export const isKnownSource = (key) => SOURCE_KEYS.has(key)
  * Values
  * ------------------------------------------------------------------------------------------ */
 
-const clean = (value) => {
+export const clean = (value) => {
   const s = String(value ?? '').trim()
   if (!s || /^(not available|unknown|null|undefined|n\/a|na|none|-)$/i.test(s)) return ''
   return s
@@ -67,7 +76,7 @@ const clean = (value) => {
 const digitsOf = (v) => String(v ?? '').replace(/\D/g, '')
 
 /** Number as it reads in a message: Indian numbers as their 10 digits, others +<digits>. */
-const displayPhone = (raw) => {
+export const displayPhone = (raw) => {
   const d = digitsOf(raw)
   if (!d) return ''
   if (d.length === 12 && d.startsWith('91')) return d.slice(2)
@@ -154,7 +163,7 @@ export const resolveRelativeDate = (text, baseDate) => {
   return s
 }
 
-const leadNameOf = (lead) => clean(`${lead?.first_name || ''} ${lead?.last_name || ''}`)
+export const leadNameOf = (lead) => clean(`${lead?.first_name || ''} ${lead?.last_name || ''}`)
 
 /**
  * Every variable value for one answered AI call. The AI agent's collected data wins; the CRM
@@ -290,7 +299,7 @@ export const loadAiCallContext = async (source, refId) => {
 }
 
 /** Unique-key claim: a new row, or a failed/skipped one taken back for another attempt. */
-const claimLogRow = async (dedupeKey, base, { ignoreAttemptCap = false } = {}) => {
+export const claimLogRow = async (dedupeKey, base, { ignoreAttemptCap = false } = {}) => {
   try {
     return await WhatsAppEventLog.create({ ...base, dedupeKey, status: 'pending', attempts: 1 })
   } catch (err) {
