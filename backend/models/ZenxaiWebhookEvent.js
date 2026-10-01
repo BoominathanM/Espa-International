@@ -21,6 +21,8 @@ const zenxaiWebhookEventSchema = new mongoose.Schema(
     assistantKind: { type: String, default: '' }, // 'outbound' | 'feedback' | 'inbound' (which ZenXAI assistant)
     callLog: { type: mongoose.Schema.Types.ObjectId, ref: 'TeleCMICallLog', default: null },
     lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null },
+    // Set when the event belongs to a "Send feedback call" button call (zenxaifeedbackcalls).
+    feedbackCall: { type: mongoose.Schema.Types.ObjectId, ref: 'ZenxaiFeedbackCall', default: null },
     payload: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true }

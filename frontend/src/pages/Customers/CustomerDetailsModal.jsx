@@ -1,10 +1,12 @@
 import React, { useState } from 'react'
-import { Modal, Tag } from 'antd'
-import { UserOutlined, CloseOutlined } from '@ant-design/icons'
+import { Button, Modal, Tag } from 'antd'
+import { UserOutlined, CloseOutlined, PhoneOutlined, StarOutlined } from '@ant-design/icons'
 import WhatsAppIcon from '../../components/LiveChat/WhatsAppIcon'
 import LiveChatPanel from '../../components/LiveChat/LiveChatPanel'
+import CustomerFeedbackCalls from './CustomerFeedbackCalls'
 
-const CustomerDetailsModal = ({ open, customer, onClose, isMobile }) => {
+/** `onSendFeedbackCall` (optional) shows the "Send feedback call" button in the header. */
+const CustomerDetailsModal = ({ open, customer, onClose, isMobile, onSendFeedbackCall, feedbackCalling }) => {
   const [activeTab, setActiveTab] = useState('chat')
 
   const name = customer?.name || 'Customer'
@@ -48,6 +50,20 @@ const CustomerDetailsModal = ({ open, customer, onClose, isMobile }) => {
             <Tag className="cd-modal__tag">{primaryTag}</Tag>
           </div>
           <div className="cd-modal__header-right">
+            {onSendFeedbackCall && (
+              <Button
+                type="primary"
+                size="small"
+                icon={<PhoneOutlined />}
+                loading={feedbackCalling}
+                disabled={!customer?.mobile && !customer?.whatsapp}
+                onClick={() => onSendFeedbackCall(customer, { onSent: () => setActiveTab('feedback') })}
+                title="Send feedback call"
+                aria-label="Send feedback call"
+              >
+                {isMobile ? null : 'Send feedback call'}
+              </Button>
+            )}
             <span className="cd-modal__branch">
               Company / Branch: <strong>{branch}</strong>
             </span>
@@ -77,6 +93,14 @@ const CustomerDetailsModal = ({ open, customer, onClose, isMobile }) => {
               <UserOutlined className="cd-sidebar__profile-icon" />
               Customer Profile
             </button>
+            <button
+              type="button"
+              className={`cd-sidebar__item${activeTab === 'feedback' ? ' is-active' : ''}`}
+              onClick={() => setActiveTab('feedback')}
+            >
+              <StarOutlined className="cd-sidebar__feedback-icon" />
+              Feedback
+            </button>
           </aside>
 
           {activeTab === 'chat' ? (
@@ -86,6 +110,13 @@ const CustomerDetailsModal = ({ open, customer, onClose, isMobile }) => {
               customerId={customer?._id}
               active={open}
             />
+          ) : activeTab === 'feedback' ? (
+            <section className="cd-main">
+              <div className="cd-profile">
+                <h3 className="cd-profile__title">Feedback</h3>
+                <CustomerFeedbackCalls customerId={customer?._id} />
+              </div>
+            </section>
           ) : (
             <section className="cd-main">
               <div className="cd-profile">

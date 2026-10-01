@@ -51,6 +51,19 @@ export const customerApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['Customer', 'Lead', 'Dashboard'],
     }),
+    // "Send feedback call" — ZenXAI feedback assistant calls this customer's mobile now.
+    sendCustomerFeedbackCall: builder.mutation({
+      query: (id) => ({
+        url: `/customers/${id}/feedback-call`,
+        method: 'POST',
+      }),
+      invalidatesTags: (result, error, id) => [{ type: 'Customer', id }, 'TeleCMICallLog', 'FeedbackCall'],
+    }),
+    // ZenXAI feedback calls + responses for one customer (details modal / timeline → Feedback).
+    getCustomerFeedbackCalls: builder.query({
+      query: (id) => `/customers/${id}/feedback-calls`,
+      providesTags: ['FeedbackCall'],
+    }),
   }),
 })
 
@@ -62,4 +75,6 @@ export const {
   useCreateCustomerMutation,
   useUpdateCustomerMutation,
   useConvertLeadToCustomerMutation,
+  useSendCustomerFeedbackCallMutation,
+  useGetCustomerFeedbackCallsQuery,
 } = customerApi

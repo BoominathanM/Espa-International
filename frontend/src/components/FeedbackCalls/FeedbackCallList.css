@@ -1,0 +1,169 @@
+/* ZenXAI feedback calls + responses (FeedbackCallList.jsx). Theme variables only, so it follows dark mode. */
+
+.fbc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fbc-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fbc-list-title {
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.fbc-loading {
+  display: flex;
+  justify-content: center;
+  padding: 32px 0;
+}
+
+.fbc-card {
+  padding: 14px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-color);
+  font-size: 13px;
+}
+
+.fbc-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  color: var(--text-secondary);
+}
+
+.fbc-card-head .ant-tag {
+  margin-inline-end: 0;
+}
+
+.fbc-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.fbc-card-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.fbc-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--text-secondary);
+}
+
+.fbc-line {
+  margin-top: 10px;
+  white-space: pre-wrap;
+}
+
+.fbc-muted {
+  color: var(--text-muted);
+}
+
+.fbc-answers {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--table-header-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.fbc-answers-title {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.fbc-answers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px 24px;
+  margin: 0;
+}
+
+.fbc-answer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.fbc-answer dt {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.fbc-answer dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  color: var(--text-color);
+  overflow-wrap: anywhere;
+}
+
+.fbc-answer-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fbc-answer-rating .ant-rate {
+  font-size: 14px;
+}
+
+.fbc-answer-rating .ant-rate-star:not(:last-child) {
+  margin-inline-end: 2px;
+}
+
+.fbc-answer-score {
+  white-space: nowrap;
+}
+
+.fbc-audio {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* Table cell variant */
+.fbc-inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  cursor: default;
+}
+
+.fbc-inline-item {
+  white-space: nowrap;
+}
+
+.fbc-inline-label {
+  color: var(--text-secondary);
+}
+
+.fbc-inline-more {
+  color: var(--text-muted);
+  white-space: nowrap;
+}

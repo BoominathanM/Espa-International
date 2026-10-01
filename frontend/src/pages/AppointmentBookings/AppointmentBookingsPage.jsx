@@ -44,6 +44,7 @@ import {
   CloseCircleOutlined,
   ApartmentOutlined,
   TeamOutlined,
+  PhoneOutlined,
 } from '@ant-design/icons'
 import { useResponsive } from '../../hooks/useResponsive'
 import {
@@ -56,7 +57,16 @@ import {
   useRescheduleAppointmentMutation,
   useAddAppointmentNoteMutation,
   useSyncAskEvaAppointmentsMutation,
+  useSendAppointmentFeedbackCallMutation,
+  useGetAppointmentFeedbackCallsQuery,
+  useGetFeedbackCallsForLeadsQuery,
 } from '../../store/api/leadApi'
+import FeedbackCallList, {
+  FeedbackStatusTag,
+  FeedbackResponsesInline,
+  feedbackPollInterval,
+} from '../../components/FeedbackCalls/FeedbackCallList'
+import { useConfirmFeedbackCall } from '../../hooks/useConfirmFeedbackCall'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
 import dayjs from 'dayjs'
@@ -384,9 +394,9 @@ function AppointmentStatsCards({
 }
 
 /** Full appointment detail: tabs persist via API (complete / reschedule / notes). */
-function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
+function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi, initialTab = 'details' }) {
   const { data, isLoading, isFetching, error, refetch } = useGetLeadQuery(leadId)
-  const [detailTab, setDetailTab] = useState('details')
+  const [detailTab, setDetailTab] = useState(initialTab)
   const [completeForm] = Form.useForm()
   const [cancelForm] = Form.useForm()
   const [rescheduleForm] = Form.useForm()
@@ -395,6 +405,24 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
   const [cancelAppt, { isLoading: cancelling }] = useCancelAppointmentMutation()
   const [rescheduleAppt, { isLoading: rescheduling }] = useRescheduleAppointmentMutation()
   const [addNote, { isLoading: noteSaving }] = useAddAppointmentNoteMutation()
+  const [sendFeedbackCall, { isLoading: feedbackCalling }] = useSendAppointmentFeedbackCallMutation()
+  const confirmFeedbackCall = useConfirmFeedbackCall()
+  const [feedbackPoll, setFeedbackPoll] = useState(0)
+  const {
+    data: feedbackData,
+    isLoading: feedbackLoading,
+    isFetching: feedbackCallsFetching,
+    refetch: refetchFeedbackCalls,
+  } = useGetAppointmentFeedbackCallsQuery(leadId, {
+    skip: !leadId || detailTab !== 'feedback',
+    pollingInterval: feedbackPoll,
+    refetchOnMountOrArgChange: 30,
+  })
+  const feedbackCalls = feedbackData?.calls || []
+  // Keep refreshing while a feedback call is still running, so its responses appear by themselves.
+  useEffect(() => {
+    setFeedbackPoll(feedbackPollInterval(feedbackData?.calls))
+  }, [feedbackData])
 
   const lead = data?.lead
   const isDone = lead?.status === 'Converted'
@@ -450,6 +478,17 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
       if (e?.data?.message) messageApi.error(e.data.message)
     }
   }
+
+  const onSendFeedbackCall = () =>
+    confirmFeedbackCall({
+      name: `${(lead?.first_name || '').trim()} ${(lead?.last_name || '').trim()}`.trim(),
+      phone: lead?.phone || lead?.whatsapp || '',
+      send: async () => {
+        const res = await sendFeedbackCall(leadId).unwrap()
+        setDetailTab('feedback') // watch the responses come in
+        return res
+      },
+    })
 
   const onAddNote = async () => {
     try {
@@ -788,7 +827,19 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
           <MessageOutlined /> Feedback
         </span>
       ),
-      children: (
+      children: feedbackLoading ? (
+        <div className="appt-feedback-outer">
+          <Spin style={{ display: 'block', margin: '24px auto' }} />
+        </div>
+      ) : feedbackCalls.length > 0 ? (
+        <div className="appt-feedback-outer">
+          <FeedbackCallList
+            calls={feedbackCalls}
+            fetching={feedbackCallsFetching}
+            onRefresh={refetchFeedbackCalls}
+          />
+        </div>
+      ) : (
         <div className="appt-feedback-outer">
           <div className="appt-feedback-inner">
             <span className="appt-feedback-icon">i</span>
@@ -799,7 +850,8 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
                 <strong>{name}</strong>, mobile <strong>{lead.phone || '—'}</strong>.
               </div>
               <div className="appt-feedback-footnote">
-                Feedback can be linked when your WhatsApp flows store responses by this mobile number.
+                Use &quot;Send feedback call&quot; (top right) — the customer&apos;s answers from the AI feedback call
+                will appear here.
               </div>
             </div>
           </div>
@@ -841,15 +893,29 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi }) {
       }
     >
       <div className="appt-detail-summary">
-        <div className="appt-detail-summary-title">{name}&apos;s Appointment Details</div>
-        <Space wrap size="large" className="appt-detail-summary-meta">
-          <span>Created: {lead.createdAt ? dayjs(lead.createdAt).format('D/M/YYYY h:mm A') : '-'}</span>
-          <span>ID: {appointmentDisplayId(lead)}</span>
-          <span>User: {lead.assignedTo?.name || '-'}</span>
-          <span>Dept: {lead.branch?.name || '-'}</span>
-          <Tag color={st.color}>{st.label}</Tag>
-          <span>Desc: {lead.message || lead.notes || '—'}</span>
-        </Space>
+        <div className="appt-detail-summary-row">
+          <div className="appt-detail-summary-main">
+            <div className="appt-detail-summary-title">{name}&apos;s Appointment Details</div>
+            <Space wrap size="large" className="appt-detail-summary-meta">
+              <span>Created: {lead.createdAt ? dayjs(lead.createdAt).format('D/M/YYYY h:mm A') : '-'}</span>
+              <span>ID: {appointmentDisplayId(lead)}</span>
+              <span>User: {lead.assignedTo?.name || '-'}</span>
+              <span>Dept: {lead.branch?.name || '-'}</span>
+              <Tag color={st.color}>{st.label}</Tag>
+              <span>Desc: {lead.message || lead.notes || '—'}</span>
+            </Space>
+          </div>
+          <Button
+            type="primary"
+            icon={<PhoneOutlined />}
+            loading={feedbackCalling}
+            disabled={!lead.phone && !lead.whatsapp}
+            onClick={onSendFeedbackCall}
+            className="appt-btn-primary appt-detail-feedback-btn"
+          >
+            Send feedback call
+          </Button>
+        </div>
       </div>
       <Tabs activeKey={detailTab} onChange={setDetailTab} items={detailTabItems} className="appt-detail-tabs" />
     </Card>
@@ -877,6 +943,7 @@ const AppointmentBookingsPage = () => {
   const [newAppointmentOpen, setNewAppointmentOpen] = useState(false)
   const [editingLead, setEditingLead] = useState(null)
   const [detailLeadId, setDetailLeadId] = useState(null)
+  const [detailInitialTab, setDetailInitialTab] = useState('details')
   const [searchText, setSearchText] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [filterBranches, setFilterBranches] = useState([])
@@ -921,6 +988,8 @@ const AppointmentBookingsPage = () => {
   const [createLead, { isLoading: createLoading }] = useCreateLeadMutation()
   const [updateLead, { isLoading: updateLoading }] = useUpdateLeadMutation()
   const [syncAskEvaAppointments, { isLoading: syncAskEvaLoading }] = useSyncAskEvaAppointmentsMutation()
+  const [sendFeedbackCall] = useSendAppointmentFeedbackCallMutation()
+  const confirmFeedbackCall = useConfirmFeedbackCall()
 
   const branches = branchesData?.branches || []
   const users = (usersData?.users || []).filter((u) => u.status === 'active')
@@ -1066,8 +1135,17 @@ const AppointmentBookingsPage = () => {
   }
 
   const handleView = (record) => {
+    // From the Feedbacks list tab, open straight on the appointment's Feedback tab.
+    setDetailInitialTab(activeView === 'list' && listTab === 'feedbacks' ? 'feedback' : 'details')
     setDetailLeadId(record._id)
   }
+
+  const handleSendFeedbackCall = (record) =>
+    confirmFeedbackCall({
+      name: `${(record.first_name || '').trim()} ${(record.last_name || '').trim()}`.trim(),
+      phone: record.phone || record.whatsapp || '',
+      send: () => sendFeedbackCall(record._id).unwrap(),
+    })
 
   const handleEdit = (record) => {
     setDetailLeadId(null)
@@ -1182,11 +1260,18 @@ const AppointmentBookingsPage = () => {
               ...(canEditAppointment
                 ? [{ key: 'edit', label: 'Edit appointment', icon: <EditOutlined /> }]
                 : []),
+              {
+                key: 'feedbackCall',
+                label: 'Send feedback call',
+                icon: <PhoneOutlined />,
+                disabled: !record.phone && !record.whatsapp,
+              },
             ],
             onClick: ({ key, domEvent }) => {
               domEvent?.stopPropagation()
               if (key === 'view') handleView(record)
               else if (key === 'edit' && canEditAppointment) handleEdit(record)
+              else if (key === 'feedbackCall') handleSendFeedbackCall(record)
             },
           }}
           trigger={['click']}
@@ -1203,6 +1288,69 @@ const AppointmentBookingsPage = () => {
         </Dropdown>
       ),
     },
+  ]
+
+  // Feedbacks list tab: the day's appointments with their AI feedback call + customer responses.
+  const showFeedbackList = activeView === 'list' && listTab === 'feedbacks'
+  const feedbackLeadIds = useMemo(() => leads.map((l) => String(l._id)).sort(), [leads])
+  const [feedbackListPoll, setFeedbackListPoll] = useState(0)
+  const { data: feedbackByLeadData, isFetching: feedbackListFetching } = useGetFeedbackCallsForLeadsQuery(
+    feedbackLeadIds,
+    {
+      skip: !showFeedbackList || feedbackLeadIds.length === 0,
+      pollingInterval: feedbackListPoll,
+      refetchOnMountOrArgChange: 30,
+    }
+  )
+  const feedbackByLead = feedbackByLeadData?.byLead || {}
+  useEffect(() => {
+    setFeedbackListPoll(feedbackPollInterval(Object.values(feedbackByLeadData?.byLead || {}).flat()))
+  }, [feedbackByLeadData])
+
+  const listColumn = (key) => listColumns.find((c) => c.key === key)
+  const feedbackListColumns = [
+    listColumn('sno'),
+    listColumn('id'),
+    listColumn('name'),
+    listColumn('appointment_date'),
+    listColumn('user'),
+    {
+      title: 'Feedback Call',
+      key: 'feedback_status',
+      width: 130,
+      render: (_, r) => {
+        const calls = feedbackByLead[r._id] || []
+        if (!calls.length) {
+          return !feedbackByLeadData && feedbackListFetching ? <Spin size="small" /> : <span className="appt-muted">Not sent</span>
+        }
+        return (
+          <Space size={4}>
+            <FeedbackStatusTag status={calls[0].status} />
+            {calls.length > 1 && <span className="appt-muted">×{calls.length}</span>}
+          </Space>
+        )
+      },
+    },
+    {
+      title: 'Customer Responses',
+      key: 'feedback_responses',
+      width: 340,
+      render: (_, r) => {
+        const latest = (feedbackByLead[r._id] || [])[0]
+        return latest ? <FeedbackResponsesInline call={latest} /> : <span className="appt-muted">—</span>
+      },
+    },
+    {
+      title: 'Called At',
+      key: 'feedback_at',
+      width: 140,
+      render: (_, r) => {
+        const latest = (feedbackByLead[r._id] || [])[0]
+        const at = latest?.requestedAt || latest?.sortAt
+        return at ? dayjs(at).format('DD MMM, hh:mm A') : '-'
+      },
+    },
+    listColumn('action'),
   ]
 
   useEffect(() => {
@@ -1270,6 +1418,7 @@ const AppointmentBookingsPage = () => {
       <PageLayout className="appointment-bookings-page appt-page-shell">
         <AppointmentDetailPanel
           leadId={detailLeadId}
+          initialTab={detailInitialTab}
           onBack={() => {
             setDetailLeadId(null)
             refetchLeads()
@@ -1682,7 +1831,19 @@ const AppointmentBookingsPage = () => {
           />
           <div className="appt-table-wrap">
             <Table
-              columns={listColumns}
+              columns={showFeedbackList ? feedbackListColumns : listColumns}
+              expandable={
+                showFeedbackList
+                  ? {
+                      rowExpandable: (r) => (feedbackByLead[r._id] || []).length > 0,
+                      expandedRowRender: (r) => (
+                        <div className="appt-feedback-expanded">
+                          <FeedbackCallList calls={feedbackByLead[r._id]} />
+                        </div>
+                      ),
+                    }
+                  : undefined
+              }
               dataSource={searchFiltered}
               rowKey="_id"
               loading={leadsLoading}

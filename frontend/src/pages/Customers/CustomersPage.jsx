@@ -24,6 +24,7 @@ import {
   UpOutlined,
   DownOutlined,
   MoreOutlined,
+  PhoneOutlined,
 } from '@ant-design/icons'
 import { canEdit } from '../../utils/permissions'
 import { useResponsive } from '../../hooks/useResponsive'
@@ -36,9 +37,12 @@ import {
   useGetCustomerTimelineQuery,
   useAddCustomerTimelineNoteMutation,
   useUpdateCustomerTimelineNoteMutation,
+  useSendCustomerFeedbackCallMutation,
 } from '../../store/api/customerApi'
+import { useConfirmFeedbackCall } from '../../hooks/useConfirmFeedbackCall'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import CustomerDetailsModal from './CustomerDetailsModal'
+import CustomerFeedbackCalls from './CustomerFeedbackCalls'
 import './CustomersPage.css'
 
 const { TextArea } = Input
@@ -84,6 +88,21 @@ const Customers = () => {
   const [updateCustomer, { isLoading: updateLoading }] = useUpdateCustomerMutation()
   const [addTimelineNote, { isLoading: addingNote }] = useAddCustomerTimelineNoteMutation()
   const [updateTimelineNote, { isLoading: updatingNote }] = useUpdateCustomerTimelineNoteMutation()
+  const [sendFeedbackCall, { isLoading: feedbackCalling }] = useSendCustomerFeedbackCallMutation()
+  const confirmFeedbackCall = useConfirmFeedbackCall()
+
+  const handleSendFeedbackCall = (record, { onSent } = {}) => {
+    if (!record?._id) return
+    confirmFeedbackCall({
+      name: record.name,
+      phone: record.mobile || record.whatsapp || '',
+      send: async () => {
+        const res = await sendFeedbackCall(record._id).unwrap()
+        onSent?.()
+        return res
+      },
+    })
+  }
 
   const {
     data: timelineResp,
@@ -205,6 +224,12 @@ const Customers = () => {
         if (canEdit('customers')) {
           items.push({ key: 'edit', label: 'Edit customer', icon: <EditOutlined /> })
         }
+        items.push({
+          key: 'feedbackCall',
+          label: 'Send feedback call',
+          icon: <PhoneOutlined />,
+          disabled: !record.mobile && !record.whatsapp,
+        })
         const openEdit = () => {
           setSelectedCustomer(record)
           form.setFieldsValue({
@@ -227,6 +252,7 @@ const Customers = () => {
                   setSelectedCustomer(record)
                   setIsTimelineVisible(true)
                 } else if (key === 'edit') openEdit()
+                else if (key === 'feedbackCall') handleSendFeedbackCall(record)
               },
             }}
             trigger={['click']}
@@ -537,6 +563,8 @@ const Customers = () => {
         open={isDetailsVisible}
         customer={selectedCustomer}
         isMobile={isMobile}
+        onSendFeedbackCall={handleSendFeedbackCall}
+        feedbackCalling={feedbackCalling}
         onClose={() => {
           setIsDetailsVisible(false)
           if (!isModalVisible && !isTimelineVisible) {
@@ -669,6 +697,11 @@ const Customers = () => {
                         ]}
                       />
                     ),
+                  },
+                  {
+                    key: 'feedback',
+                    label: 'Feedback',
+                    children: <CustomerFeedbackCalls customerId={selectedCustomer._id} />,
                   },
                   {
                     key: 'notes',

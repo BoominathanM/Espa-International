@@ -19,6 +19,7 @@ import TeleCMICallLog from '../models/TeleCMICallLog.js'
 import crypto from 'crypto'
 import ZenxaiSendData from '../models/ZenxaiSendData.js'
 import ZenxaiWebhookEvent from '../models/ZenxaiWebhookEvent.js'
+import ZenxaiFeedbackCall from '../models/ZenxaiFeedbackCall.js'
 import Lead from '../models/Lead.js'
 import { createOrUpdateLeadFromPhone } from '../services/telecmiCallService.js'
 import {
@@ -37,6 +38,7 @@ import {
   scheduleMissedCallMessage,
 } from '../services/whatsappMissedCallService.js'
 import { replaceNoteLine } from '../utils/leadNoteLine.js'
+import { findManualFeedbackCall, applyFeedbackCallSnapshot } from './zenxaiFeedbackCallController.js'
 
 const LOG = '[TELECMI]'
 
@@ -1101,10 +1103,14 @@ const leadNoteForCall = (state, kind = 'outbound') => {
 }
 
 /* ------------------------------------------------------------------------------------------
- * Automatic FEEDBACK call — once the AI call-back ends "completed" (answered), the feedback
+ * Automatic FEEDBACK call — OFF by default since the "Send feedback call" button (Appointment
+ * Bookings / Customer Management, see zenxaiFeedbackCallController.js) took over. Opt back in
+ * with ZENXAI_FEEDBACK_AUTO_AFTER_CALLBACK=true — a new name on purpose, so the
+ * ZENXAI_FEEDBACK_AUTO=true already in existing .env files doesn't keep it running.
+ * When on: once the AI call-back ends "completed" (answered), the feedback
  * assistant (ZENXAI_FEEDBACK_API_*) calls the customer once. Deferred by
  * ZENXAI_FEEDBACK_DELAY_MS (default 60000) so the customer isn't rung the instant they hang up.
- * Opt out with ZENXAI_FEEDBACK_AUTO=false; ZENXAI_FEEDBACK_MIN_DURATION_SEC skips very short
+ * ZENXAI_FEEDBACK_AUTO=false still forces it off; ZENXAI_FEEDBACK_MIN_DURATION_SEC skips very short
  * call-backs (default 0 = no minimum). Nothing happens unless the feedback key is configured.
  * `zenxaiFeedback.requestedAt` is claimed atomically, so repeated completed/analysis_ready
  * events can never place a second feedback call. The timer is in-process: a backend restart
@@ -1165,6 +1171,10 @@ const pendingFeedbackCalls = new Set()
 
 /** @returns {boolean} true when a feedback call was (or already is) scheduled for this call log */
 const scheduleZenxaiFeedbackCall = (callLogId) => {
+  if (String(process.env.ZENXAI_FEEDBACK_AUTO_AFTER_CALLBACK || '').trim().toLowerCase() !== 'true') {
+    console.log(LOG, `AI call-back ${callLogId} answered — no automatic feedback call (sent from the "Send feedback call" button instead)`)
+    return false
+  }
   if (String(process.env.ZENXAI_FEEDBACK_AUTO || '').trim().toLowerCase() === 'false') return false
   if (!isZenxaiFeedbackApiEnabled()) {
     console.log(LOG, `AI call-back ${callLogId} answered — no feedback call (ZENXAI_FEEDBACK_API_KEY/ASSISTANT_ID not set)`)
@@ -1287,6 +1297,30 @@ const applyZenxaiEvent = async (type, data, eventId, eventRow) => {
   return { success: true, matched: true, kind, callLogId: callLog._id, leadNoted, feedbackScheduled }
 }
 
+/**
+ * Apply one ZenXAI event to a feedback call placed from the "Send feedback call" button
+ * (zenxaifeedbackcalls). Same rules as applyZenxaiEvent — a final status is never downgraded,
+ * one result note replaced in place — but no follow-ups: it IS the feedback call (no WhatsApp
+ * confirmation, no missed-call Hi). Returns null when the event isn't for such a call, so the
+ * caller falls back to applyZenxaiEvent unchanged.
+ */
+const applyManualFeedbackEvent = async (type, data, eventRow) => {
+  const fb = await findManualFeedbackCall(data)
+  if (!fb) return null
+
+  // Claim this event row first: an on-view sync (syncFeedbackCall) may be replaying stored events
+  // of the same call right now, and each event must be applied exactly once.
+  const claim = await ZenxaiWebhookEvent.updateOne(
+    { _id: eventRow._id, feedbackCall: null },
+    { $set: { feedbackCall: fb._id, lead: fb.lead || null, assistantKind: 'feedback' } }
+  )
+  if (!claim.modifiedCount) return { success: true, matched: true, kind: 'feedback', feedbackCallId: fb._id, noted: false }
+
+  const { noted } = await applyFeedbackCallSnapshot(fb._id, type, data)
+  console.log(LOG, `ZenXAI feedback (button) ${type} applied to feedback call ${fb._id}${noted ? ' + result note' : ''}`)
+  return { success: true, matched: true, kind: 'feedback', feedbackCallId: fb._id, noted }
+}
+
 /** True when the body is a Public Voice API event envelope rather than the legacy conversation shape. */
 export const isZenxaiApiEvent = (body) =>
   !!body && typeof body.type === 'string' && body.type.startsWith('call.') && !!body.data && typeof body.data === 'object'
@@ -1343,8 +1377,9 @@ export const handleZenxaiApiEvent = async (req, res) => {
     }
 
     // One event per call at a time (see withZenxaiCallLock), so each sees the previous one's writes.
-    const outcome = await withZenxaiCallLock(String(data.call_id || ''), () =>
-      applyZenxaiEvent(type, data, eventId, eventRow)
+    // A "Send feedback call" button call first; anything else takes the TeleCMI call-log path.
+    const outcome = await withZenxaiCallLock(String(data.call_id || ''), async () =>
+      (await applyManualFeedbackEvent(type, data, eventRow)) || applyZenxaiEvent(type, data, eventId, eventRow)
     )
     return res.status(200).json(outcome)
   } catch (error) {

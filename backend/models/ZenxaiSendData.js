@@ -40,6 +40,9 @@ const zenxaiSendDataSchema = new mongoose.Schema(
     // 'public-api' (crm.zenxai.io assistants/{id}/calls) or 'legacy' (voice.zenxai.io make_call)
     apiMode: { type: String, default: 'legacy' },
     zenxaiCallId: { type: String, default: '' },
+
+    // Feedback call placed from the "Send feedback call" button (no TeleCMI call behind it).
+    feedbackCall: { type: mongoose.Schema.Types.ObjectId, ref: 'ZenxaiFeedbackCall', default: null },
   },
   { timestamps: true }
 )

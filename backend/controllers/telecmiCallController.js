@@ -16,6 +16,7 @@ import {
 } from '../services/zenxaiMissedCallService.js'
 import ZenxaiWebhookEvent from '../models/ZenxaiWebhookEvent.js'
 import ZenxaiInboundCall from '../models/ZenxaiInboundCall.js'
+import ZenxaiFeedbackCall from '../models/ZenxaiFeedbackCall.js'
 import { shapeInboundCallForLead } from './zenxaiInboundController.js'
 import { phoneTailRegex } from '../services/zenxaiInboundLeadService.js'
 
@@ -562,6 +563,31 @@ const shapeZenxaiFeedbackFromLog = (log, req) => {
   }
 }
 
+/** A feedback call placed from the "Send feedback call" button (zenxaifeedbackcalls). */
+const shapeManualFeedbackCall = (fb, req) => ({
+  key: `mfb-${fb._id}`,
+  zenxaiCallId: fb.zenxaiCallId || '',
+  telecmiCallLogId: null,
+  feedbackCallId: fb._id,
+  source: 'feedback',
+  manual: true,
+  origin: fb.origin,
+  requestedByName: fb.requestedByName || '',
+  phone: fb.phone || '',
+  status: fb.status || '',
+  attempts: fb.attempts || 0,
+  durationSec: fb.durationSec ?? null,
+  endedReason: fb.endedReason || '',
+  failureReason: fb.failureReason || fb.error || '',
+  summary: fb.summary || '',
+  collectedData: fb.collectedData || null,
+  recordingUrl: fb.zenxaiCallId && fb.recordingUrl ? buildZenxaiRecordingUrl(req, fb.zenxaiCallId) : '',
+  missedCallAt: null,
+  requestedAt: fb.requestedAt || fb.createdAt || null,
+  endedAt: fb.endedAt || null,
+  sortAt: fb.endedAt || fb.lastEventAt || fb.requestedAt || fb.createdAt,
+})
+
 const shapeZenxaiCallFromEvent = (evt, req) => {
   const d = evt?.payload?.data || {}
   return {
@@ -624,6 +650,12 @@ export const getZenxaiCallsForLead = async (req, res) => {
       if (l.zenxaiCallId || l.zenxaiConversationAt) calls.push(shapeZenxaiCallFromLog(l, req))
       if (l.zenxaiFeedback?.callId || l.zenxaiFeedback?.requestedAt) calls.push(shapeZenxaiFeedbackFromLog(l, req))
     }
+    // Feedback calls placed from the "Send feedback call" button (appointment or customer).
+    const manualWho = [{ lead: lead._id }]
+    if (tail) manualWho.push({ phone: new RegExp(`${tail}$`) })
+    const manualFeedback = await ZenxaiFeedbackCall.find({ $or: manualWho }).sort({ createdAt: -1 }).limit(50).lean()
+    for (const fb of manualFeedback) calls.push(shapeManualFeedbackCall(fb, req))
+
     const known = new Set(calls.map((c) => c.zenxaiCallId).filter(Boolean))
 
     if (tail) {
@@ -633,6 +665,7 @@ export const getZenxaiCallsForLead = async (req, res) => {
         {
           $match: {
             callLog: null,
+            feedbackCall: null, // button feedback calls are listed from zenxaifeedbackcalls above
             phone: new RegExp(`${tail}$`),
             zenxaiCallId: { $nin: ['', null, 'run_test'] },
             type: { $ne: 'call.test' }, // dashboard "Send test" events stored before they were ignored
@@ -698,19 +731,26 @@ export const streamZenxaiRecording = async (req, res) => {
       callLog = await TeleCMICallLog.findOne({ 'zenxaiFeedback.callId': zenxaiCallId }).lean()
       if (callLog) kind = 'feedback'
     }
+    // A feedback call placed from the "Send feedback call" button (zenxaifeedbackcalls).
+    const buttonCall = callLog ? null : await ZenxaiFeedbackCall.findOne({ zenxaiCallId }).lean()
+    if (buttonCall) kind = 'feedback'
     const lastEvent = callLog
       ? null
       : await ZenxaiWebhookEvent.findOne({ zenxaiCallId }).sort({ eventCreatedAt: -1, createdAt: -1 }).lean()
-    if (!callLog && !lastEvent) {
+    if (!callLog && !lastEvent && !buttonCall) {
       return res.status(404).json({ success: false, message: 'Unknown ZenXAI call' })
     }
     if (lastEvent?.assistantKind === 'feedback') kind = 'feedback'
-    const phone = callLog?.customerNumber || lastEvent?.phone || ''
-    if (!(await canAccessZenxaiCall(req.user, { callLog, phone }))) {
+    const phone = callLog?.customerNumber || buttonCall?.phone || lastEvent?.phone || ''
+    const allowed = buttonCall
+      ? canAccessBranch(req.user, buttonCall.branch) || (await canAccessZenxaiCall(req.user, { callLog: null, phone }))
+      : await canAccessZenxaiCall(req.user, { callLog, phone })
+    if (!allowed) {
       return res.status(403).json({ success: false, message: 'Not allowed' })
     }
 
-    const storedUrl = kind === 'feedback' ? callLog?.zenxaiFeedback?.recordingUrl : callLog?.zenxaiRecordingUrl
+    const storedUrl =
+      buttonCall?.recordingUrl || (kind === 'feedback' ? callLog?.zenxaiFeedback?.recordingUrl : callLog?.zenxaiRecordingUrl)
     const fresh = await fetchZenxaiCall(zenxaiCallId, kind)
     const recordingUrl = fresh?.recording_url || storedUrl || lastEvent?.payload?.data?.recording_url || ''
     if (!/^https:\/\//i.test(recordingUrl)) {
@@ -719,6 +759,9 @@ export const streamZenxaiRecording = async (req, res) => {
     if (callLog && fresh?.recording_url && fresh.recording_url !== storedUrl) {
       const field = kind === 'feedback' ? 'zenxaiFeedback.recordingUrl' : 'zenxaiRecordingUrl'
       await TeleCMICallLog.updateOne({ _id: callLog._id }, { $set: { [field]: fresh.recording_url } })
+    }
+    if (buttonCall && fresh?.recording_url && fresh.recording_url !== buttonCall.recordingUrl) {
+      await ZenxaiFeedbackCall.updateOne({ _id: buttonCall._id }, { $set: { recordingUrl: fresh.recording_url } })
     }
 
     const headers = { ...zenxaiAuthHeadersFor(recordingUrl, kind) }

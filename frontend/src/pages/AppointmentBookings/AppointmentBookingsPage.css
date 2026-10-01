@@ -516,6 +516,29 @@
   font-size: 13px;
 }
 
+/* Summary text on the left, "Send feedback call" on the right (wraps under it on narrow screens). */
+.appointment-bookings-page .appt-detail-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.appointment-bookings-page .appt-detail-summary-main {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.appointment-bookings-page .appt-detail-feedback-btn {
+  flex: 0 0 auto;
+}
+
+/* Feedbacks list tab — expanded row with the full feedback calls (components/FeedbackCalls) */
+.appointment-bookings-page .appt-feedback-expanded {
+  padding: 4px 8px 8px;
+}
+
 .appointment-bookings-page .appt-detail-tabs.ant-tabs {
   color: var(--text-color);
 }

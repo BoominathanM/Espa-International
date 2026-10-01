@@ -167,6 +167,12 @@
   font-size: 16px;
 }
 
+.cd-sidebar__feedback-icon {
+  color: var(--primary-color, #b38200);
+  font-size: 16px;
+}
+
+
 /* Main chat pane */
 .cd-main {
   flex: 1;
@@ -648,4 +654,14 @@
   .cd-chat__composer-tools {
     display: none;
   }
+}
+
+/* Dark mode for the Customer Details popup: the side menu and the panes use fixed light
+   backgrounds above (text follows the theme), so swap them for the theme colours. Light unchanged. */
+[data-theme='dark'] .cd-sidebar {
+  background: var(--table-header-bg);
+}
+
+[data-theme='dark'] .cd-main {
+  background: var(--card-bg);
 }

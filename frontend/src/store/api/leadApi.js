@@ -167,6 +167,24 @@ export const leadApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: (result, error, { id }) => [{ type: 'Lead', id }, 'Lead'],
     }),
+    // "Send feedback call" — ZenXAI feedback assistant calls the appointment's customer now.
+    sendAppointmentFeedbackCall: builder.mutation({
+      query: (id) => ({
+        url: `/leads/${id}/feedback-call`,
+        method: 'POST',
+      }),
+      invalidatesTags: (result, error, id) => [{ type: 'Lead', id }, 'TeleCMICallLog', 'FeedbackCall'],
+    }),
+    // ZenXAI feedback calls + responses for one appointment (detail → Feedback tab).
+    getAppointmentFeedbackCalls: builder.query({
+      query: (id) => `/leads/${id}/feedback-calls`,
+      providesTags: ['FeedbackCall'],
+    }),
+    // …and for a list of appointments (Feedbacks list tab) → { byLead: { [leadId]: calls[] } }.
+    getFeedbackCallsForLeads: builder.query({
+      query: (leadIds) => ({ url: '/leads/feedback-calls', method: 'POST', body: { leadIds } }),
+      providesTags: ['FeedbackCall'],
+    }),
   }),
 })
 
@@ -188,4 +206,7 @@ export const {
   useCancelAppointmentMutation,
   useRescheduleAppointmentMutation,
   useAddAppointmentNoteMutation,
+  useSendAppointmentFeedbackCallMutation,
+  useGetAppointmentFeedbackCallsQuery,
+  useGetFeedbackCallsForLeadsQuery,
 } = leadApi

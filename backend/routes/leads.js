@@ -22,6 +22,11 @@ import {
   addAppointmentNote,
   mergeCallAudioToLead,
 } from '../controllers/leadController.js'
+import {
+  sendAppointmentFeedbackCall,
+  getAppointmentFeedbackCalls,
+  getFeedbackCallsForLeads,
+} from '../controllers/zenxaiFeedbackCallController.js'
 import { authenticate, isSuperAdmin, authenticateApiKey, authenticateWhatsAppApiKey } from '../middleware/auth.js'
 
 const router = express.Router()
@@ -47,6 +52,9 @@ router.post('/:id/complete', authenticate, completeAppointment)
 router.post('/:id/cancel', authenticate, cancelAppointment)
 router.post('/:id/reschedule', authenticate, rescheduleAppointment)
 router.post('/:id/appointment-notes', authenticate, addAppointmentNote)
+router.post('/:id/feedback-call', authenticate, sendAppointmentFeedbackCall)
+router.get('/:id/feedback-calls', authenticate, getAppointmentFeedbackCalls)
+router.post('/feedback-calls', authenticate, getFeedbackCallsForLeads)
 router.get('/:id', authenticate, getLead)
 router.put('/:id', authenticate, updateLead)
 router.delete('/:id', authenticate, isSuperAdmin, deleteLead)

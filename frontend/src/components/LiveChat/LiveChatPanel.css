@@ -564,3 +564,26 @@
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Dark mode. The surfaces above are fixed light colours while the text
+ * follows the theme, so in dark mode messages, the contact name and the
+ * message box were white-on-white. Only the surfaces are swapped for the
+ * theme's own dark colours here; light mode is unchanged.
+ * ------------------------------------------------------------------ */
+[data-theme='dark'] .cd-main,
+[data-theme='dark'] .cd-chat__composer,
+[data-theme='dark'] .cd-msg--incoming,
+[data-theme='dark'] .cd-quick__item {
+  background: var(--card-bg);
+}
+
+[data-theme='dark'] .cd-chat__messages {
+  background: var(--bg-color);
+}
+
+[data-theme='dark'] .cd-msg--staff-note,
+[data-theme='dark'] .cd-chat__attach-preview,
+[data-theme='dark'] .cd-quick__item:hover {
+  background: rgba(212, 160, 23, 0.12);
+}

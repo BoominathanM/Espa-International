@@ -312,6 +312,94 @@ const pushViaPublicApi = async (callLog, { assistant, source }, cfg, api) => {
 }
 
 /**
+ * FEEDBACK call placed by hand — the "Send feedback call" button in Appointment Bookings /
+ * Customer Management (see controllers/zenxaiFeedbackCallController.js). No TeleCMI call is
+ * behind it, so it goes through the Public Voice API only (the feedback assistant's own key):
+ * the returned call_id and metadata.manualFeedbackId are what let the webhook events find the
+ * zenxaifeedbackcalls row again. Each button press is its own row, so its own Idempotency-Key.
+ * Same return contract as pushMissedCallToZenxai ({status, data, zenxaiCallId, kind} /
+ * {skipped, missing}); throws on a ZenXAI error after logging it to zenxaisenddatas.
+ *
+ * @param {object} fb  ZenxaiFeedbackCall document (_id, origin, phone, customerName, lead, customer, branch)
+ */
+export const placeManualZenxaiFeedbackCall = async (fb) => {
+  const cfg = readConfig()
+  const feedbackCallId = String(fb._id)
+  const phone = withPlus(fb.phone)
+  const source = `manual-feedback-${fb.origin}`
+  const baseEntry = {
+    ...baseEntryFrom(null, { assistant: 'feedback', source }, phone),
+    customerName: fb.customerName || '',
+    status: '',
+    lead: fb.lead || null,
+    branches: fb.branch ? [fb.branch] : [],
+    feedbackCall: fb._id,
+  }
+  const skip = async (reason, extra = {}) => {
+    console.warn(LOG, `manual feedback call ${feedbackCallId} not placed — ${reason}`)
+    await recordSend({ ...baseEntry, ...extra, pushStatus: 'skipped', skippedReason: reason })
+    return { skipped: true, missing: [reason] }
+  }
+
+  if (!phone) return skip('customer phone number')
+  const tail = (v) => String(v ?? '').replace(/\D/g, '').slice(-10)
+  const ownTails = [cfg.fromEnv, process.env.TELECMI_FROM_NUMBER].map(tail).filter(Boolean)
+  if (ownTails.includes(tail(phone))) return skip('customer number is our own TeleCMI number')
+  const api = publicApiFor('feedback', cfg)
+  if (!api) return skip('ZENXAI_FEEDBACK_API_KEY/ZENXAI_FEEDBACK_API_ASSISTANT_ID')
+
+  const url = `${cfg.apiBaseUrl}/assistants/${api.assistantId}/calls`
+  const name = String(fb.customerName || '').trim()
+  const payload = {
+    phone,
+    reference: feedbackCallId,
+    metadata: {
+      source: 'espa-crm-manual-feedback',
+      kind: 'feedback',
+      manualFeedbackId: feedbackCallId,
+      origin: fb.origin,
+      leadId: fb.lead ? String(fb.lead) : '',
+      customerId: fb.customer ? String(fb.customer) : '',
+      customer_name: name,
+    },
+  }
+  if (api.nameInputKey && name) payload.inputs = { [api.nameInputKey]: name }
+  const headers = {
+    Authorization: `Bearer ${api.apiKey}`,
+    'Content-Type': 'application/json',
+    'Idempotency-Key': `manual-feedback-${feedbackCallId}`,
+  }
+  const entry = { ...baseEntry, apiMode: 'public-api', zenxaiUrl: url, requestPayload: payload }
+
+  console.log(LOG, `=> POST ${url} | AI feedback call (button, ${fb.origin}) to ${phone} ref=${feedbackCallId}`)
+  try {
+    const response = await axios.post(url, payload, { headers, timeout: 20000 })
+    const data = response.data ?? null
+    console.log(LOG, `<= ${response.status} call_id=${data?.call_id || '—'} status=${data?.status || '—'}`)
+    await recordSend({
+      ...entry,
+      pushStatus: 'sent',
+      responseStatus: response.status,
+      responseData: data,
+      zenxaiCallId: data?.call_id || '',
+    })
+    return { status: response.status, data, zenxaiCallId: data?.call_id || '', kind: 'feedback' }
+  } catch (err) {
+    const errBody = err.response?.data
+    const errText = err.response ? `${err.response.status} ${JSON.stringify(errBody)}` : err.message
+    console.error(LOG, `manual feedback call ${feedbackCallId} failed: ${errText}`)
+    await recordSend({
+      ...entry,
+      pushStatus: 'failed',
+      error: String(errText).slice(0, 500),
+      responseStatus: err.response?.status ?? null,
+      responseData: errBody ?? null,
+    })
+    throw err
+  }
+}
+
+/**
  * Extra TeleCMICallLog fields to $set after a successful push — the Public API's `call_id` and
  * initial status, so the webhook events can match this row. Empty for the legacy path. A
  * feedback call goes under zenxaiFeedback.* so it never replaces the call-back's own call_id.
