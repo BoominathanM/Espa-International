@@ -38,7 +38,9 @@ import {
 import dayjs from 'dayjs'
 import { useThemeMode } from '../hooks/useThemeMode'
 import AnimatedWrapper from './AnimatedWrapper'
+import PasswordRequirements from './PasswordRequirements'
 import { endActivitySession } from '../utils/activityTracker'
+import { strongPasswordRule } from '../utils/passwordPolicy'
 
 const { Header, Sider, Content } = AntLayout
 const PERMISSION_LABELS = {
@@ -64,6 +66,7 @@ const Layout = ({ children }) => {
   const [profileDrawerVisible, setProfileDrawerVisible] = useState(false)
   const [showChangePasswordForm, setShowChangePasswordForm] = useState(false)
   const [changePasswordForm] = Form.useForm()
+  const watchedProfileNewPassword = Form.useWatch('newPassword', changePasswordForm)
   const [notificationVisible, setNotificationVisible] = useState(false)
   
   // Notification hooks
@@ -641,17 +644,35 @@ const Layout = ({ children }) => {
                       label={<span className="profile-drawer__form-label">Current Password</span>}
                       rules={[{ required: true, message: 'Please enter current password' }]}
                     >
-                      <Input.Password placeholder="Enter current password" className="profile-drawer__input" />
+                      <Input.Password
+                        placeholder="Enter current password"
+                        className="profile-drawer__input"
+                        autoComplete="current-password"
+                      />
                     </Form.Item>
                     <Form.Item
                       name="newPassword"
                       label={<span className="profile-drawer__form-label">New Password</span>}
+                      dependencies={['currentPassword']}
                       rules={[
                         { required: true, message: 'Please enter new password' },
-                        { min: 6, message: 'Password must be at least 6 characters' },
+                        strongPasswordRule,
+                        ({ getFieldValue }) => ({
+                          validator(_, value) {
+                            if (!value || value !== getFieldValue('currentPassword')) {
+                              return Promise.resolve()
+                            }
+                            return Promise.reject(new Error('New password must be different from the current password'))
+                          },
+                        }),
                       ]}
+                      extra={<PasswordRequirements password={watchedProfileNewPassword} />}
                     >
-                      <Input.Password placeholder="Enter new password" className="profile-drawer__input" />
+                      <Input.Password
+                        placeholder="Enter a strong new password"
+                        className="profile-drawer__input"
+                        autoComplete="new-password"
+                      />
                     </Form.Item>
                     <Form.Item
                       name="confirmPassword"
@@ -669,7 +690,11 @@ const Layout = ({ children }) => {
                         }),
                       ]}
                     >
-                      <Input.Password placeholder="Confirm new password" className="profile-drawer__input" />
+                      <Input.Password
+                        placeholder="Confirm new password"
+                        className="profile-drawer__input"
+                        autoComplete="new-password"
+                      />
                     </Form.Item>
                     <Form.Item>
                       <Space className="profile-drawer__form-actions" direction="vertical" size="middle">

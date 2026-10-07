@@ -11,7 +11,7 @@ import { getApiBaseUrl } from '../utils/apiConfig'
 import './Login.css'
 
 const Login = () => {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const { isDark, toggleTheme } = useThemeMode()
   const navigate = useNavigate()
   const { login } = useAuth()
@@ -70,6 +70,24 @@ const Login = () => {
     }
   }
 
+  // There is no self-service reset email: passwords are reset by a Super Admin from
+  // Settings → User Management → Edit User → New Password.
+  const showForgotPasswordInfo = () => {
+    modal.info({
+      title: 'Forgot your password?',
+      content: (
+        <div>
+          <p>Please contact your administrator to reset your password.</p>
+          <p style={{ marginBottom: 0 }}>
+            A Super Admin can set a new password for you from{' '}
+            <strong>Settings → User Management → Edit User</strong>.
+          </p>
+        </div>
+      ),
+      okText: 'OK',
+    })
+  }
+
   return (
     <div className="login-page">
       <Tooltip title={isDark ? 'Light mode' : 'Dark mode'}>
@@ -110,7 +128,7 @@ const Login = () => {
           <Form.Item>
             <div className="login-page__forgot-wrap">
               <Tooltip title="Contact admin">
-                <Button type="link" className="login-page__forgot-link">
+                <Button type="link" className="login-page__forgot-link" onClick={showForgotPasswordInfo}>
                   Forgot Password?
                 </Button>
               </Tooltip>

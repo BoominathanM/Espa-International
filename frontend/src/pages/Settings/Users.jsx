@@ -35,6 +35,8 @@ import {
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useCreateRoleMutation, useDeleteRoleMutation, useGetRolesQuery } from '../../store/api/roleApi'
 import { countryCodes, parsePhoneNumber, formatPhoneNumber } from '../../utils/countryCodes'
+import { strongPasswordRule } from '../../utils/passwordPolicy'
+import PasswordRequirements from '../../components/PasswordRequirements'
 
 const { Option } = Select
 
@@ -84,6 +86,8 @@ const Users = () => {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const watchedBranches = Form.useWatch('branches', form)
+  const watchedPassword = Form.useWatch('password', form)
+  const watchedNewPassword = Form.useWatch('newPassword', form)
 
   // API hooks
   const { data: usersData, isLoading: usersLoading, refetch: refetchUsers } = useGetUsersQuery()
@@ -309,6 +313,9 @@ const Users = () => {
     const sanitizedPermissions = sanitizePermissionDraft(editablePermissions)
     setPermissionDraft(sanitizedPermissions)
     setNewRoleInput('')
+    // Clear values left from a previous open (e.g. a typed New Password), otherwise they
+    // would be submitted for this user too.
+    form.resetFields()
     form.setFieldsValue({
       ...record,
       branches: selectedBranches,
@@ -320,6 +327,13 @@ const Users = () => {
       permissions: sanitizedPermissions,
     })
     setIsModalVisible(true)
+  }
+
+  const closeUserModal = () => {
+    setIsModalVisible(false)
+    form.resetFields()
+    setHasCustomPermissions(true)
+    setPermissionDraft({})
   }
 
   const openDisableModal = (record) => {
@@ -448,6 +462,7 @@ const Users = () => {
         }).unwrap()
         message.success('User updated successfully')
       } else {
+        delete formData.confirmPassword
         await createUser(formData).unwrap()
         message.success('User created successfully')
       }
@@ -569,19 +584,18 @@ const Users = () => {
         className="ds-modal-wide"
         title={selectedUser ? 'Edit User' : 'Add New User'}
         open={isModalVisible}
-        onCancel={() => {
-          setIsModalVisible(false)
-          form.resetFields()
-          setHasCustomPermissions(true)
-          setPermissionDraft({})
-        }}
+        onCancel={closeUserModal}
         footer={null}
         width={isMobile ? '95%' : 600}
       >
+        {/* autoComplete hints stop the browser's password manager from filling the logged-in
+            admin's saved email/password into this form (Chrome/Edge treat email + password
+            fields as a login form otherwise). */}
         <Form
           form={form}
           layout="vertical"
           className="ds-form-grid"
+          autoComplete="off"
           onFinish={handleSubmit}
           initialValues={{
             role: 'staff',
@@ -608,22 +622,46 @@ const Users = () => {
                   { type: 'email', message: 'Please enter valid email' },
                 ]}
               >
-                <Input placeholder="Enter email" />
+                <Input placeholder="Enter email" autoComplete="off" />
               </Form.Item>
             </Col>
           </Row>
 
           {!selectedUser && (
-            <Form.Item
-              name="password"
-              label="Password"
-              rules={[
-                { required: true, message: 'Please enter password' },
-                { min: 6, message: 'Password must be at least 6 characters' },
-              ]}
-            >
-              <Input.Password placeholder="Enter password (min 6 characters)" />
-            </Form.Item>
+            <Row gutter={[16, 0]}>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="password"
+                  label="Password"
+                  rules={[{ required: true, message: 'Please enter password' }, strongPasswordRule]}
+                >
+                  <Input.Password placeholder="Enter a strong password" autoComplete="new-password" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="confirmPassword"
+                  label="Confirm Password"
+                  dependencies={['password']}
+                  rules={[
+                    { required: true, message: 'Please confirm password' },
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        if (!value || getFieldValue('password') === value) {
+                          return Promise.resolve()
+                        }
+                        return Promise.reject(new Error('Passwords do not match'))
+                      },
+                    }),
+                  ]}
+                >
+                  <Input.Password placeholder="Re-enter password" autoComplete="new-password" />
+                </Form.Item>
+              </Col>
+              <Col xs={24}>
+                <PasswordRequirements password={watchedPassword} style={{ margin: '-8px 0 16px' }} />
+              </Col>
+            </Row>
           )}
 
           {selectedUser && (
@@ -632,9 +670,10 @@ const Users = () => {
                 <Form.Item
                   name="newPassword"
                   label="New Password"
-                  rules={[{ min: 6, message: 'Password must be at least 6 characters' }]}
+                  rules={[strongPasswordRule]}
+                  extra={watchedNewPassword ? undefined : 'Leave blank to keep the current password'}
                 >
-                  <Input.Password placeholder="Enter new password (optional, min 6 characters)" />
+                  <Input.Password placeholder="Enter new password (optional)" autoComplete="new-password" />
                 </Form.Item>
               </Col>
               <Col xs={24} md={12}>
@@ -645,10 +684,15 @@ const Users = () => {
                   rules={[
                     ({ getFieldValue }) => ({
                       validator(_, value) {
-                        if (!value || !getFieldValue('newPassword')) {
+                        const newPassword = getFieldValue('newPassword')
+                        // Leaving both empty keeps the current password.
+                        if (!value && !newPassword) {
                           return Promise.resolve()
                         }
-                        if (value && getFieldValue('newPassword') === value) {
+                        if (newPassword && !value) {
+                          return Promise.reject(new Error('Please confirm the new password'))
+                        }
+                        if (newPassword === value) {
                           return Promise.resolve()
                         }
                         return Promise.reject(new Error('Passwords do not match'))
@@ -656,9 +700,14 @@ const Users = () => {
                     }),
                   ]}
                 >
-                  <Input.Password placeholder="Confirm new password" />
+                  <Input.Password placeholder="Confirm new password" autoComplete="new-password" />
                 </Form.Item>
               </Col>
+              {watchedNewPassword ? (
+                <Col xs={24}>
+                  <PasswordRequirements password={watchedNewPassword} style={{ margin: '-8px 0 16px' }} />
+                </Col>
+              ) : null}
             </Row>
           )}
 
@@ -943,7 +992,7 @@ const Users = () => {
               <Button type="primary" htmlType="submit" loading={createLoading || updateLoading}>
                 {selectedUser ? 'Update' : 'Create'}
               </Button>
-              <Button onClick={() => setIsModalVisible(false)}>Cancel</Button>
+              <Button onClick={closeUserModal}>Cancel</Button>
             </div>
           </Form.Item>
         </Form>

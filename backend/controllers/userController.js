@@ -5,6 +5,7 @@ import Notification from '../models/Notification.js'
 import Lead from '../models/Lead.js'
 import LoginHistory from '../models/LoginHistory.js'
 import ChatDeletionLog from '../models/ChatDeletionLog.js'
+import { getPasswordPolicyError } from '../utils/passwordPolicy.js'
 
 const ALLOWED_MODULES = ['dashboard', 'leads', 'appointmentBookings', 'calls', 'customers', 'reports', 'settings']
 const ALLOWED_ACTIONS = ['create', 'read', 'edit', 'delete']
@@ -158,6 +159,10 @@ export const createUser = async (req, res) => {
     if (!normalizedPermissions) {
       return res.status(400).json({ message: 'User-specific permissions are mandatory' })
     }
+    const passwordError = getPasswordPolicyError(password)
+    if (passwordError) {
+      return res.status(400).json({ message: passwordError })
+    }
 
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() })
@@ -271,6 +276,13 @@ export const updateUser = async (req, res) => {
     const user = await User.findById(req.params.id)
     if (!user) {
       return res.status(404).json({ message: 'User not found' })
+    }
+    // Password is optional on edit (blank keeps the current one); a new one must be strong.
+    if (password) {
+      const passwordError = getPasswordPolicyError(password)
+      if (passwordError) {
+        return res.status(400).json({ message: passwordError })
+      }
     }
 
     // Store old values for change tracking

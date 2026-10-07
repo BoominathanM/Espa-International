@@ -4,6 +4,7 @@ import LoginHistory from '../models/LoginHistory.js'
 import Branch from '../models/Branch.js'
 import jwt from 'jsonwebtoken'
 import { getGeolocationFromIP } from '../utils/geolocation.js'
+import { getPasswordPolicyError } from '../utils/passwordPolicy.js'
 
 // Generate JWT Token
 const generateToken = (userId) => {
@@ -349,10 +350,11 @@ export const changePassword = async (req, res) => {
       })
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ 
+    const passwordError = getPasswordPolicyError(newPassword)
+    if (passwordError) {
+      return res.status(400).json({
         success: false,
-        message: 'New password must be at least 6 characters long' 
+        message: passwordError,
       })
     }
 
@@ -370,7 +372,14 @@ export const changePassword = async (req, res) => {
     if (!isPasswordValid) {
       return res.status(401).json({ 
         success: false,
-        message: 'Current password is incorrect' 
+        message: 'Current password is incorrect'
+      })
+    }
+
+    if (newPassword === currentPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be different from the current password',
       })
     }
 
