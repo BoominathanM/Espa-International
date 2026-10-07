@@ -1,21 +1,39 @@
+import mongoose from 'mongoose'
 import Lead from '../models/Lead.js'
 import CallLog from '../models/CallLog.js'
 import User from '../models/User.js'
-import { applyCallLogBranchScope, getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
+import {
+  applyCallLogBranchScope,
+  getAccessibleBranchIds,
+  leadBranchMatchFromParam,
+  parseRequestedBranchIds,
+} from '../utils/branchAccess.js'
 import { parseIstDateRange } from '../utils/istDateRange.js'
 import { normalizeOzonetelAgentId, bucketCallStatus, formatCallStatusLabel } from '../utils/ozonetelFields.js'
 import { normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
+
+const toBranchObjectIds = (ids) =>
+  (ids || [])
+    .map((id) => String(id || '').trim())
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id))
 
 function buildLeadBranchFilter(req) {
   const { branch: branchParam } = req.query
   const user = req.user
   const filter = {}
   if (user.role !== 'superadmin' && !user.allBranches) {
-    const ids = getAccessibleBranchIds(user) || []
-    if (ids.length === 0) {
+    // ObjectIds, not strings: this filter feeds Lead.aggregate $match, which does not cast types.
+    const accessible = toBranchObjectIds(getAccessibleBranchIds(user) || [])
+    // Branches dropdown narrows within the user's own branches (same rule as applyCallLogBranchScope).
+    const requested = toBranchObjectIds(parseRequestedBranchIds(branchParam) || [])
+    const scoped = requested.length
+      ? requested.filter((r) => accessible.some((a) => a.equals(r)))
+      : accessible
+    if (scoped.length === 0) {
       filter._id = { $exists: false }
     } else {
-      filter.branch = { $in: ids }
+      filter.branch = { $in: scoped }
     }
   } else {
     const match = leadBranchMatchFromParam(branchParam)

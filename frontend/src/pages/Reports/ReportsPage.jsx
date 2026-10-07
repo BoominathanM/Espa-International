@@ -40,7 +40,7 @@ import {
 import { useResponsive } from '../../hooks/useResponsive'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import { useChartThemeTokens } from '../../hooks/useChartThemeTokens'
-import { isSuperAdmin, isAdmin, isSupervisor } from '../../utils/permissions'
+import { isSuperAdmin, isAdmin, isSupervisor, getStoredUser } from '../../utils/permissions'
 import { useGetReportsQuery, useLazyGetReportsQuery } from '../../store/api/reportApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import dayjs from 'dayjs'
@@ -51,6 +51,35 @@ import './reports-page.css'
 
 const { RangePicker } = DatePicker
 const { Option } = Select
+
+/** "All Branches" entry in the Branches filter; never sent to the API (no branch param = all branches in scope). */
+const ALL_BRANCHES_VALUE = '__all__'
+
+const REPORT_TYPE_LABELS = {
+  lead: 'Lead performance',
+  appointment: 'Appointment performance',
+  agent: 'Agent performance',
+  call: 'Call summary',
+  branch: 'Branch performance',
+  repeat: 'Repeat customer stats',
+}
+
+function cleanBranchIds(ids) {
+  return (ids || []).filter((id) => id && id !== ALL_BRANCHES_VALUE)
+}
+
+function sameIdList(a, b) {
+  if (a.length !== b.length) return false
+  const set = new Set(a.map(String))
+  return b.every((id) => set.has(String(id)))
+}
+
+function fileSlug(value) {
+  return String(value || '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+}
 
 /** Excel: sheet name ≤31 chars; no : \\ / ? * [ ] */
 function buildAgentSheetName(prefix, agentNames) {
@@ -511,8 +540,9 @@ const agentAssignedLeadsColumns = [
 const Reports = () => {
   const { isMobile } = useResponsive()
   const [reportType, setReportType] = useState('lead')
-  const [selectedBranchIds, setSelectedBranchIds] = useState([])
+  const [selectedBranchIds, setSelectedBranchIds] = useState([ALL_BRANCHES_VALUE])
   const [appliedBranchIds, setAppliedBranchIds] = useState([])
+  const [exportingFormat, setExportingFormat] = useState(null)
   const [dateFrom, setDateFrom] = useState(() => dayjs().subtract(29, 'day').format('YYYY-MM-DD'))
   const [dateTo, setDateTo] = useState(() => dayjs().format('YYYY-MM-DD'))
   const [rangeValue, setRangeValue] = useState(() => [dayjs().subtract(29, 'day'), dayjs()])
@@ -522,6 +552,34 @@ const Reports = () => {
   const showBranchDropdown = isSuperAdmin() || isAdmin() || isSupervisor()
   const { data: branchesData } = useGetBranchesQuery()
   const branches = branchesData?.branches || []
+  const branchNameById = useMemo(
+    () => new Map(branches.map((b) => [String(b._id), b.name])),
+    [branches]
+  )
+
+  /** "All Branches" means every branch for superadmin / all-branch users, otherwise the user's own branches (backend scope). */
+  const describeBranchScope = useCallback(
+    (ids) => {
+      if (ids.length) return ids.map((id) => branchNameById.get(String(id)) || String(id)).join(', ')
+      const user = getStoredUser()
+      return isSuperAdmin() || user?.allBranches ? 'All Branches' : 'All Branches (assigned to you)'
+    },
+    [branchNameById]
+  )
+
+  const handleBranchSelectChange = (next) => {
+    const list = Array.isArray(next) ? next : []
+    const hadAll = selectedBranchIds.includes(ALL_BRANCHES_VALUE)
+    const hasAll = list.includes(ALL_BRANCHES_VALUE)
+    if (hasAll && !hadAll) {
+      // "All Branches" picked: it replaces any specific branches.
+      setSelectedBranchIds([ALL_BRANCHES_VALUE])
+      return
+    }
+    const specific = cleanBranchIds(list)
+    // A specific branch picked while "All Branches" was on drops "All"; clearing everything falls back to "All".
+    setSelectedBranchIds(specific.length ? specific : [ALL_BRANCHES_VALUE])
+  }
 
   const reportParams = useMemo(
     () => ({
@@ -554,7 +612,7 @@ const Reports = () => {
     }
     setDateFrom(rangeValue[0].format('YYYY-MM-DD'))
     setDateTo(rangeValue[1].format('YYYY-MM-DD'))
-    setAppliedBranchIds(selectedBranchIds)
+    setAppliedBranchIds(cleanBranchIds(selectedBranchIds))
     message.success('Report updated')
   }
 
@@ -564,10 +622,37 @@ const Reports = () => {
         message.warning('Load a report first')
         return
       }
-      let exportReport = report
-      let exportMeta = meta
+      // Export follows what is selected in the toolbar right now: report type, branches and date range.
+      const exportFrom = rangeValue?.[0] ? rangeValue[0].format('YYYY-MM-DD') : dateFrom
+      const exportTo = rangeValue?.[1] ? rangeValue[1].format('YYYY-MM-DD') : dateTo
+      const exportBranchIds = cleanBranchIds(selectedBranchIds)
+      const filtersChanged =
+        exportFrom !== dateFrom || exportTo !== dateTo || !sameIdList(exportBranchIds, appliedBranchIds)
+      if (filtersChanged) {
+        // Keep the on-screen report in step with the exported file.
+        setDateFrom(exportFrom)
+        setDateTo(exportTo)
+        setAppliedBranchIds(exportBranchIds)
+      }
+      const exportParams = {
+        branch: exportBranchIds.length ? exportBranchIds : undefined,
+        dateFrom: exportFrom,
+        dateTo: exportTo,
+        reportType,
+      }
+      const reportLabel = REPORT_TYPE_LABELS[reportType] || reportType
+      const branchLabel = describeBranchScope(exportBranchIds)
+      const scopeInfoRows = [
+        { Field: 'Report name', Value: reportLabel },
+        { Field: 'Branches', Value: branchLabel },
+      ]
+      const branchSlug = exportBranchIds.length ? fileSlug(branchLabel) || 'branches' : 'all-branches'
+
+      // On-screen data is only a valid fallback when it was loaded with the same filters.
+      let exportReport = filtersChanged ? null : report
+      let exportMeta = filtersChanged ? null : meta
       try {
-        const full = await fetchExportReport({ ...reportParams, details: 'export' }).unwrap()
+        const full = await fetchExportReport({ ...exportParams, details: 'export' }).unwrap()
         if (full?.success) {
           exportReport = full
           exportMeta = full.meta
@@ -575,9 +660,21 @@ const Reports = () => {
       } catch (e) {
         console.warn('Full export fetch failed, using on-screen data', e)
       }
+      if (!exportReport) {
+        message.error('Could not load report data for the selected filters. Try again.')
+        return
+      }
       if (format === 'pdf') {
         try {
-          exportReportToPdf({ reportType, report: exportReport, meta: exportMeta, dateFrom, dateTo })
+          exportReportToPdf({
+            reportType,
+            report: exportReport,
+            meta: exportMeta,
+            dateFrom: exportFrom,
+            dateTo: exportTo,
+            branchLabel,
+            fileName: `report_${reportType}_${branchSlug}_${exportFrom}_${exportTo}.pdf`,
+          })
           message.success('PDF downloaded')
         } catch (e) {
           console.error(e)
@@ -592,16 +689,17 @@ const Reports = () => {
 
       const appendReportInfoSheet = (wb) => {
         const rows = [
-          { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
-          { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
+          { Field: 'Date from', Value: exportMeta?.dateFrom ?? exportFrom },
+          { Field: 'Date to', Value: exportMeta?.dateTo ?? exportTo },
           { Field: 'Report', Value: reportType },
+          ...scopeInfoRows,
         ]
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Report info')
       }
 
       try {
         const wb = XLSX.utils.book_new()
-        const fileBase = `report_${reportType}_${dateFrom}_${dateTo}`
+        const fileBase = `report_${reportType}_${branchSlug}_${exportFrom}_${exportTo}`
 
         switch (reportType) {
           case 'lead': {
@@ -612,9 +710,10 @@ const Reports = () => {
             const sources = exportReport.lead?.sourceDistribution || []
 
             const infoRows = [
-              { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
-              { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
+              { Field: 'Date from', Value: exportMeta?.dateFrom ?? exportFrom },
+              { Field: 'Date to', Value: exportMeta?.dateTo ?? exportTo },
               { Field: 'Report', Value: reportType },
+              ...scopeInfoRows,
             ]
             if (exportMeta?.leadDetailsTruncated) {
               infoRows.push({
@@ -764,9 +863,10 @@ const Reports = () => {
             const agentCallRows = exportReport.agent?.agentCallsTable || []
             const sheetNamesUsed = new Set(['Report info'])
             const infoRows = [
-              { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
-              { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
+              { Field: 'Date from', Value: exportMeta?.dateFrom ?? exportFrom },
+              { Field: 'Date to', Value: exportMeta?.dateTo ?? exportTo },
               { Field: 'Report', Value: 'Agent performance (all agents)' },
+              ...scopeInfoRows,
               {
                 Field: 'Excel sheets',
                 Value:
@@ -887,9 +987,10 @@ const Reports = () => {
           case 'call': {
             const { summary, totalCalls, answered, missed, callDetailsTable: callDetailRows = [] } = exportReport.call || {}
             const infoRows = [
-              { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
-              { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
+              { Field: 'Date from', Value: exportMeta?.dateFrom ?? exportFrom },
+              { Field: 'Date to', Value: exportMeta?.dateTo ?? exportTo },
               { Field: 'Report', Value: reportType },
+              ...scopeInfoRows,
             ]
             if (exportMeta?.callDetailsTruncated) {
               infoRows.push({
@@ -955,9 +1056,10 @@ const Reports = () => {
             const perf = exportReport.branch?.performance || []
             const detailLeads = exportReport.lead?.leadDetailsTable || []
             const branchInfoRows = [
-              { Field: 'Date from', Value: exportMeta?.dateFrom ?? dateFrom },
-              { Field: 'Date to', Value: exportMeta?.dateTo ?? dateTo },
+              { Field: 'Date from', Value: exportMeta?.dateFrom ?? exportFrom },
+              { Field: 'Date to', Value: exportMeta?.dateTo ?? exportTo },
               { Field: 'Report', Value: reportType },
+              ...scopeInfoRows,
               {
                 Field: 'Sheets',
                 Value:
@@ -1057,8 +1159,29 @@ const Reports = () => {
         message.error('Export failed')
       }
     },
-    [report, reportParams, fetchExportReport, dateFrom, dateTo, reportType, meta]
+    [
+      report,
+      fetchExportReport,
+      dateFrom,
+      dateTo,
+      reportType,
+      meta,
+      rangeValue,
+      selectedBranchIds,
+      appliedBranchIds,
+      describeBranchScope,
+    ]
   )
+
+  const runExport = async (format) => {
+    if (exportingFormat) return
+    setExportingFormat(format)
+    try {
+      await handleExport(format)
+    } finally {
+      setExportingFormat(null)
+    }
+  }
 
   const renderReportContent = () => {
     if ((isLoading || isFetching) && !report) {
@@ -1722,12 +1845,16 @@ const Reports = () => {
                 allowClear
                 maxTagCount="responsive"
                 value={selectedBranchIds}
-                onChange={setSelectedBranchIds}
+                onChange={handleBranchSelectChange}
+                optionFilterProp="children"
                 className="ds-report-toolbar-select"
                 size={isMobile ? 'small' : 'middle'}
                 placeholder="Branches (all if empty)"
                 style={{ minWidth: isMobile ? 160 : 300 }}
               >
+                <Option key={ALL_BRANCHES_VALUE} value={ALL_BRANCHES_VALUE}>
+                  All Branches
+                </Option>
                 {branches.map((b) => (
                   <Option key={b._id} value={b._id}>
                     {b.name}
@@ -1758,14 +1885,20 @@ const Reports = () => {
             </Button> */}
             <Button
               icon={<FileExcelOutlined />}
-              onClick={() => handleExport('excel')}
+              onClick={() => runExport('excel')}
+              loading={exportingFormat === 'excel'}
+              disabled={!!exportingFormat && exportingFormat !== 'excel'}
+              title={`Export ${REPORT_TYPE_LABELS[reportType] || 'report'} as Excel`}
               size={isMobile ? 'small' : 'middle'}
             >
               {isMobile ? 'Excel' : 'Export Excel'}
             </Button>
             <Button
               icon={<FilePdfOutlined />}
-              onClick={() => handleExport('pdf')}
+              onClick={() => runExport('pdf')}
+              loading={exportingFormat === 'pdf'}
+              disabled={!!exportingFormat && exportingFormat !== 'pdf'}
+              title={`Export ${REPORT_TYPE_LABELS[reportType] || 'report'} as PDF`}
               size={isMobile ? 'small' : 'middle'}
             >
               {isMobile ? 'PDF' : 'Export PDF'}

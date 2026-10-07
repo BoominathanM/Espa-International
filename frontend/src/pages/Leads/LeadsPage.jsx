@@ -62,7 +62,11 @@ import {
   useUpdateReminderMutation,
   useDeleteReminderMutation,
 } from '../../store/api/leadApi'
-import { useGetLeadStagesQuery, useCreateLeadStageMutation } from '../../store/api/leadStageApi'
+import {
+  useGetLeadStagesQuery,
+  useCreateLeadStageMutation,
+  useDeleteLeadStageMutation,
+} from '../../store/api/leadStageApi'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useConvertLeadToCustomerMutation } from '../../store/api/customerApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
@@ -97,7 +101,6 @@ const DEFAULT_STAGE_OPTIONS = [
   'In Progress',
   'Follow-Up',
   'Converted',
-  'Lost',
   'Cancelled',
   'Enquiry',
   'Old',
@@ -113,6 +116,7 @@ const STAGE_COLORS = {
   'In Progress': 'orange',
   'Follow-Up': 'purple',
   Converted: 'green',
+  // 'Lost' is no longer a selectable stage; kept so existing leads with that status keep their colour.
   Lost: 'red',
   Cancelled: 'default',
   Enquiry: 'geekblue',
@@ -125,6 +129,9 @@ const STAGE_COLORS = {
 }
 
 const getStageColor = (status) => STAGE_COLORS[status] || 'default'
+
+/** Must match PROTECTED_LEAD_STAGE_NAMES in backend leadStageController (assigned by the system, not deletable). */
+const PROTECTED_STAGE_NAMES = ['New', 'Converted']
 
 // ZenXAI Public Voice API call statuses (see backend handleZenxaiApiEvent)
 const ZENXAI_STATUS_LABELS = {
@@ -262,6 +269,7 @@ const Leads = () => {
   const { data: branchesData } = useGetBranchesQuery()
   const { data: leadStagesData, refetch: refetchLeadStages } = useGetLeadStagesQuery()
   const [createLeadStage, { isLoading: createStageLoading }] = useCreateLeadStageMutation()
+  const [deleteLeadStage] = useDeleteLeadStageMutation()
   const [newStageInput, setNewStageInput] = useState('')
   const { data: usersData } = useGetUsersQuery()
   const { data: meData } = useGetMeQuery()
@@ -306,6 +314,24 @@ const Leads = () => {
   const stageOptions = useMemo(() => {
     const namesFromDb = (leadStagesData?.stages || []).map((s) => s.name).filter(Boolean)
     return namesFromDb.length ? namesFromDb : DEFAULT_STAGE_OPTIONS
+  }, [leadStagesData])
+  /**
+   * List filters only: active stages plus removed stages that existing leads still carry (e.g. "Lost"),
+   * so those leads stay filterable. The Add/Edit Stage field uses `stageOptions` (active stages only).
+   */
+  const filterStageOptions = useMemo(() => {
+    const removedInUse = (leadStagesData?.removedStagesInUse || []).filter(
+      (name) => name && !stageOptions.includes(name)
+    )
+    return [...stageOptions, ...removedInUse]
+  }, [stageOptions, leadStagesData])
+  /** Stage name → DB record (id + isProtected), used by the superadmin delete icon in the Stage dropdown. */
+  const stageRecordByName = useMemo(() => {
+    const map = new Map()
+    for (const s of leadStagesData?.stages || []) {
+      if (s?.name && s?._id) map.set(s.name, s)
+    }
+    return map
   }, [leadStagesData])
   const pagination = leadsData?.pagination || { total: 0, page: 1, limit: 10, pages: 1 }
 
@@ -439,7 +465,7 @@ const Leads = () => {
       dataIndex: 'status',
       key: 'status',
       render: (status) => <Tag color={getStageColor(status)}>{status}</Tag>,
-      filters: stageOptions.map((stage) => ({ text: stage, value: stage })),
+      filters: filterStageOptions.map((stage) => ({ text: stage, value: stage })),
       onFilter: (value, record) => record.status === value,
     },
     {
@@ -1017,6 +1043,35 @@ const Leads = () => {
     }
   }
 
+  const handleDeleteStageOption = (stageName) => {
+    const record = stageRecordByName.get(stageName)
+    if (!record?._id) {
+      messageApi.warning('Stage list is still loading, try again')
+      return
+    }
+    Modal.confirm({
+      title: `Delete stage "${stageName}"?`,
+      content: 'It will be removed from the Stage options. Leads already in this stage keep their current stage.',
+      okText: 'Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          const res = await deleteLeadStage(record._id).unwrap()
+          await refetchLeadStages()
+          const inUse = Number(res?.leadsInStage) || 0
+          messageApi.success(
+            inUse > 0
+              ? `Stage "${stageName}" deleted (${inUse} existing lead${inUse === 1 ? '' : 's'} keep this stage)`
+              : `Stage "${stageName}" deleted`
+          )
+        } catch (error) {
+          messageApi.error(error?.data?.message || 'Failed to delete stage')
+        }
+      },
+    })
+  }
+
   return (
     <PageLayout className="leads-management-page">
       <PageHeader
@@ -1079,7 +1134,7 @@ const Leads = () => {
               <Option value="Other">Other</Option>
             </Select>
             <Select className="ds-filter-fixed" placeholder="Filter by Status" allowClear value={filterStatus} onChange={setFilterStatus}>
-              {stageOptions.map((stage) => (
+              {filterStageOptions.map((stage) => (
                 <Option key={stage} value={stage}>
                   {stage}
                 </Option>
@@ -1396,6 +1451,41 @@ const Leads = () => {
                             </Space.Compact>
                           </>
                         )
+                      : undefined
+                  }
+                  optionRender={
+                    isSuperAdmin()
+                      ? (option) => {
+                          const stageName = String(option?.value ?? '')
+                          const record = stageRecordByName.get(stageName)
+                          const deletable =
+                            !!record?._id && !record.isProtected && !PROTECTED_STAGE_NAMES.includes(stageName)
+                          return (
+                            <div className="leads-stage-option">
+                              <span className="leads-stage-option-label">{option?.label ?? stageName}</span>
+                              {deletable && (
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  danger
+                                  className="leads-stage-option-delete"
+                                  icon={<DeleteOutlined />}
+                                  aria-label={`Delete stage ${stageName}`}
+                                  title={`Delete stage "${stageName}"`}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                  }}
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    handleDeleteStageOption(stageName)
+                                  }}
+                                />
+                              )}
+                            </div>
+                          )
+                        }
                       : undefined
                   }
                 >

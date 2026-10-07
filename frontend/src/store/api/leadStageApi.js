@@ -14,7 +14,14 @@ export const leadStageApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['LeadStage'],
     }),
+    deleteLeadStage: builder.mutation({
+      query: (id) => ({
+        url: `/lead-stages/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['LeadStage'],
+    }),
   }),
 })
 
-export const { useGetLeadStagesQuery, useCreateLeadStageMutation } = leadStageApi
+export const { useGetLeadStagesQuery, useCreateLeadStageMutation, useDeleteLeadStageMutation } = leadStageApi

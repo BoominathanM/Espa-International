@@ -418,7 +418,6 @@ const seedDefaultLeadStagesIfNeeded = async () => {
       'In Progress',
       'Follow-Up',
       'Converted',
-      'Lost',
       'Cancelled',
       'Enquiry',
       'Old',
@@ -447,6 +446,19 @@ const seedDefaultLeadStagesIfNeeded = async () => {
       console.log(`✅ ${createdCount} default lead stage(s) created`)
     } else {
       console.log('ℹ️  Default lead stages already exist')
+    }
+
+    // Stages removed from the default list: soft-delete once. A stage a superadmin re-adds
+    // later gets `restoredAt` set, so it is never retired again. Leads keep their status.
+    const retiredStageNames = ['Lost']
+    for (const stageName of retiredStageNames) {
+      const retired = await LeadStage.updateMany(
+        { name: { $regex: `^${stageName}$`, $options: 'i' }, isDeleted: { $ne: true }, restoredAt: null },
+        { $set: { isDeleted: true, deletedAt: new Date() } }
+      )
+      if (retired.modifiedCount > 0) {
+        console.log(`✅ Lead stage "${stageName}" removed from the stage list`)
+      }
     }
   } catch (error) {
     console.error('❌ Error seeding default lead stages:', error.message)

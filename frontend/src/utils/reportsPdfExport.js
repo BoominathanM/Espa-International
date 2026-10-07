@@ -122,7 +122,7 @@ function collectAgentSections(report) {
   return sections
 }
 
-function addTitleBlock(doc, heading, sub, meta, dateFrom, dateTo) {
+function addTitleBlock(doc, heading, sub, meta, dateFrom, dateTo, branchLabel) {
   doc.setFontSize(16)
   doc.setFont('helvetica', 'bold')
   doc.text('ESPA — Reports', MARGIN, MARGIN)
@@ -136,6 +136,10 @@ function addTitleBlock(doc, heading, sub, meta, dateFrom, dateTo) {
     MARGIN,
     MARGIN + 52
   )
+  if (branchLabel) {
+    doc.text(`Branches: ${pdfStr(branchLabel)}`, MARGIN, MARGIN + 66)
+    return MARGIN + 82
+  }
   return MARGIN + 68
 }
 
@@ -171,9 +175,9 @@ function sliceDetail(rows, label) {
   return { slice, note }
 }
 
-export function exportReportToPdf({ reportType, report, meta, dateFrom, dateTo }) {
+export function exportReportToPdf({ reportType, report, meta, dateFrom, dateTo, branchLabel, fileName }) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
-  const fileBase = `report_${reportType}_${dateFrom}_${dateTo}.pdf`
+  const fileBase = fileName || `report_${reportType}_${dateFrom}_${dateTo}.pdf`
 
   const subLabels = {
     lead: 'Lead performance',
@@ -190,7 +194,8 @@ export function exportReportToPdf({ reportType, report, meta, dateFrom, dateTo }
     `Type: ${reportType}`,
     meta,
     dateFrom,
-    dateTo
+    dateTo,
+    branchLabel
   )
 
   const addNote = (text) => {
@@ -598,7 +603,7 @@ export function exportReportToPdf({ reportType, report, meta, dateFrom, dateTo }
 
       const appendBranchPage = (title, summaryHead, summaryBody, leadRows) => {
         if (!branchFirst) doc.addPage()
-        const y = branchFirst ? startY : MARGIN
+        let y = branchFirst ? startY : MARGIN
         branchFirst = false
         doc.setFontSize(12)
         doc.setFont('helvetica', 'bold')
