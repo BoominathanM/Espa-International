@@ -20,6 +20,7 @@ import {
   Spin,
   Alert,
   Avatar,
+  Typography,
 } from 'antd'
 import {
   PlusOutlined,
@@ -448,6 +449,20 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi, initialT
       refetch()
     } catch (e) {
       if (e?.data?.message) messageApi.error(e.data.message)
+      return
+    }
+    // Completing also places the AI feedback call (same call as the "Send feedback call" button).
+    // The appointment stays completed whatever happens here — a failed call only warns.
+    if (!lead?.phone && !lead?.whatsapp) {
+      messageApi.info('No mobile number on this appointment — feedback call not placed')
+      return
+    }
+    try {
+      const res = await sendFeedbackCall(leadId).unwrap()
+      messageApi.success(res?.message || 'Feedback call placed')
+      setDetailTab('feedback') // watch the responses come in
+    } catch (e) {
+      messageApi.warning(`Feedback call not placed: ${e?.data?.message || e?.message || 'unknown error'}`)
     }
   }
 
@@ -616,10 +631,23 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi, initialT
             <Input.TextArea rows={5} maxLength={500} showCount placeholder="Enter completion notes and details" />
           </Form.Item>
           <Space>
-            <Button type="primary" icon={<CheckCircleOutlined />} loading={completing} onClick={onComplete} className="appt-btn-success">
+            <Button
+              type="primary"
+              icon={<CheckCircleOutlined />}
+              loading={completing || feedbackCalling}
+              onClick={onComplete}
+              className="appt-btn-success"
+            >
               Mark as Complete
             </Button>
           </Space>
+          {(lead.phone || lead.whatsapp) && (
+            <div style={{ marginTop: 8 }}>
+              <Typography.Text type="secondary">
+                <PhoneOutlined /> The AI feedback call will be placed to the customer once marked complete.
+              </Typography.Text>
+            </div>
+          )}
         </Form>
       ),
     },
