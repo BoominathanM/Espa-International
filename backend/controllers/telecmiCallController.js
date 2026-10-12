@@ -4,7 +4,13 @@ import TeleCMICallLog from '../models/TeleCMICallLog.js'
 import ZenxaiSendData from '../models/ZenxaiSendData.js'
 import Lead from '../models/Lead.js'
 import User from '../models/User.js'
-import { applyCallLogBranchScope, canAccessBranch, getAccessibleBranchIds } from '../utils/branchAccess.js'
+import Customer from '../models/Customer.js'
+import {
+  applyBranchScope,
+  applyCallLogBranchScope,
+  canAccessBranch,
+  getAccessibleBranchIds,
+} from '../utils/branchAccess.js'
 import { parseIstDateRange } from '../utils/istDateRange.js'
 import { RECORDING_NAME_RE, telecmiRecordingUrl } from '../utils/telecmiRecording.js'
 import { placeAgentCall, TeleCMIAgentCallError, toTeleCMINumber } from '../services/telecmiAgentCallService.js'
@@ -211,6 +217,183 @@ export const makeAgentCall = async (req, res) => {
     }
     console.error('TeleCMI agent-call error:', error)
     res.status(500).json({ success: false, message: 'Call initiation failed' })
+  }
+}
+
+const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/
+const NUMBER_CALL_LEAD_FIELDS = 'first_name last_name phone branch assignedTo'
+const TELECMI_INACTIVE_MESSAGE =
+  'TeleCMI integration is not active. Enable it in Settings → API & Integrations → TeleCMI Integration.'
+
+/** A lead already assigned to a staff member wins; otherwise the newest one. */
+const pickNumberCallLead = (leads) => leads.find((l) => l.assignedTo) || leads[0] || null
+
+const leadDisplayName = (lead) => `${lead?.first_name || ''} ${lead?.last_name || ''}`.trim()
+
+/**
+ * Who a click-to-call placed from a phone number goes to — Call Records, Customer Management and
+ * Appointment details show a number that may or may not belong to a lead (Lead Management calls
+ * by leadId through makeAgentCall instead). The lead is the one given (leadId), else the
+ * customer's lead, else the newest accessible lead with this number; the call then rings that
+ * lead's assigned staff member exactly like Lead Management. With no lead, or no active assigned
+ * staff member, it rings the logged-in user's own TeleCMI phone.
+ */
+const resolveNumberCallTarget = async (req) => {
+  const { phone, leadId, customerId } = req.body || {}
+
+  let customer = null
+  if (customerId) {
+    if (!OBJECT_ID_RE.test(String(customerId))) throw new TeleCMIAgentCallError('Invalid customerId', 400)
+    customer = await Customer.findById(customerId).select('name phone branch').lean()
+    if (!customer) throw new TeleCMIAgentCallError('Customer not found', 404)
+    if (!canAccessBranch(req.user, customer.branch)) throw new TeleCMIAgentCallError('Not allowed', 403)
+  }
+
+  let lead = null
+  if (leadId) {
+    if (!OBJECT_ID_RE.test(String(leadId))) throw new TeleCMIAgentCallError('Invalid leadId', 400)
+    lead = await Lead.findById(leadId).select(NUMBER_CALL_LEAD_FIELDS).lean()
+    if (lead && !canAccessBranch(req.user, lead.branch)) throw new TeleCMIAgentCallError('Not allowed', 403)
+  }
+
+  const toPhone = String(phone || customer?.phone || lead?.phone || '').trim()
+  if (!toPhone) throw new TeleCMIAgentCallError('No phone number to call', 400)
+  const dialNumber = toTeleCMINumber(toPhone)
+  if (!dialNumber) throw new TeleCMIAgentCallError(`Phone number "${toPhone}" is not a valid number to dial`, 400)
+
+  if (!lead && customer) {
+    const filter = applyBranchScope({ customer: customer._id }, req.user)
+    lead = pickNumberCallLead(
+      await Lead.find(filter).select(NUMBER_CALL_LEAD_FIELDS).sort({ createdAt: -1 }).limit(20).lean()
+    )
+  }
+  if (!lead) {
+    const tail = phoneTail(dialNumber)
+    if (tail.length === 10) {
+      const filter = applyBranchScope({ phone: phoneTailRegex(tail) }, req.user)
+      lead = pickNumberCallLead(
+        await Lead.find(filter).select(NUMBER_CALL_LEAD_FIELDS).sort({ createdAt: -1 }).limit(20).lean()
+      )
+    }
+  }
+
+  let agentUser = null
+  let agentSource = 'self'
+  if (lead?.assignedTo) {
+    const assigned = await User.findById(lead.assignedTo)
+    if (assigned && assigned.status === 'active') {
+      agentUser = assigned
+      agentSource = 'assigned'
+    }
+  }
+  if (!agentUser) {
+    agentUser = await User.findById(req.user?._id)
+    if (!agentUser || agentUser.status !== 'active') {
+      throw new TeleCMIAgentCallError('Your user account is not active', 400)
+    }
+  }
+  if (!agentUser.telecmiAgentId) {
+    throw new TeleCMIAgentCallError(
+      `${agentUser.name || 'This user'} does not have a TeleCMI User ID configured. Set it in Settings → Users.`,
+      400
+    )
+  }
+
+  const branch = lead?.branch || customer?.branch || agentUser.branch || null
+  return {
+    toPhone,
+    dialNumber,
+    lead,
+    customer,
+    agentUser,
+    agentSource,
+    // Call-log row name exactly as makeAgentCall / the CHUB webhook store it (lead first name),
+    // so one lead's calls read the same in Call Records whichever screen placed them.
+    customerName: (lead ? lead.first_name : customer?.name) || '',
+    // Full name for the confirm dialog only.
+    displayName: (lead && leadDisplayName(lead)) || customer?.name || '',
+    branches: branch ? [branch] : [],
+  }
+}
+
+const numberCallErrorResponse = (res, error, label) => {
+  if (error instanceof TeleCMIAgentCallError) {
+    return res.status(error.status).json({ success: false, message: error.message })
+  }
+  console.error(`TeleCMI ${label} error:`, error)
+  return res.status(500).json({ success: false, message: 'Call initiation failed' })
+}
+
+/**
+ * POST /api/telecmi/number-call/preview {phone, leadId?, customerId?} — whose TeleCMI phone a
+ * number-call would ring, for the confirm dialog. Places no call.
+ */
+export const previewNumberCall = async (req, res) => {
+  try {
+    const settings = await TeleCMISettings.getSettings()
+    if (!settings.isActive) return res.status(503).json({ success: false, message: TELECMI_INACTIVE_MESSAGE })
+    const t = await resolveNumberCallTarget(req)
+    res.json({
+      success: true,
+      phone: t.toPhone,
+      customerName: t.displayName,
+      agent: { id: t.agentUser._id, name: t.agentUser.name },
+      agentSource: t.agentSource,
+      lead: t.lead ? { id: t.lead._id, name: leadDisplayName(t.lead) } : null,
+    })
+  } catch (error) {
+    numberCallErrorResponse(res, error, 'number-call preview')
+  }
+}
+
+/**
+ * POST /api/telecmi/number-call {phone, leadId?, customerId?} — TeleCMI click-to-call (CHUB) to a
+ * phone number shown outside Lead Management. Same call + placeholder row as makeAgentCall, so
+ * the CHUB/CDR webhooks, missed-call AI call-back and WhatsApp hooks treat it identically.
+ */
+export const makeNumberCall = async (req, res) => {
+  try {
+    const settings = await TeleCMISettings.getSettings()
+    if (!settings.isActive) return res.status(503).json({ success: false, message: TELECMI_INACTIVE_MESSAGE })
+    const t = await resolveNumberCallTarget(req)
+
+    console.log(
+      `[TELECMI] => placing number click-to-call | to ${t.toPhone} | lead ${t.lead?._id || '—'} ` +
+        `| customer ${t.customer?._id || '—'} | agent ${t.agentUser.name} (TeleCMI id ${t.agentUser.telecmiAgentId}, ${t.agentSource})`
+    )
+
+    const callResult = await placeAgentCall(settings, t.agentUser, t.toPhone, {
+      crm: 'true',
+      ...(t.lead ? { leadId: String(t.lead._id) } : {}),
+    })
+
+    const requestId = callResult?.request_id ? String(callResult.request_id) : undefined
+    console.log(`[TELECMI] <= click2call API response:`, JSON.stringify(callResult))
+
+    const placeholderRow = await TeleCMICallLog.create({
+      variant: 'outbound',
+      customerName: t.customerName,
+      customerNumber: String(t.dialNumber),
+      agentCode: t.agentUser.telecmiAgentId,
+      requestId,
+      status: 'initiated',
+      rawPayload: callResult,
+      lead: t.lead?._id || null,
+      branches: t.branches,
+    })
+    console.log(
+      `[TELECMI] => INITIATED row ${placeholderRow._id} created (requestId ${requestId || '—'}). ` +
+        `Awaiting CHUB/CDR webhook to advance status.`
+    )
+
+    res.json({
+      success: true,
+      data: callResult,
+      agent: { id: t.agentUser._id, name: t.agentUser.name },
+      agentSource: t.agentSource,
+    })
+  } catch (error) {
+    numberCallErrorResponse(res, error, 'number-call')
   }
 }
 

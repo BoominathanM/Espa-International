@@ -43,6 +43,7 @@ import { useConfirmFeedbackCall } from '../../hooks/useConfirmFeedbackCall'
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import CustomerDetailsModal from './CustomerDetailsModal'
 import CustomerFeedbackCalls from './CustomerFeedbackCalls'
+import PhoneClickToCall from '../../components/ClickToCall/PhoneClickToCall'
 import './CustomersPage.css'
 
 const { TextArea } = Input
@@ -177,6 +178,9 @@ const Customers = () => {
       title: 'Mobile',
       dataIndex: 'mobile',
       key: 'mobile',
+      render: (mobile, record) => (
+        <PhoneClickToCall phone={mobile} customerId={record._id} name={record.name} empty="" />
+      ),
     },
     {
       title: 'WhatsApp',

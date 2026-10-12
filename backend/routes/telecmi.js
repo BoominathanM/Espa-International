@@ -1,6 +1,8 @@
 import express from 'express'
 import {
   makeAgentCall,
+  makeNumberCall,
+  previewNumberCall,
   getStatus,
   getCallLogs,
   getCallLogsForLead,
@@ -17,6 +19,8 @@ const router = express.Router()
 
 router.get('/status', authenticate, getStatus)
 router.post('/agent-call', authenticate, makeAgentCall)
+router.post('/number-call/preview', authenticate, previewNumberCall)
+router.post('/number-call', authenticate, makeNumberCall)
 router.get('/call-logs', authenticate, getCallLogs)
 router.get('/call-logs/lead/:leadId', authenticate, getCallLogsForLead)
 router.get('/recording', authenticate, streamRecording)

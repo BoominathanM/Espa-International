@@ -29,6 +29,7 @@ import { useGetTeleCMICallLogsQuery, useGetZenxaiInboundCallsQuery } from '../..
 import { useGetBranchesQuery } from '../../store/api/branchApi'
 import { useGetUsersQuery } from '../../store/api/userApi'
 import { useMergeCallAudioMutation } from '../../store/api/leadApi'
+import PhoneClickToCall from '../../components/ClickToCall/PhoneClickToCall'
 import dayjs from 'dayjs'
 import './CallsPage.css'
 
@@ -393,6 +394,9 @@ const Calls = () => {
       title: 'Phone Number',
       dataIndex: 'phoneNumber',
       key: 'phoneNumber',
+      render: (phoneNumber, record) => (
+        <PhoneClickToCall phone={phoneNumber} leadId={record.leadId} name={record.name !== '-' ? record.name : ''} />
+      ),
     },
     {
       title: 'Agent',
@@ -487,6 +491,7 @@ const Calls = () => {
         whatsappConfirmation: c.whatsappConfirmation || null,
         whatsappMissedCall: c.whatsappMissedCall || null,
         leadLinked: !!c.lead,
+        leadId: c.lead?._id,
         leadCreated: !!c.leadCreated,
         leadName,
         leadError: c.leadError || '',
@@ -508,7 +513,14 @@ const Calls = () => {
 
   const inboundColumns = [
     { title: 'Name', dataIndex: 'name', key: 'name' },
-    { title: 'Caller Number', dataIndex: 'phoneNumber', key: 'phoneNumber' },
+    {
+      title: 'Caller Number',
+      dataIndex: 'phoneNumber',
+      key: 'phoneNumber',
+      render: (phoneNumber, record) => (
+        <PhoneClickToCall phone={phoneNumber} leadId={record.leadId} name={record.name !== '-' ? record.name : ''} />
+      ),
+    },
     { title: 'Duration', dataIndex: 'duration', key: 'duration' },
     {
       title: 'Branch',
@@ -559,6 +571,13 @@ const Calls = () => {
       title: 'Phone Number',
       dataIndex: 'phoneNumber',
       key: 'phoneNumber',
+      render: (phoneNumber, record) => (
+        <PhoneClickToCall
+          phone={phoneNumber}
+          leadId={record.leadId}
+          name={`${record.lead?.first_name || record.lead?.name || ''} ${record.lead?.last_name || ''}`.trim()}
+        />
+      ),
     },
     {
       title: 'Duration',

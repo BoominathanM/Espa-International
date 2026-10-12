@@ -11,6 +11,23 @@ export const telecmiApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['TeleCMICallLog'],
     }),
+    // Click-to-call to a phone number shown outside Lead Management (Call Records, Customers,
+    // Appointment details). Body: { phone, leadId?, customerId? }.
+    previewTeleCMINumberCall: builder.mutation({
+      query: (body) => ({
+        url: '/telecmi/number-call/preview',
+        method: 'POST',
+        body,
+      }),
+    }),
+    makeTeleCMINumberCall: builder.mutation({
+      query: (body) => ({
+        url: '/telecmi/number-call',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['TeleCMICallLog'],
+    }),
     getTeleCMICallLogs: builder.query({
       query: (params = {}) => {
         const { page, limit, variant, search, branch, callDateFrom, callDateTo } = params
@@ -56,6 +73,8 @@ export const telecmiApi = apiSlice.injectEndpoints({
 
 export const {
   useMakeTeleCMIAgentCallMutation,
+  usePreviewTeleCMINumberCallMutation,
+  useMakeTeleCMINumberCallMutation,
   useGetTeleCMICallLogsQuery,
   useGetTeleCMICallLogsForLeadQuery,
   useGetZenxaiCallsForLeadQuery,

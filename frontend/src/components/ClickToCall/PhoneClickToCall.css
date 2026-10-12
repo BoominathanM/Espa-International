@@ -1,0 +1,13 @@
+/* Same look as Lead Management's Mobile column call icon (LeadsPage.css .leads-telecmi-agent-call-btn). */
+.ctc-phone-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ctc-call-btn.ant-btn {
+  color: var(--color-success, #16a34a);
+  padding: 0 2px;
+  height: 20px;
+  line-height: 1;
+}

@@ -74,6 +74,7 @@ import './AppointmentBookingsPage.css'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import WhatsAppIcon from '../../components/LiveChat/WhatsAppIcon'
 import LiveChatPanel from '../../components/LiveChat/LiveChatPanel'
+import PhoneClickToCall from '../../components/ClickToCall/PhoneClickToCall'
 import { hasPermission, isSuperAdmin } from '../../utils/permissions'
 import {
   SPA_PACKAGES,
@@ -564,9 +565,13 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi, initialT
                 {lead.appointment_date ? dayjs(lead.appointment_date).format('DD/MM/YYYY') : '-'} · {lead.slot_time || '-'}
               </div>
             </div>
-            <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
               <div className="appt-detail-label">Description</div>
               <div>{lead.message || lead.notes || '-'}</div>
+            </div>
+            <div>
+              <div className="appt-detail-label">Phone Number</div>
+              <PhoneClickToCall phone={lead.phone || lead.whatsapp} leadId={lead._id} name={name} />
             </div>
             {lead.completion_notes && (
               <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
