@@ -16,6 +16,17 @@ export const googleCalendarWebhook = (req, res) => {
   )
 }
 
+// @desc    Opening the webhook address in a browser (GET) — Google itself only sends POST
+// @route   GET /api/google-calendar/webhook
+// @access  Public
+export const googleCalendarWebhookInfo = (req, res) => {
+  res.json({
+    success: true,
+    message:
+      'Google Calendar webhook is online. Google sends change notifications here with POST; opening this address in a browser only checks that it is reachable.',
+  })
+}
+
 // @desc    Google Calendar sync configuration (from .env) and health
 // @route   GET /api/google-calendar/status
 // @access  Private (Super Admin)
