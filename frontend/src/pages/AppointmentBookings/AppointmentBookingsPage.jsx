@@ -479,7 +479,7 @@ function AppointmentDetailPanel({ leadId, onBack, isMobile, messageApi, initialT
       rescheduleForm.setFieldsValue({ reason: '' })
       refetch()
     } catch (e) {
-      if (e?.data?.message) messageApi.error(e.data.message)
+      if (e?.data?.message) messageApi.error(e.data.message, e?.status === 409 ? 8 : undefined)
     }
   }
 
@@ -1216,7 +1216,8 @@ const AppointmentBookingsPage = () => {
         message: (values.description || '').trim(),
         assignedTo: values.assignedTo,
         source: 'Add',
-        status: 'New',
+        // New bookings start as "New"; editing keeps the current status (Cancel / Complete / Reschedule own it).
+        ...(editingLead ? {} : { status: 'New' }),
       }
       if (editingLead) {
         await updateLead({ id: editingLead._id, ...payload }).unwrap()
@@ -1230,7 +1231,7 @@ const AppointmentBookingsPage = () => {
       setEditingLead(null)
       refetchLeads()
     } catch (e) {
-      messageApi.error(e?.data?.message || 'Failed to save appointment')
+      messageApi.error(e?.data?.message || 'Failed to save appointment', e?.status === 409 ? 8 : undefined)
     }
   }
 

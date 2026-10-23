@@ -11,6 +11,30 @@ const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '7d' })
 }
 
+// Set HTTP-only cookie with token only (7 days expiration)
+// For cross-origin requests (Vercel frontend to Render backend), we need sameSite: 'none' and secure: true
+const getSessionCookieOptions = () => ({
+  httpOnly: true,
+  secure: true, // Always use secure in production (HTTPS required)
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' for cross-origin in production
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+  path: '/',
+  // Don't set domain - let browser handle it for cross-origin
+})
+
+// The frontend calls /auth/me whenever the CRM is opened. Once the session cookie is over a day
+// old it is re-issued for another 7 days, so users who keep using the CRM are not logged out
+// 7 days after their last sign-in; an unused session still expires after 7 days.
+const SESSION_RENEW_AFTER_MS = 24 * 60 * 60 * 1000
+
+const renewSessionCookieIfOld = (req, res) => {
+  const token = req.cookies?.crm_token
+  if (!token) return // header-token clients manage their own token
+  const issuedAtMs = (jwt.decode(token)?.iat || 0) * 1000
+  if (!issuedAtMs || Date.now() - issuedAtMs < SESSION_RENEW_AFTER_MS) return
+  res.cookie('crm_token', generateToken(req.user._id), getSessionCookieOptions())
+}
+
 // Helper function to get client IP address
 const getClientIp = (req) => {
   // Check for IP in various headers (for proxies/load balancers)
@@ -223,17 +247,7 @@ export const login = async (req, res) => {
       updatedAt: user.updatedAt,
     }
 
-    // Set HTTP-only cookie with token only (7 days expiration)
-    // For cross-origin requests (Vercel frontend to Render backend), we need sameSite: 'none' and secure: true
-    const cookieOptions = {
-      httpOnly: true,
-      secure: true, // Always use secure in production (HTTPS required)
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' for cross-origin in production
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-      path: '/',
-      // Don't set domain - let browser handle it for cross-origin
-    }
-    res.cookie('crm_token', token, cookieOptions)
+    res.cookie('crm_token', token, getSessionCookieOptions())
 
     // Log successful login attempt
     try {
@@ -327,6 +341,8 @@ export const getMe = async (req, res) => {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     }
+
+    renewSessionCookieIfOld(req, res)
 
     res.json({ success: true, user: userData })
   } catch (error) {

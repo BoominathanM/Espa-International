@@ -35,6 +35,13 @@ const branchSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Most appointments this branch takes at the same time (rooms / therapists).
+    // null = no limit. Enforced by utils/appointmentCapacity.js.
+    maxConcurrentAppointments: {
+      type: Number,
+      default: null,
+      min: 1,
+    },
   },
   {
     timestamps: true,

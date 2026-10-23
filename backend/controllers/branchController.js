@@ -2,6 +2,18 @@ import Branch from '../models/Branch.js'
 import User from '../models/User.js'
 import Notification from '../models/Notification.js'
 
+// "Max bookings at the same time": empty = no limit, else a whole number 1–100.
+// Returns { value } (undefined when not sent) or { error }.
+const parseMaxConcurrentAppointments = (raw) => {
+  if (raw === undefined) return {}
+  if (raw === null || raw === '') return { value: null }
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 1 || n > 100) {
+    return { error: 'Max bookings at the same time must be a whole number from 1 to 100 (leave empty for no limit)' }
+  }
+  return { value: n }
+}
+
 // @desc    Get all branches
 // @route   GET /api/branches
 // @access  Private
@@ -44,7 +56,9 @@ export const getBranch = async (req, res) => {
 // @access  Private (Super Admin only)
 export const createBranch = async (req, res) => {
   try {
-    const { name, address, phone, email, assignedUsers } = req.body
+    const { name, address, phone, email, assignedUsers, maxConcurrentAppointments } = req.body
+    const maxConcurrent = parseMaxConcurrentAppointments(maxConcurrentAppointments)
+    if (maxConcurrent.error) return res.status(400).json({ message: maxConcurrent.error })
 
     // Check if branch with same email already exists (only if email is provided)
     if (email) {
@@ -60,6 +74,7 @@ export const createBranch = async (req, res) => {
       phone,
       email: email ? email.toLowerCase() : undefined,
       assignedUsers: assignedUsers || [],
+      maxConcurrentAppointments: maxConcurrent.value ?? null,
     })
 
     // Validate and assign users
@@ -105,7 +120,9 @@ export const createBranch = async (req, res) => {
 // @access  Private (Super Admin only)
 export const updateBranch = async (req, res) => {
   try {
-    const { name, address, phone, email, assignedUsers } = req.body
+    const { name, address, phone, email, assignedUsers, maxConcurrentAppointments } = req.body
+    const maxConcurrent = parseMaxConcurrentAppointments(maxConcurrentAppointments)
+    if (maxConcurrent.error) return res.status(400).json({ message: maxConcurrent.error })
 
     const branch = await Branch.findById(req.params.id)
     if (!branch) {
@@ -131,6 +148,7 @@ export const updateBranch = async (req, res) => {
     if (name) branch.name = name
     if (address) branch.address = address
     if (phone) branch.phone = phone
+    if (maxConcurrent.value !== undefined) branch.maxConcurrentAppointments = maxConcurrent.value
 
     // Handle user assignments
     if (assignedUsers !== undefined) {

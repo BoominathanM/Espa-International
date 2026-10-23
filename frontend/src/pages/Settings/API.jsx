@@ -23,6 +23,7 @@ import { PageLayout, PageHeader } from '../../components/ds-layout'
 import WhatsAppTemplates from './WhatsAppTemplates'
 import WhatsAppEventMapping from './WhatsAppEventMapping'
 import WhatsAppQuickReplies from './WhatsAppQuickReplies'
+import GoogleCalendarSettings from './GoogleCalendarSettings'
 
 const API = () => {
   const { isMobile } = useResponsive()
@@ -375,6 +376,19 @@ const API = () => {
                 </Form.Item>
               </Form>
             </>
+          )}
+        </Card>
+      ),
+    },
+    {
+      key: 'google-calendar',
+      label: 'Google Calendar',
+      children: (
+        <Card className="mgmt-settings-card">
+          {isSuperAdminUser ? (
+            <GoogleCalendarSettings />
+          ) : (
+            <p className="mgmt-modal-hint">Only Super Admin can view the Google Calendar integration.</p>
           )}
         </Card>
       ),

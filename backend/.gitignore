@@ -5,3 +5,10 @@ node_modules/
 dist/
 build/
 uploads/
+
+# Google Calendar service account key (GOOGLE_SERVICE_ACCOUNT_KEY_FILE)
+google-service-account*.json
+
+# Google Calendar OAuth client (GOOGLE_OAUTH_CLIENT_FILE)
+google-oauth-client*.json
+client_secret_*.json

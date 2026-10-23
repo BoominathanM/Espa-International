@@ -784,7 +784,7 @@ const Leads = () => {
       form.resetFields()
       refetchLeads()
     } catch (error) {
-      messageApi.error(error?.data?.message || 'Failed to save lead')
+      messageApi.error(error?.data?.message || 'Failed to save lead', error?.status === 409 ? 8 : undefined)
     }
   }
 

@@ -10,6 +10,8 @@ import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
 import { syncAskEvaAppointmentsToDb } from '../services/askevaAppointmentSyncService.js'
 import { applyBranchScope, canAccessBranch, getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
 import { applyCanonicalSourceToLeadQuery, normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
+import { findSlotConflict, slotConflictMessage } from '../utils/appointmentCapacity.js'
+import { istYmd, istTodayYmd } from '../utils/appointmentSlot.js'
 
 const DEFAULT_BRANCH_NAME = 'Espa Head Offices Tambaram'
 
@@ -336,6 +338,14 @@ export const createLead = async (req, res) => {
       }
       if (!branchId && accessibleBranchIds.length > 0) {
         branchId = accessibleBranchIds[0]
+      }
+    }
+
+    // Branch booking limit (Branch Configuration → Max bookings at the same time)
+    if (appointment_date && slot_time && (status || 'New') !== 'Cancelled') {
+      const conflict = await findSlotConflict({ branchId, appointmentDate: new Date(appointment_date), slotTime: slot_time })
+      if (conflict) {
+        return res.status(409).json({ success: false, message: slotConflictMessage(conflict), conflict })
       }
     }
 
@@ -826,6 +836,13 @@ export const updateLead = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not allowed' })
     }
 
+    const slotBefore = {
+      branch: String(lead.branch || ''),
+      ymd: lead.appointment_date ? istYmd(lead.appointment_date) : '',
+      slot: String(lead.slot_time || '').trim(),
+      status: lead.status,
+    }
+
     // Handle name field
     if (name && !first_name) {
       const nameParts = name.trim().split(' ')
@@ -900,6 +917,27 @@ export const updateLead = async (req, res) => {
         if (exists) {
           lead.assignedTo = assignedTo
         }
+      }
+    }
+
+    // Branch booking limit — same check as Add for every open upcoming appointment, and for any edit that moves an
+    // appointment into a slot. Closing it (Cancelled / Converted) or editing a past appointment is never blocked.
+    const movesIntoSlot =
+      String(lead.branch || '') !== slotBefore.branch ||
+      (lead.appointment_date ? istYmd(lead.appointment_date) : '') !== slotBefore.ymd ||
+      String(lead.slot_time || '').trim() !== slotBefore.slot ||
+      (slotBefore.status === 'Cancelled' && lead.status !== 'Cancelled')
+    const staysOpen = lead.status !== 'Cancelled' && lead.status !== 'Converted'
+    const isUpcoming = Boolean(lead.appointment_date) && istYmd(lead.appointment_date) >= istTodayYmd()
+    if (lead.appointment_date && staysOpen && (movesIntoSlot || isUpcoming)) {
+      const conflict = await findSlotConflict({
+        branchId: lead.branch,
+        appointmentDate: lead.appointment_date,
+        slotTime: lead.slot_time,
+        excludeLeadId: lead._id,
+      })
+      if (conflict) {
+        return res.status(409).json({ success: false, message: slotConflictMessage(conflict), conflict })
       }
     }
 
@@ -1597,6 +1635,15 @@ export const rescheduleAppointment = async (req, res) => {
     const prevSlot = lead.slot_time || ''
     const newDate = new Date(appointment_date)
     const newSlot = String(slot_time).trim()
+    const conflict = await findSlotConflict({
+      branchId: lead.branch,
+      appointmentDate: newDate,
+      slotTime: newSlot,
+      excludeLeadId: lead._id,
+    })
+    if (conflict) {
+      return res.status(409).json({ success: false, message: slotConflictMessage(conflict), conflict })
+    }
     lead.rescheduleHistory.push({
       description: (reason || '').trim() || 'Rescheduled',
       previousAppointmentDate: prevDate,

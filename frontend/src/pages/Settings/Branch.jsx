@@ -12,6 +12,7 @@ import {
   Tooltip,
   Badge,
   Dropdown,
+  InputNumber,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, UserOutlined, MoreOutlined } from '@ant-design/icons'
 import { canCreate, canEdit, canDelete, isSuperAdmin } from '../../utils/permissions'
@@ -81,6 +82,12 @@ const Branch = () => {
       title: 'Phone',
       dataIndex: 'phone',
       key: 'phone',
+    },
+    {
+      title: 'Max at a time',
+      dataIndex: 'maxConcurrentAppointments',
+      key: 'maxConcurrentAppointments',
+      render: (value) => (value ? value : <span style={{ opacity: 0.6 }}>No limit</span>),
     },
     {
       title: 'User Count',
@@ -330,6 +337,14 @@ const Branch = () => {
             rules={[{ required: true, message: 'Please enter address' }]}
           >
             <Input.TextArea rows={3} placeholder="Enter address" />
+          </Form.Item>
+
+          <Form.Item
+            name="maxConcurrentAppointments"
+            label="Max bookings at the same time"
+            tooltip="How many appointments this branch can take at once (rooms / therapists). A booking that would go over it is refused. Leave empty for no limit."
+          >
+            <InputNumber min={1} max={100} precision={0} placeholder="No limit" style={{ width: '100%' }} />
           </Form.Item>
 
           <Form.Item

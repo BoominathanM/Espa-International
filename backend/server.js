@@ -28,11 +28,13 @@ import reportRoutes from './routes/reports.js'
 import customerRoutes from './routes/customers.js'
 import webhookRoutes from './routes/webhook.js'
 import userActivityRoutes from './routes/userActivity.js'
+import googleCalendarRoutes from './routes/googleCalendar.js'
 import User from './models/User.js'
 import Role from './models/Role.js'
 import Branch from './models/Branch.js'
 import LeadStage from './models/LeadStage.js'
 import { startMissedCallMessageSweep } from './services/whatsappMissedCallService.js'
+import { startGoogleCalendarSync } from './services/googleCalendar/index.js'
 
 dotenv.config()
 
@@ -215,6 +217,7 @@ app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/customers', customerRoutes)
 app.use('/api/activity', userActivityRoutes)
+app.use('/api/google-calendar', googleCalendarRoutes)
 app.use('/webhook', webhookRoutes)
 
 // 404 handler for undefined routes
@@ -506,6 +509,8 @@ mongoose
       console.log('='.repeat(60))
       // WhatsApp "Missed Call Hi Message": re-check recent missed calls every 5 minutes
       startMissedCallMessageSweep()
+      // Google Calendar two-way sync for appointments (off unless GOOGLE_CALENDAR_SYNC_ENABLED=true)
+      startGoogleCalendarSync()
     })
     
     server.on('error', (error) => {
