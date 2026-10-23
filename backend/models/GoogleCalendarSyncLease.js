@@ -7,7 +7,8 @@ import mongoose from 'mongoose'
 const googleCalendarSyncLeaseSchema = new mongoose.Schema(
   {
     _id: { type: String },
-    holder: { type: String, default: '' },
+    holder: { type: String, default: '' }, // display name (GOOGLE_CALENDAR_SERVER_NAME or host:port)
+    holderKey: { type: String, default: '' }, // identity: host:port (+ PM2 instance)
     // Held by a server with GOOGLE_CALENDAR_WEBHOOK_URL (instant Google -> CRM updates).
     preferred: { type: Boolean, default: false },
     expiresAt: { type: Date, default: null },

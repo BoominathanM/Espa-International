@@ -18,15 +18,28 @@ export const LEASE_RENEW_MS = 30 * 1000
 let leaseUntil = 0
 let lastLoggedRole = ''
 
-/**
- * This server's name in the lease: GOOGLE_CALENDAR_SERVER_NAME, else host:port — stable across restarts, so a
- * restarted server carries on at once. PM2 cluster instances (NODE_APP_INSTANCE) each get their own name.
- */
-export function serverName() {
-  const base = String(process.env.GOOGLE_CALENDAR_SERVER_NAME || '').trim() || `${os.hostname()}:${process.env.PORT || 3001}`
+// PM2 numbers its processes (NODE_APP_INSTANCE 0, 1, …); only extra cluster instances need telling apart.
+const instanceSuffix = () => {
   const instance = String(process.env.NODE_APP_INSTANCE ?? '').trim()
-  return instance ? `${base}#${instance}` : base
+  return instance && instance !== '0' ? `#${instance}` : ''
 }
+
+/** This server's name on the Settings page: GOOGLE_CALENDAR_SERVER_NAME, else host:port. */
+export function serverName() {
+  const name = String(process.env.GOOGLE_CALENDAR_SERVER_NAME || '').trim()
+  return `${name || `${os.hostname()}:${process.env.PORT || 3001}`}${instanceSuffix()}`
+}
+
+/**
+ * This server's identity in the lease: host:port (+ PM2 instance). Stable across restarts, so a restarted server
+ * carries on at once, and different per machine, so two .env files with the same name can't both be active.
+ */
+export function serverKey() {
+  return `${os.hostname()}:${process.env.PORT || 3001}${instanceSuffix()}`
+}
+
+// The lease is ours only when both match (an older server version may have rewritten one of them).
+const ownLease = () => ({ holderKey: serverKey(), holder: serverName() })
 
 export const isSyncLeader = () => Date.now() < leaseUntil
 
@@ -38,20 +51,30 @@ function logRole(role, text) {
   console.log(LOG, text)
 }
 
+const describe = (lease) => (lease?.holder ? `${lease.holder}${lease.holderKey && lease.holderKey !== lease.holder ? ` (${lease.holderKey})` : ''}` : 'another server')
+
 /**
  * Take or renew the lease. Resolves { leader, gained } — gained when this server has just become the active one.
  */
 export async function claimSyncLease() {
   const now = new Date()
-  const me = serverName()
+  const key = serverKey()
   const preferred = Boolean(getSettings().webhookUrl)
-  const takeable = [{ holder: me }, { expiresAt: { $lt: now } }]
+  const takeable = [ownLease(), { expiresAt: { $lt: now } }]
   if (preferred) takeable.push({ preferred: { $ne: true } })
   const wasLeader = isSyncLeader()
   try {
     await GoogleCalendarSyncLease.findOneAndUpdate(
       { _id: LEASE_ID, $or: takeable },
-      { $set: { holder: me, preferred, expiresAt: new Date(now.getTime() + LEASE_TTL_MS), renewedAt: now } },
+      {
+        $set: {
+          holder: serverName(),
+          holderKey: key,
+          preferred,
+          expiresAt: new Date(now.getTime() + LEASE_TTL_MS),
+          renewedAt: now,
+        },
+      },
       { upsert: true }
     )
   } catch (err) {
@@ -60,30 +83,32 @@ export async function claimSyncLease() {
     leaseUntil = 0
     const lease = await getSyncLease().catch(() => null)
     logRole(
-      `passive:${lease?.holder || ''}`,
-      `sync is run by ${lease?.holder || 'another server'} — this server (${me}) stays passive`
+      `passive:${lease?.holderKey || lease?.holder || ''}`,
+      `sync is run by ${describe(lease)} — this server (${serverName()}, ${key}) stays passive`
     )
     return { leader: false, gained: false }
   }
   leaseUntil = now.getTime() + LEASE_TTL_MS - LEASE_SAFETY_MS
-  logRole('leader', `this server (${me}) is the active sync server`)
+  logRole('leader', `this server (${serverName()}, ${key}) is the active sync server`)
   return { leader: true, gained: !wasLeader }
 }
 
 /** Save bookkeeping on the lease — only while this server still holds it. */
 export async function updateSyncLease(fields) {
-  await GoogleCalendarSyncLease.updateOne({ _id: LEASE_ID, holder: serverName() }, { $set: fields })
+  await GoogleCalendarSyncLease.updateOne({ _id: LEASE_ID, ...ownLease() }, { $set: fields })
 }
 
 /** Settings page: who runs the sync. */
 export async function getSyncServerInfo() {
   const lease = await getSyncLease()
-  const me = serverName()
+  const key = serverKey()
   const live = Boolean(lease?.expiresAt && new Date(lease.expiresAt).getTime() > Date.now())
   return {
-    thisServer: me,
+    thisServer: serverName(),
+    thisHost: key,
     activeServer: live ? lease.holder : '',
-    isThisServer: live && lease.holder === me && isSyncLeader(),
+    activeHost: live ? lease.holderKey || '' : '',
+    isThisServer: live && lease.holderKey === key && lease.holder === serverName() && isSyncLeader(),
     activeHasWebhook: Boolean(live && lease.preferred),
     renewedAt: lease?.renewedAt || null,
   }

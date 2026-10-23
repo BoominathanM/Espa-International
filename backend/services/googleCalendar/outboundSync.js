@@ -154,7 +154,8 @@ async function recordSyncError(leadId, err) {
       { _id: leadId },
       {
         $set: linkUpdate({ status: 'error', lastError: String(err?.message || err).slice(0, 500) }),
-        $inc: { 'googleCalendar.attempts': 1 },
+        // A setup problem (.env / sign-in) isn't this appointment's fault: keep its retries for when it's fixed.
+        ...(err?.reason === 'config' ? {} : { $inc: { 'googleCalendar.attempts': 1 } }),
       },
       { timestamps: false }
     )

@@ -126,7 +126,7 @@ export async function getGoogleCalendarStatus() {
     enabled: settings.enabled,
     credentials: sa.ok
       ? { ok: true, mode: sa.mode, source: sa.source, clientEmail: sa.clientEmail }
-      : { ok: false, error: sa.error },
+      : { ok: false, mode: sa.mode, error: sa.error },
     webhookUrl: settings.webhookUrl,
     syncServer: await getSyncServerInfo(),
     pollMinutes: Math.round(settings.pollMs / 60000),

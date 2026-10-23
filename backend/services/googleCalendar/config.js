@@ -90,8 +90,8 @@ export function loadServiceAccount() {
 let oauthClientCache = null
 
 /**
- * OAuth "Desktop app" client, from GOOGLE_OAUTH_CLIENT_FILE (the client_secret_….json Google gives you)
- * or GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET.
+ * OAuth "Desktop app" client, from GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET, else from
+ * GOOGLE_OAUTH_CLIENT_FILE (the client_secret_….json Google gives you; git-ignored, so servers use the two values).
  */
 export function loadOAuthClient() {
   const file = env('GOOGLE_OAUTH_CLIENT_FILE')
@@ -102,8 +102,15 @@ export function loadOAuthClient() {
 
   let value
   try {
-    if (file) {
+    if (id && secret) {
+      value = { ok: true, source: 'env', clientId: id, clientSecret: secret, authUri: DEFAULT_AUTH_URI, tokenUri: DEFAULT_TOKEN_URI, projectId: '' }
+    } else if (file) {
       const fullPath = path.isAbsolute(file) ? file : path.resolve(BACKEND_DIR, file)
+      if (!fs.existsSync(fullPath)) {
+        throw new Error(
+          `${file} is not on this server (${fullPath}) — copy it into backend/, or set GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET in .env instead`
+        )
+      }
       const json = JSON.parse(fs.readFileSync(fullPath, 'utf8'))
       const client = json.installed || json.web || json
       if (!client.client_id || !client.client_secret) {
@@ -118,10 +125,8 @@ export function loadOAuthClient() {
         tokenUri: client.token_uri || DEFAULT_TOKEN_URI,
         projectId: client.project_id || '',
       }
-    } else if (id && secret) {
-      value = { ok: true, source: 'env', clientId: id, clientSecret: secret, authUri: DEFAULT_AUTH_URI, tokenUri: DEFAULT_TOKEN_URI, projectId: '' }
     } else {
-      value = { ok: false, error: 'Set GOOGLE_OAUTH_CLIENT_FILE (or GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET) in backend/.env' }
+      value = { ok: false, error: 'Set GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET (or GOOGLE_OAUTH_CLIENT_FILE) in backend/.env' }
     }
   } catch (err) {
     value = { ok: false, error: `Google OAuth client: ${err.message}` }
@@ -146,9 +151,13 @@ export function loadGoogleCredentials() {
   const refreshToken = env('GOOGLE_OAUTH_REFRESH_TOKEN')
   if (refreshToken || (oauthClientConfigured() && !serviceAccountConfigured())) {
     const client = loadOAuthClient()
-    if (!client.ok) return client
+    if (!client.ok) return { ...client, mode: 'oauth' }
     if (!refreshToken) {
-      return { ok: false, error: 'Sign in to Google first: run `npm run google-calendar:auth` in backend/ (it saves GOOGLE_OAUTH_REFRESH_TOKEN to .env)' }
+      return {
+        ok: false,
+        mode: 'oauth',
+        error: 'Sign in to Google first: run `npm run google-calendar:auth` in backend/ (it saves GOOGLE_OAUTH_REFRESH_TOKEN to .env)',
+      }
     }
     return {
       ok: true,
@@ -163,7 +172,7 @@ export function loadGoogleCredentials() {
     }
   }
   const sa = loadServiceAccount()
-  return sa.ok ? { ...sa, mode: 'service_account' } : sa
+  return { ...sa, mode: 'service_account' }
 }
 
 export function getSettings() {

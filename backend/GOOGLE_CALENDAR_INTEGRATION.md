@@ -117,8 +117,10 @@ Never point servers with **different** databases at the same calendar — each w
 ## Deploying
 
 1. Deploy backend + frontend (no new npm packages). The OAuth client JSON is git-ignored: on a server use
-   `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` instead of the file, plus the same refresh token, email and
-   calendar IDs as localhost.
+   `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` (they win over `GOOGLE_OAUTH_CLIENT_FILE`), plus the same
+   refresh token, email and calendar IDs as localhost.
+   `GOOGLE_CALENDAR_WEBHOOK_URL` and `GOOGLE_CALENDAR_SERVER_NAME` go **only** in the .env of the server that should run
+   the sync — never in localhost's (it would compete with that server; Settings shows a warning if two share a name).
 2. Restart; the log shows `[GoogleCalendar] sync is on — Google account …` and which server is active.
 3. Settings → API & Integrations → Google Calendar → **Test connection** (all OK) and check the sync server.
 

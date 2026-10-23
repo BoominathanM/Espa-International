@@ -118,7 +118,7 @@ const GoogleCalendarSettings = () => {
       />
 
       <Descriptions bordered size="small" column={1} style={{ marginBottom: 16 }}>
-        <Descriptions.Item label={data.credentials.mode === 'oauth' ? 'Google account' : 'Service account'}>
+        <Descriptions.Item label={data.credentials.mode === 'service_account' ? 'Service account' : 'Google account'}>
           {data.credentials.ok ? (
             <span style={{ wordBreak: 'break-all' }}>{data.credentials.clientEmail}</span>
           ) : (
@@ -131,8 +131,16 @@ const GoogleCalendarSettings = () => {
               <span>This server ({data.syncServer.thisServer}) runs the sync</span>
             ) : data.syncServer.activeServer ? (
               <span>
-                {data.syncServer.activeServer} runs the sync — this server ({data.syncServer.thisServer}) is passive; its
-                changes reach Google through that server
+                {data.syncServer.activeServer}
+                {data.syncServer.activeHost ? ` (${data.syncServer.activeHost})` : ''} runs the sync — this server (
+                {data.syncServer.thisServer}, {data.syncServer.thisHost}) is passive; its changes reach Google through that
+                server
+                {data.syncServer.activeServer === data.syncServer.thisServer && (
+                  <div style={{ color: '#faad14', marginTop: 4 }}>
+                    Two servers use the same GOOGLE_CALENDAR_SERVER_NAME — set it (and GOOGLE_CALENDAR_WEBHOOK_URL) only in
+                    the .env of the server that should run the sync, then restart the other one.
+                  </div>
+                )}
               </span>
             ) : (
               <span>Starting… (no server is running the sync yet)</span>
