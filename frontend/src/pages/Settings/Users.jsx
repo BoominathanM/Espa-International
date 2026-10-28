@@ -17,6 +17,7 @@ import {
   Checkbox,
   Switch,
   Divider,
+  Badge,
 } from 'antd'
 import { PlusOutlined, EditOutlined, MoreOutlined, StopOutlined, DeleteOutlined } from '@ant-design/icons'
 import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
@@ -69,6 +70,20 @@ const sanitizePermissionDraft = (permissions = {}) => {
   return sanitized
 }
 
+// Same matching as the backend (utils/defaultRoles.js): ignores case, spaces and punctuation.
+const roleMatchKey = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, '')
+
+// Roles added from the Role dropdown have no colour from the backend and show as a white tag.
+const CUSTOM_ROLE_TAG_STYLE = { background: '#ffffff', borderColor: '#d9d9d9', color: 'rgba(0, 0, 0, 0.88)' }
+
+const RoleTag = ({ role, meta }) => {
+  const label = String(meta?.displayName || role || '-').toUpperCase()
+  return meta?.color ? <Tag color={meta.color}>{label}</Tag> : <Tag style={CUSTOM_ROLE_TAG_STYLE}>{label}</Tag>
+}
+
 const Users = () => {
   const { message } = App.useApp()
   const { isMobile } = useResponsive()
@@ -112,14 +127,23 @@ const Users = () => {
     ? branches.map((b) => b._id || b.id).filter(Boolean)
     : (watchedBranches || []).filter((id) => id !== ALL_BRANCH_OPTION)
   const roleCounts = roleCountsData?.roleCounts || {}
-  const roleNamesFromDb = (rolesData?.roles || []).map((r) => r.name).filter(Boolean)
+  // Backend returns the default roles first (in order, with a colour), then the added roles.
+  const roleList = useMemo(() => rolesData?.roles || [], [rolesData])
+  const roleMetaByName = useMemo(() => new Map(roleList.map((r) => [r.name, r])), [roleList])
+  const defaultRoles = useMemo(() => roleList.filter((r) => r.isDefault), [roleList])
+  const getRoleLabel = (roleName) => roleMetaByName.get(roleName)?.displayName || roleName
   const normalizedRoleOptions = useMemo(() => {
-    const roleSet = new Set(roleNamesFromDb)
+    const roleSet = new Set(roleList.map((r) => r.name).filter(Boolean))
     users.forEach((u) => {
       if (u?.role) roleSet.add(String(u.role))
     })
     return [...roleSet]
-  }, [roleNamesFromDb, users])
+  }, [roleList, users])
+  const removableRoleOptions = normalizedRoleOptions.filter((roleName) => !roleMetaByName.get(roleName)?.isDefault)
+  const otherRolesCount = Math.max(
+    0,
+    (roleCounts.total || 0) - defaultRoles.reduce((sum, r) => sum + (roleCounts[r.name] || 0), 0)
+  )
 
   const columns = [
     {
@@ -136,15 +160,7 @@ const Users = () => {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
-      render: (role) => {
-        const colors = {
-          superadmin: 'red',
-          admin: 'orange',
-          supervisor: 'blue',
-          staff: 'green',
-        }
-        return <Tag color={colors[role]}>{role.toUpperCase()}</Tag>
-      },
+      render: (role) => <RoleTag role={role} meta={roleMetaByName.get(role)} />,
     },
     {
       title: 'Branch',
@@ -480,13 +496,29 @@ const Users = () => {
   }
 
   const handleAddRoleOption = async () => {
-    const cleanedRole = newRoleInput.trim().toLowerCase()
-    if (!cleanedRole) {
+    const cleanedRole = newRoleInput.trim().replace(/\s+/g, ' ').toLowerCase()
+    if (!cleanedRole || !roleMatchKey(cleanedRole)) {
       message.warning('Enter role name')
       return
     }
-    if (normalizedRoleOptions.includes(cleanedRole)) {
-      message.info('Role already exists in options')
+    // "Front Office Agent", "Super Admin", "team-leader"... match an existing role by name or
+    // display name, so pick that role instead of creating a duplicate.
+    const existingRole =
+      normalizedRoleOptions.find((roleName) => roleName === cleanedRole) ||
+      normalizedRoleOptions.find(
+        (roleName) =>
+          roleMatchKey(roleName) === roleMatchKey(cleanedRole) ||
+          roleMatchKey(getRoleLabel(roleName)) === roleMatchKey(cleanedRole)
+      )
+    if (existingRole) {
+      form.setFieldValue('role', existingRole)
+      if (!hasCustomPermissions) {
+        const roleDefaults = sanitizePermissionDraft(getDefaultPermissions(existingRole))
+        setPermissionDraft(roleDefaults)
+        form.setFieldValue('permissions', roleDefaults)
+      }
+      setNewRoleInput('')
+      message.info(`"${getRoleLabel(existingRole)}" already exists, selected it`)
       return
     }
     try {
@@ -543,28 +575,31 @@ const Users = () => {
       />
 
       <ContentCard staggerIndex={0} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
-        <Row gutter={[12, 12]} style={{ padding: 16 }}>
-          <Col xs={12} sm={8} md={4}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+            gap: 12,
+            padding: 16,
+          }}
+        >
+          <div>
             <div className="mgmt-muted">Total</div>
             <div style={{ fontSize: 22, fontWeight: 600 }}>{roleCounts.total || 0}</div>
-          </Col>
-          <Col xs={12} sm={8} md={5}>
-            <div className="mgmt-muted">Super Admin</div>
-            <div style={{ fontSize: 22, fontWeight: 600 }}>{roleCounts.superadmin || 0}</div>
-          </Col>
-          <Col xs={12} sm={8} md={5}>
-            <div className="mgmt-muted">Admin</div>
-            <div style={{ fontSize: 22, fontWeight: 600 }}>{roleCounts.admin || 0}</div>
-          </Col>
-          <Col xs={12} sm={8} md={5}>
-            <div className="mgmt-muted">Supervisor</div>
-            <div style={{ fontSize: 22, fontWeight: 600 }}>{roleCounts.supervisor || 0}</div>
-          </Col>
-          <Col xs={12} sm={8} md={5}>
-            <div className="mgmt-muted">Staff</div>
-            <div style={{ fontSize: 22, fontWeight: 600 }}>{roleCounts.staff || 0}</div>
-          </Col>
-        </Row>
+          </div>
+          {defaultRoles.map((r) => (
+            <div key={r.name}>
+              <Badge color={r.color} text={<span className="mgmt-muted">{r.displayName}</span>} />
+              <div style={{ fontSize: 22, fontWeight: 600 }}>{roleCounts[r.name] || 0}</div>
+            </div>
+          ))}
+          {otherRolesCount > 0 && (
+            <div>
+              <div className="mgmt-muted">Other Roles</div>
+              <div style={{ fontSize: 22, fontWeight: 600 }}>{otherRolesCount}</div>
+            </div>
+          )}
+        </div>
       </ContentCard>
 
       <ContentCard staggerIndex={1} className="ds-table-shell" innerClassName="ds-content-card__inner--flush">
@@ -721,9 +756,9 @@ const Users = () => {
                 <Select
                   placeholder="Select role"
                   showSearch
-                  optionFilterProp="children"
+                  optionFilterProp="label"
                   filterOption={(input, option) =>
-                    String(option?.children || '')
+                    `${option?.label || ''} ${option?.value || ''}`
                       .toLowerCase()
                       .includes(input.toLowerCase())
                   }
@@ -759,9 +794,9 @@ const Users = () => {
                           onChange={setRemoveRoleValue}
                           style={{ width: '100%' }}
                         >
-                          {normalizedRoleOptions.map((roleValue) => (
+                          {removableRoleOptions.map((roleValue) => (
                             <Option key={`remove-${roleValue}`} value={roleValue}>
-                              {roleValue}
+                              {getRoleLabel(roleValue)}
                             </Option>
                           ))}
                         </Select>
@@ -773,8 +808,8 @@ const Users = () => {
                   )}
                 >
                   {normalizedRoleOptions.map((roleValue) => (
-                    <Option key={roleValue} value={roleValue}>
-                      {roleValue}
+                    <Option key={roleValue} value={roleValue} label={getRoleLabel(roleValue)}>
+                      <RoleTag role={roleValue} meta={roleMetaByName.get(roleValue)} />
                     </Option>
                   ))}
                 </Select>

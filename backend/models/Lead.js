@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import leadChangeEvents, { LEAD_SYNC_FIELDS, hasLeadChangeListeners } from '../utils/leadChangeEvents.js'
 import { istDateKey, parseIstDayStart } from '../utils/istDateRange.js'
+import { LEAD_SOURCE_DB_VALUES } from '../utils/leadSourceNormalize.js'
 
 const reminderSchema = new mongoose.Schema(
   {
@@ -102,7 +103,8 @@ const leadSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ['Website', 'Call', 'IVR', 'WhatsApp', 'Facebook', 'Insta', 'Walk-in', 'Referral', 'Add', 'Import', 'Other'],
+      // Catalog + legacy values: see utils/leadSourceNormalize.js
+      enum: LEAD_SOURCE_DB_VALUES,
       default: 'Website',
       required: true,
     },

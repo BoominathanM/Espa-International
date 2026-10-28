@@ -356,7 +356,7 @@ export const createLead = async (req, res) => {
         finalAssignedTo = autoAssignedUserId
         console.log(`✅ Auto-assigned new lead to user: ${autoAssignedUserId} in branch: ${branchId}`)
       } else {
-        console.log(`⚠️  Could not auto-assign lead: No active staff/supervisor users found in branch ${branchId}`)
+        console.log(`⚠️  Could not auto-assign lead: No active staff/supervisor/agent users found in branch ${branchId}`)
       }
     }
 

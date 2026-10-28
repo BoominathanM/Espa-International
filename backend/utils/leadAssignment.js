@@ -5,15 +5,15 @@ import User from "../models/User.js";
 import mongoose from "mongoose";
 
 // Roles that participate in round-robin lead assignment. Matched case-insensitively
-// so "Staff" / "staff" / "SUPERVISOR" all qualify.
-const ELIGIBLE_ROLE_MATCHERS = [/^staff$/i, /^supervisor$/i];
+// so "Staff" / "staff" / "SUPERVISOR" / "Agent" all qualify.
+const ELIGIBLE_ROLE_MATCHERS = [/^staff$/i, /^supervisor$/i, /^agent$/i];
 
 /**
  * Round-robin auto-assign a lead to a user in the given branch.
  *
  * Rules:
  *  - Candidate users = active users whose DEFAULT branch (`user.branch`) is this
- *    branch and whose role is staff/supervisor. A user assigned to multiple
+ *    branch and whose role is staff/supervisor/agent. A user assigned to multiple
  *    branches only receives leads for their default branch.
  *  - Users are ordered deterministically (by _id ~= creation order) so the
  *    rotation is stable: lead 1 -> user 1, lead 2 -> user 2, ... wrapping around
@@ -43,7 +43,7 @@ export const autoAssignLeadToBranchUser = async (branchId) => {
       .lean();
 
     if (!users || users.length === 0) {
-      console.log("⚠️ No eligible staff/supervisor for branch auto-assign:", String(branchId));
+      console.log("⚠️ No eligible staff/supervisor/agent for branch auto-assign:", String(branchId));
       return null;
     }
 

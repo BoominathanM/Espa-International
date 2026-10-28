@@ -16,6 +16,20 @@ const roleSchema = new mongoose.Schema(
       of: [String],
       default: new Map(),
     },
+    // Set by the startup seed for the roles in utils/defaultRoles.js. Default roles are listed
+    // first, can't be removed and get a tag colour; other roles have no colour (white tag).
+    isDefault: {
+      type: Boolean,
+      default: false,
+    },
+    color: {
+      type: String,
+      default: null,
+    },
+    sortOrder: {
+      type: Number,
+      default: null,
+    },
   },
   {
     timestamps: true,

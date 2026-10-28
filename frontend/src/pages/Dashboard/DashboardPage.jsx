@@ -33,21 +33,10 @@ import AnimatedWrapper from '../../components/AnimatedWrapper'
 import MotionButton from '../../components/MotionButton'
 import { PageLayout, PageHeader } from '../../components/ds-layout'
 import UserActivitySection, { StatusTag, STATUS_META, STATUS_ORDER } from './UserActivitySection'
+import { leadSourceReportLabel, leadSourceTagPropsForLabel } from '../../utils/leadSourceNormalize'
 import './dashboard-page.css'
 
 const { Option } = Select
-
-const SOURCE_TAG = {
-  IVR: 'gold',
-  WhatsApp: 'green',
-  Facebook: 'blue',
-  Insta: 'magenta',
-  Website: 'purple',
-  'Walk-in': 'gold',
-  'Meta Ads': 'blue',
-  Import: 'default',
-  Other: 'default',
-}
 
 const STATUS_TAG = {
   New: 'blue',
@@ -135,7 +124,11 @@ const Dashboard = () => {
       title: 'Source',
       dataIndex: 'source',
       key: 'source',
-      render: (source) => <Tag color={SOURCE_TAG[source]}>{source}</Tag>,
+      // Rows arrive already normalized by the backend (same tag style as Leads / Reports).
+      render: (source) => {
+        const label = leadSourceReportLabel(source)
+        return <Tag {...leadSourceTagPropsForLabel(label)}>{label}</Tag>
+      },
       sorter: (a, b) => String(a.source || '').localeCompare(String(b.source || ''), undefined, { sensitivity: 'base' }),
     },
     {
@@ -374,7 +367,7 @@ const Dashboard = () => {
                       labelLine={false}
                     >
                       {sourceData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.fillVar ? `var(${entry.fillVar})` : 'var(--primary-color)'} name={entry.name} />
+                        <Cell key={`cell-${index}`} fill={entry.fillVar ? `var(${entry.fillVar})` : entry.color || 'var(--primary-color)'} name={entry.name} />
                       ))}
                     </Pie>
                     <Tooltip

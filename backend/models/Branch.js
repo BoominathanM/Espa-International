@@ -29,7 +29,7 @@ const branchSchema = new mongoose.Schema(
       },
     ],
     // Monotonic counter used for round-robin auto-assignment of leads to the
-    // branch's staff/supervisor users. Incremented atomically ($inc) on every
+    // branch's staff/supervisor/agent users. Incremented atomically ($inc) on every
     // auto-assign so concurrent website leads still rotate correctly.
     assignmentCursor: {
       type: Number,

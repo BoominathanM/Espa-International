@@ -33,6 +33,7 @@ import User from './models/User.js'
 import Role from './models/Role.js'
 import Branch from './models/Branch.js'
 import LeadStage from './models/LeadStage.js'
+import { ensureDefaultRoles } from './utils/defaultRoles.js'
 import { startMissedCallMessageSweep } from './services/whatsappMissedCallService.js'
 import { startGoogleCalendarSync } from './services/googleCalendar/index.js'
 
@@ -469,6 +470,22 @@ const seedDefaultLeadStagesIfNeeded = async () => {
   }
 }
 
+// Default user roles (Super Admin, Team Leader, Admin, General Manager, Agent, Front Office Agent,
+// Staff): reuses roles that already exist, creates the missing ones, keeps every other role.
+const seedDefaultRolesIfNeeded = async () => {
+  try {
+    const { createdCount, updatedCount, demotedCount } = await ensureDefaultRoles()
+    if (createdCount > 0 || updatedCount > 0 || demotedCount > 0) {
+      console.log(`✅ Default roles: ${createdCount} created, ${updatedCount} updated, ${demotedCount} no longer default`)
+    } else {
+      console.log('ℹ️  Default roles already exist')
+    }
+  } catch (error) {
+    console.error('❌ Error seeding default roles:', error.message)
+    // Don't exit - let server start even if seeding fails
+  }
+}
+
 // Ensure console output is not buffered
 process.stdout.setEncoding('utf8')
 process.stderr.setEncoding('utf8')
@@ -491,7 +508,10 @@ mongoose
     
     // Seed super admin if needed
     await seedSuperAdminIfNeeded()
-    
+
+    // Seed / tag the default user roles
+    await seedDefaultRolesIfNeeded()
+
     // Seed default branches if needed
     await seedDefaultBranchesIfNeeded()
 

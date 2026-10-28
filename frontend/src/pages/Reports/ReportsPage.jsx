@@ -46,7 +46,7 @@ import { useGetBranchesQuery } from '../../store/api/branchApi'
 import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
 import { exportReportToPdf } from '../../utils/reportsPdfExport'
-import { normalizeLeadSourceDisplay, leadSourceTagColor } from '../../utils/leadSourceNormalize'
+import { leadSourceReportLabel, leadSourceTagPropsForLabel } from '../../utils/leadSourceNormalize'
 import './reports-page.css'
 
 const { RangePicker } = DatePicker
@@ -139,8 +139,9 @@ function sortDateTimeOrText(a, b) {
 }
 
 function reportSourceCell(source) {
-  const s = normalizeLeadSourceDisplay(source)
-  return <Tag color={leadSourceTagColor(source)}>{s}</Tag>
+  // Report rows arrive already normalized by the backend (normalizeLeadSourceForReport).
+  const s = leadSourceReportLabel(source)
+  return <Tag {...leadSourceTagPropsForLabel(s)}>{s}</Tag>
 }
 
 /** Match backend normalizeOzonetelAgentId for export grouping. */

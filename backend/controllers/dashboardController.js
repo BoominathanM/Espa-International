@@ -5,7 +5,7 @@ import User from '../models/User.js'
 import Branch from '../models/Branch.js'
 import UserSession from '../models/UserSession.js'
 import { getAccessibleBranchIds, leadBranchMatchFromParam } from '../utils/branchAccess.js'
-import { normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
+import { normalizeLeadSourceForReport, LEAD_SOURCE_LABEL_COLORS } from '../utils/leadSourceNormalize.js'
 import { ONLINE_WINDOW_MS, presenceFromSessions } from '../utils/userPresence.js'
 import { parseIstDayStart, parseIstDayEnd, istDateKey } from '../utils/istDateRange.js'
 
@@ -409,11 +409,11 @@ export const getDashboard = async (req, res) => {
       if (c) day.calls = c.calls
     })
 
+    // Keyed by display label: stored Facebook / Insta arrive as "Meta Ads", and the label
+    // "Facebook" is the manual Facebook source, which uses its own catalog colour.
     const sourceMap = {
       IVR: '--chart-pie-call',
       WhatsApp: '--chart-pie-wa',
-      Facebook: '--chart-pie-fb',
-      Insta: '--chart-pie-insta',
       Website: '--chart-pie-web',
       'Walk-in': '--chart-pie-call',
       'Meta Ads': '--chart-pie-fb',
@@ -430,7 +430,8 @@ export const getDashboard = async (req, res) => {
       .map(([name, value]) => ({
         name,
         value,
-        fillVar: sourceMap[name] || '--chart-pie-web',
+        fillVar: sourceMap[name] || (LEAD_SOURCE_LABEL_COLORS[name] ? null : '--chart-pie-web'),
+        color: LEAD_SOURCE_LABEL_COLORS[name] || null,
       }))
       .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name))
 

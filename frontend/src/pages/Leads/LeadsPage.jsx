@@ -84,8 +84,15 @@ import { PageLayout, PageHeader, ContentCard } from '../../components/ds-layout'
 import MotionButton from '../../components/MotionButton'
 import { SPA_PACKAGES, slotTimesWithCurrent } from '../../constants/appointments'
 import {
+  LEAD_SOURCES,
+  SYSTEM_LEAD_SOURCES,
+  MANUAL_LEAD_SOURCES,
+  findLeadSource,
+  isSystemLeadSource,
+  leadSourceFilterValue,
+  leadSourceFormValue,
   normalizeLeadSourceDisplay,
-  leadSourceTagColor,
+  leadSourceTagProps,
   leadSourceToDbEnumValue,
 } from '../../utils/leadSourceNormalize'
 
@@ -349,6 +356,8 @@ const Leads = () => {
       subject: lead.subject,
       message: lead.message,
       source: normalizeLeadSourceDisplay(lead.source),
+      // Stored value: labels are ambiguous ("Facebook" label = manual Facebook, stored "Facebook" = Meta Ads)
+      sourceRaw: lead.source,
       status: lead.status,
       branch: lead.branch?.name || lead.branch || 'Unassigned',
       branchId: lead.branch?._id || lead.branch?.id || null,
@@ -438,21 +447,12 @@ const Leads = () => {
       title: 'Source',
       dataIndex: 'source',
       key: 'source',
-      render: (source) => {
-        const label = normalizeLeadSourceDisplay(source)
-        return <Tag color={leadSourceTagColor(source)}>{label}</Tag>
+      render: (source, record) => {
+        const raw = record.sourceRaw ?? source
+        return <Tag {...leadSourceTagProps(raw)}>{normalizeLeadSourceDisplay(raw)}</Tag>
       },
-      filters: [
-        { text: 'Website', value: 'Website' },
-        { text: 'IVR', value: 'IVR' },
-        { text: 'WhatsApp', value: 'WhatsApp' },
-        { text: 'Meta Ads', value: 'Meta Ads' },
-        { text: 'Walk-in', value: 'Walk-in' },
-        { text: 'Referral', value: 'Referral' },
-        { text: 'Import', value: 'Import' },
-        { text: 'Other', value: 'Other' },
-      ],
-      onFilter: (value, record) => normalizeLeadSourceDisplay(record.source) === value,
+      filters: LEAD_SOURCES.map((s) => ({ text: s.label, value: s.label })),
+      onFilter: (value, record) => normalizeLeadSourceDisplay(record.sourceRaw ?? record.source) === value,
     },
     {
       title: 'Branch',
@@ -602,6 +602,29 @@ const Leads = () => {
     return cols
   })()
 
+  // Auto-captured sources (Website / IVR / Meta Ads / Google Ads / WhatsApp) can't be picked by hand,
+  // so a call-created lead or a lead that arrived through one of them keeps its source locked.
+  const formSourceRaw = selectedLead ? selectedLead.sourceRaw ?? selectedLead.source : null
+  const formSourceLocked = !!callLeadMeta || (!!selectedLead && isSystemLeadSource(formSourceRaw))
+  const formLegacySource = (() => {
+    const v = selectedLead ? leadSourceFormValue(formSourceRaw) : null
+    if (!v) return null
+    const entry = findLeadSource(v)
+    return !entry || entry.kind === 'legacy' ? { value: v, label: normalizeLeadSourceDisplay(v) } : null
+  })()
+
+  const renderLeadSourceOption = (s, auto) => {
+    const tagProps = leadSourceTagProps(s.value)
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <Tag {...tagProps} style={{ ...tagProps.style, marginInlineEnd: 0 }}>
+          {s.label}
+        </Tag>
+        {auto ? <span style={{ fontSize: 11, opacity: 0.65 }}>Auto</span> : null}
+      </span>
+    )
+  }
+
   const handleAdd = () => {
     setSelectedLead(null)
     setCallLeadMeta(null)
@@ -624,7 +647,7 @@ const Leads = () => {
       whatsapp: record.whatsapp,
       subject: record.subject,
       message: record.message,
-      source: normalizeLeadSourceDisplay(record.source),
+      source: leadSourceFormValue(record.sourceRaw ?? record.source),
       status: record.status,
       branch: record.branchId,
       appointment_date: record.appointment_date ? dayjs(record.appointment_date) : null,
@@ -745,6 +768,8 @@ const Leads = () => {
         notes: values.notes.trim(),
         ...(callLeadMeta || {}),
       }
+      // Editing an auto-captured lead: the source field is locked, keep the stored value untouched.
+      if (selectedLead && formSourceLocked) delete leadData.source
 
       let leadId = selectedLead?._id
       if (selectedLead) {
@@ -1124,14 +1149,11 @@ const Leads = () => {
               placeholder={['Last interaction from', 'Last interaction to']}
             />
             <Select className="ds-filter-fixed" placeholder="Filter by Source" allowClear value={filterSource} onChange={setFilterSource}>
-              <Option value="Website">Website</Option>
-              <Option value="IVR">IVR</Option>
-              <Option value="WhatsApp">WhatsApp</Option>
-              <Option value="Meta Ads">Meta Ads</Option>
-              <Option value="Walk-in">Walk-in</Option>
-              <Option value="Referral">Referral</Option>
-              <Option value="Import">Import</Option>
-              <Option value="Other">Other</Option>
+              {LEAD_SOURCES.map((s) => (
+                <Option key={s.value} value={leadSourceFilterValue(s)}>
+                  {s.label}
+                </Option>
+              ))}
             </Select>
             <Select className="ds-filter-fixed" placeholder="Filter by Status" allowClear value={filterStatus} onChange={setFilterStatus}>
               {filterStageOptions.map((stage) => (
@@ -1406,15 +1428,34 @@ const Leads = () => {
                 label="Lead source"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <Select placeholder="Source">
-                  <Option value="Website">Website</Option>
-                  <Option value="IVR">IVR</Option>
-                  <Option value="WhatsApp">WhatsApp</Option>
-                  <Option value="Meta Ads">Meta Ads</Option>
-                  <Option value="Walk-in">Walk-in</Option>
-                  <Option value="Referral">Referral</Option>
-                  <Option value="Import">Import</Option>
-                  <Option value="Other">Other</Option>
+                <Select
+                  placeholder="Source"
+                  disabled={formSourceLocked}
+                  showSearch
+                  optionLabelProp="label"
+                  optionFilterProp="label"
+                >
+                  <Select.OptGroup label="Auto-captured (not selectable)">
+                    {SYSTEM_LEAD_SOURCES.map((s) => (
+                      <Option key={s.value} value={s.value} label={s.label} disabled>
+                        {renderLeadSourceOption(s, true)}
+                      </Option>
+                    ))}
+                  </Select.OptGroup>
+                  <Select.OptGroup label="Lead source (Add Lead)">
+                    {MANUAL_LEAD_SOURCES.map((s) => (
+                      <Option key={s.value} value={s.value} label={s.label}>
+                        {renderLeadSourceOption(s, false)}
+                      </Option>
+                    ))}
+                  </Select.OptGroup>
+                  {formLegacySource ? (
+                    <Select.OptGroup label="Current (old source)">
+                      <Option value={formLegacySource.value} label={formLegacySource.label} disabled>
+                        {formLegacySource.label}
+                      </Option>
+                    </Select.OptGroup>
+                  ) : null}
                 </Select>
               </Form.Item>
             </Col>
@@ -1620,8 +1661,8 @@ const Leads = () => {
                 <div>
                   <p className="leads-detail-row">
                     <strong className="leads-detail-label">Source:</strong>{' '}
-                    <Tag color={leadSourceTagColor(selectedLead.source)}>
-                      {normalizeLeadSourceDisplay(selectedLead.source) || 'N/A'}
+                    <Tag {...leadSourceTagProps(selectedLead.sourceRaw ?? selectedLead.source)}>
+                      {normalizeLeadSourceDisplay(selectedLead.sourceRaw ?? selectedLead.source) || 'N/A'}
                     </Tag>
                   </p>
                   <p className="leads-detail-row"><strong className="leads-detail-label">Status:</strong> <Tag color={getStageColor(selectedLead.status)}>{selectedLead.status || 'N/A'}</Tag></p>

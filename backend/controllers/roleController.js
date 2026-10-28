@@ -1,12 +1,13 @@
 import Role from '../models/Role.js'
 import User from '../models/User.js'
+import { ensureDefaultRoles, findMatchingRole, normalizeRoleName, roleMatchKey, sortRoles } from '../utils/defaultRoles.js'
 
 // @desc    Get all roles
 // @route   GET /api/roles
 // @access  Private (Super Admin only)
 export const getRoles = async (req, res) => {
   try {
-    const roles = await Role.find().sort({ name: 1 })
+    const roles = sortRoles(await Role.find())
     res.json({ success: true, roles })
   } catch (error) {
     console.error('Get roles error:', error)
@@ -71,21 +72,28 @@ export const updateRole = async (req, res) => {
 export const createRole = async (req, res) => {
   try {
     const { name, displayName, permissions } = req.body || {}
-    const normalizedName = String(name || '').trim().toLowerCase()
+    const normalizedName = normalizeRoleName(name)
 
-    if (!normalizedName) {
+    if (!normalizedName || !roleMatchKey(normalizedName)) {
       return res.status(400).json({ message: 'Role name is required' })
     }
 
-    const existing = await Role.findOne({ name: normalizedName })
+    // Match on name and display name ignoring case/spaces/punctuation, so "Front Office Agent"
+    // or "Super Admin" resolve to the existing role instead of creating a duplicate.
+    const existing = findMatchingRole(await Role.find().select('name displayName'), normalizedName)
     if (existing) {
-      return res.status(400).json({ message: 'Role already exists' })
+      return res.status(400).json({
+        message: `Role "${existing.displayName || existing.name}" already exists`,
+        role: existing.name,
+      })
     }
 
     const role = new Role({
       name: normalizedName,
       displayName: String(displayName || normalizedName).trim(),
       permissions: permissions || {},
+      isDefault: false,
+      color: null,
     })
 
     await role.save()
@@ -106,6 +114,10 @@ export const deleteRole = async (req, res) => {
 
     if (!role) {
       return res.status(404).json({ message: 'Role not found' })
+    }
+
+    if (role.isDefault) {
+      return res.status(400).json({ message: `"${role.displayName}" is a default role and cannot be removed.` })
     }
 
     const assignedUsers = await User.countDocuments({ role: roleName })
@@ -195,7 +207,9 @@ export const initializeRoles = async (req, res) => {
       }
     }
 
-    const roles = await Role.find()
+    await ensureDefaultRoles()
+
+    const roles = sortRoles(await Role.find())
     res.json({ success: true, message: 'Roles initialized', roles })
   } catch (error) {
     console.error('Initialize roles error:', error)

@@ -10,7 +10,7 @@ import {
 } from '../utils/branchAccess.js'
 import { parseIstDateRange } from '../utils/istDateRange.js'
 import { normalizeOzonetelAgentId, bucketCallStatus, formatCallStatusLabel } from '../utils/ozonetelFields.js'
-import { normalizeLeadSourceForReport } from '../utils/leadSourceNormalize.js'
+import { normalizeLeadSourceForReport, LEAD_SOURCE_LABEL_COLORS } from '../utils/leadSourceNormalize.js'
 
 const toBranchObjectIds = (ids) =>
   (ids || [])
@@ -146,6 +146,8 @@ async function aggregateCallLogStats(callLogFilter) {
 }
 
 const SOURCE_COLORS = {
+  // New catalog sources (Google Ads, Banner, Poster, …); existing report colours below are kept.
+  ...LEAD_SOURCE_LABEL_COLORS,
   IVR: '#531dab',
   'Walk-in': '#2f54eb',
   'Meta Ads': '#1877F2',
@@ -156,7 +158,6 @@ const SOURCE_COLORS = {
   Other: '#888888',
   Call: '#531dab',
   Add: '#2f54eb',
-  Facebook: '#1877F2',
   Insta: '#E4405F',
 }
 
