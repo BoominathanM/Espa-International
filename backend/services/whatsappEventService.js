@@ -11,6 +11,9 @@
  *   re-read, the template's variables are filled from what the AI agent collected (with CRM
  *   fallbacks) and the template is sent to the customer through AskEVA.
  *
+ * Which WhatsApp account: the branch the customer named on the call, else the Lead's / the call's
+ * branch (accountForCall) — that account's own event mapping, templates and number are used.
+ *
  * Exactly-once: the whatsappeventlogs row's unique dedupeKey is claimed before sending, so
  * repeated events / restarts can never send a second message for the same call. Only a failed or
  * skipped attempt is retried (by a later event, up to MAX_ATTEMPTS, or by "Send now").
@@ -22,10 +25,14 @@ import WhatsAppTemplate from '../models/WhatsAppTemplate.js'
 import TeleCMICallLog from '../models/TeleCMICallLog.js'
 import ZenxaiInboundCall from '../models/ZenxaiInboundCall.js'
 import { buildTemplatePayload, sendAskEvaTemplate } from './whatsappTemplateService.js'
+import { accountForBranch } from './whatsappAccountService.js'
+import { resolveBranchByName } from './zenxaiInboundLeadService.js'
 
 const LOG = '[WA-EVENTS]'
 const DEFAULT_DELAY_MS = 10000
 export const MAX_ATTEMPTS = 3
+// Calls looked through per kind for the "recent calls" picker of one account
+const RECENT_CALLS_SCAN = 45
 
 export const AI_CALL_CONFIRMATION = 'ai_call_confirmation'
 // Handled by services/whatsappMissedCallService.js (sending, triggers, 5-minute check).
@@ -207,11 +214,15 @@ const buildParams = (mapping, values) => {
 
 const findTemplate = async (mapping) => {
   if (mapping.templateId) {
-    const byId = await WhatsAppTemplate.findOne({ templateId: mapping.templateId }).lean()
+    const byId = await WhatsAppTemplate.findOne({ account: mapping.account, templateId: mapping.templateId }).lean()
     if (byId) return byId
   }
   if (!mapping.templateName) return null
-  return WhatsAppTemplate.findOne({ name: mapping.templateName, language: mapping.templateLanguage || 'en' }).lean()
+  return WhatsAppTemplate.findOne({
+    account: mapping.account,
+    name: mapping.templateName,
+    language: mapping.templateLanguage || 'en',
+  }).lean()
 }
 
 /**
@@ -273,6 +284,7 @@ export const loadAiCallContext = async (source, refId) => {
       callNumber: call.callerPhone,
       crmName: leadNameOf(call.lead) || clean(call.callerName),
       crmBranch: call.lead?.branch?.name || call.branches?.[0]?.name || '',
+      crmBranchId: call.lead?.branch?._id || call.branches?.[0]?._id || null,
       lead: call.lead?._id || null,
       zenxaiCallId: call.callId || '',
       callDate: call.endedAt || call.startedAt || call.updatedAt,
@@ -291,11 +303,72 @@ export const loadAiCallContext = async (source, refId) => {
     callNumber: log.customerNumber,
     crmName: leadNameOf(log.lead) || clean(log.customerName),
     crmBranch: log.lead?.branch?.name || log.branches?.[0]?.name || '',
+    crmBranchId: log.lead?.branch?._id || log.branches?.[0]?._id || null,
     lead: log.lead?._id || null,
     zenxaiCallId: log.zenxaiCallId || '',
     callDate: log.zenxaiEndedAt || log.zenxaiLastEventAt || log.updatedAt,
     current: log.whatsappConfirmation || null,
   }
+}
+
+/** The WhatsApp account a call's message goes out on (null when its branch has none and there is no default). */
+export const accountForCall = async (ctx) => {
+  const spoken = collectedFor(collectedEntries(ctx.collected), 'branch')
+  const named = spoken ? await resolveBranchByName(spoken) : null
+  return accountForBranch(named?._id || ctx.crmBranchId)
+}
+
+export const noAccountReason = (ctx) =>
+  `no WhatsApp account for branch "${ctx.crmBranch || 'unknown'}" and no default account — add one in WhatsApp Configuration`
+
+/**
+ * Keep only the calls that belong to this account, for its Settings pickers.
+ * @param {Array} calls {source, refId} newest first
+ * @param {Function} load (source, refId) → call context
+ */
+export const callsOfAccount = async (calls, account, limit, load) => {
+  const owners = await Promise.all(
+    calls.map(async (c) => {
+      const ctx = await load(c.source, c.refId)
+      return ctx ? accountForCall(ctx) : null
+    })
+  )
+  return calls.filter((_, i) => String(owners[i]?._id) === String(account._id)).slice(0, limit)
+}
+
+/** Latest answered AI calls with collected data that belong to this account — for the preview picker. */
+export const recentAnsweredAiCalls = async (account, limit = 10) => {
+  const [callbacks, inbound] = await Promise.all([
+    TeleCMICallLog.find({ zenxaiCallStatus: 'completed', zenxaiCollectedData: { $ne: null } })
+      .sort({ zenxaiLastEventAt: -1, updatedAt: -1 })
+      .limit(RECENT_CALLS_SCAN)
+      .select('customerNumber customerName zenxaiEndedAt zenxaiLastEventAt updatedAt whatsappConfirmation')
+      .lean(),
+    ZenxaiInboundCall.find({ status: 'completed', collectedData: { $ne: null } })
+      .sort({ endedAt: -1, updatedAt: -1 })
+      .limit(RECENT_CALLS_SCAN)
+      .select('callerPhone callerName endedAt updatedAt whatsappConfirmation')
+      .lean(),
+  ])
+  const calls = [
+    ...callbacks.map((c) => ({
+      source: 'ai-callback',
+      refId: c._id,
+      phone: c.customerNumber,
+      name: c.customerName,
+      at: c.zenxaiEndedAt || c.zenxaiLastEventAt || c.updatedAt,
+      whatsappStatus: c.whatsappConfirmation?.status || '',
+    })),
+    ...inbound.map((c) => ({
+      source: 'ai-inbound',
+      refId: c._id,
+      phone: c.callerPhone,
+      name: c.callerName,
+      at: c.endedAt || c.updatedAt,
+      whatsappStatus: c.whatsappConfirmation?.status || '',
+    })),
+  ].sort((a, b) => new Date(b.at) - new Date(a.at))
+  return callsOfAccount(calls, account, limit, loadAiCallContext)
 }
 
 /** Unique-key claim: a new row, or a failed/skipped one taken back for another attempt. */
@@ -339,20 +412,23 @@ const finishAttempt = async (ctx, row, patch) => {
  * the retry cap, but still never sends twice.
  */
 export const runAiCallConfirmation = async (source, refId, { manual = false, userId = null } = {}) => {
-  const mapping = await WhatsAppEventMapping.findOne({ eventKey: AI_CALL_CONFIRMATION }).lean()
-  if (!mapping?.templateName) return { skipped: true, reason: 'no template mapped for this event' }
+  const ctx = await loadAiCallContext(source, refId)
+  if (!ctx) return { skipped: true, reason: 'call not found' }
+
+  const account = await accountForCall(ctx)
+  if (!account) return { skipped: true, reason: noAccountReason(ctx) }
+  const mapping = await WhatsAppEventMapping.findOne({ account: account._id, eventKey: AI_CALL_CONFIRMATION }).lean()
+  if (!mapping?.templateName) return { skipped: true, reason: `no template mapped for this event on "${account.name}"` }
   if (!manual) {
-    if (!mapping.isActive) return { skipped: true, reason: 'event is switched off' }
+    if (!mapping.isActive) return { skipped: true, reason: `event is switched off on "${account.name}"` }
     if (source === 'ai-callback' && !mapping.triggerAiCallback) return { skipped: true, reason: 'AI call-back trigger is off' }
     if (source === 'ai-inbound' && !mapping.triggerAiInbound) return { skipped: true, reason: 'AI inbound trigger is off' }
   }
-
-  const ctx = await loadAiCallContext(source, refId)
-  if (!ctx) return { skipped: true, reason: 'call not found' }
   if (!ctx.answered) return { skipped: true, reason: 'AI call was not answered' }
 
   const prepared = await prepareEventMessage(mapping, ctx)
   const base = {
+    account: account._id,
     eventKey: AI_CALL_CONFIRMATION,
     source,
     [ctx.refField]: ctx.refId,
@@ -377,7 +453,7 @@ export const runAiCallConfirmation = async (source, refId, { manual = false, use
   }
 
   try {
-    const result = await sendAskEvaTemplate(prepared.payload)
+    const result = await sendAskEvaTemplate(prepared.payload, account)
     if (result.ok) {
       await finishAttempt(ctx, row, {
         status: 'sent',
@@ -386,7 +462,7 @@ export const runAiCallConfirmation = async (source, refId, { manual = false, use
         responseData: result.data,
         messageId: result.messageId,
       })
-      console.log(LOG, `AI call confirmation "${mapping.templateName}" sent to ${prepared.to} for ${source} ${ctx.refId}`)
+      console.log(LOG, `AI call confirmation "${mapping.templateName}" sent to ${prepared.to} from "${account.name}" for ${source} ${ctx.refId}`)
       return { sent: true, to: prepared.to, logId: row._id, messageId: result.messageId }
     }
     await finishAttempt(ctx, row, {
@@ -437,7 +513,7 @@ export const scheduleAiCallConfirmation = (source, refId) => {
  * Test send from Settings: the (possibly unsaved) mapping with sample values, to any number.
  * Logged with source "test" and no dedupeKey, so it never blocks a real confirmation.
  */
-export const sendEventTestMessage = async (mapping, { to, sample = {} }, userId = null) => {
+export const sendEventTestMessage = async (mapping, { to, sample = {}, account }, userId = null) => {
   const values = {
     name: clean(sample.name),
     mobile: displayPhone(sample.mobile) || clean(sample.mobile),
@@ -452,6 +528,7 @@ export const sendEventTestMessage = async (mapping, { to, sample = {} }, userId 
   }
   const prepared = await prepareEventMessage(mapping, {}, { values, to })
   const row = await WhatsAppEventLog.create({
+    account: account._id,
     eventKey: mapping.eventKey || AI_CALL_CONFIRMATION,
     source: 'test',
     status: 'pending',
@@ -469,7 +546,7 @@ export const sendEventTestMessage = async (mapping, { to, sample = {} }, userId 
     return { sent: false, reason, payload: prepared.payload, values }
   }
   try {
-    const result = await sendAskEvaTemplate(prepared.payload)
+    const result = await sendAskEvaTemplate(prepared.payload, account)
     await WhatsAppEventLog.updateOne(
       { _id: row._id },
       {

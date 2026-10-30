@@ -2,8 +2,8 @@ import mongoose from 'mongoose'
 
 /**
  * WhatsApp message templates synced from AskEVA (GET backend.askeva.io/v1/templates — the
- * WhatsApp Business templates approved on Meta). One row per template id; refreshed by
- * Settings → API & Integrations → WhatsApp API → Sync Templates (see whatsappTemplateService.js).
+ * WhatsApp Business templates approved on Meta). One row per WhatsApp account + template id;
+ * refreshed by Settings → API & Integrations → WhatsApp API → Sync Templates (see whatsappTemplateService.js).
  * Templates that disappear from AskEVA are flagged `missingFromLastSync`, never deleted, so an
  * event mapping that still points at one keeps showing what it was.
  */
@@ -21,6 +21,7 @@ const templateVariableSchema = new mongoose.Schema(
 
 const whatsappTemplateSchema = new mongoose.Schema(
   {
+    account: { type: mongoose.Schema.Types.ObjectId, ref: 'WhatsAppSettings', default: null },
     templateId: { type: String, required: true, trim: true },
     name: { type: String, required: true, trim: true },
     language: { type: String, default: 'en', trim: true },
@@ -42,7 +43,7 @@ const whatsappTemplateSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
-whatsappTemplateSchema.index({ templateId: 1 }, { unique: true })
+whatsappTemplateSchema.index({ account: 1, templateId: 1 }, { unique: true })
 whatsappTemplateSchema.index({ name: 1, language: 1 })
 
 export default mongoose.model('WhatsAppTemplate', whatsappTemplateSchema, 'whatsapptemplates')

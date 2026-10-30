@@ -7,6 +7,7 @@ export const chatApi = apiSlice.injectEndpoints({
         const q = new URLSearchParams()
         if (params.chatId) q.append('chatId', params.chatId)
         if (params.customerId) q.append('customerId', params.customerId)
+        if (params.leadId) q.append('leadId', params.leadId)
         if (params.waId) q.append('waId', params.waId)
         if (params.phone) q.append('phone', params.phone)
         if (params.limit) q.append('limit', String(params.limit))

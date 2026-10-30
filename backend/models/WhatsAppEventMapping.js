@@ -2,9 +2,9 @@ import mongoose from 'mongoose'
 
 /**
  * Which WhatsApp template is sent automatically when a CRM event happens, and where each of the
- * template's {{variables}} gets its value from. One row per event key (the catalogue of events
- * lives in services/whatsappEventService.js — e.g. "ai_call_confirmation"). Nothing is sent for
- * an event until its row exists, has a template, and is switched on.
+ * template's {{variables}} gets its value from. One row per WhatsApp account + event key (the
+ * catalogue of events lives in services/whatsappEventService.js — e.g. "ai_call_confirmation").
+ * Nothing is sent for an event until its row exists, has a template, and is switched on.
  */
 const variableMapSchema = new mongoose.Schema(
   {
@@ -21,6 +21,7 @@ const variableMapSchema = new mongoose.Schema(
 
 const whatsappEventMappingSchema = new mongoose.Schema(
   {
+    account: { type: mongoose.Schema.Types.ObjectId, ref: 'WhatsAppSettings', default: null },
     eventKey: { type: String, required: true, trim: true },
     isActive: { type: Boolean, default: false },
     templateId: { type: String, default: '' },
@@ -66,6 +67,6 @@ const whatsappEventMappingSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
-whatsappEventMappingSchema.index({ eventKey: 1 }, { unique: true })
+whatsappEventMappingSchema.index({ account: 1, eventKey: 1 }, { unique: true })
 
 export default mongoose.model('WhatsAppEventMapping', whatsappEventMappingSchema, 'whatsappeventmappings')

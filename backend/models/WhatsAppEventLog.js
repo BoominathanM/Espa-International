@@ -9,6 +9,7 @@ import mongoose from 'mongoose'
  */
 const whatsappEventLogSchema = new mongoose.Schema(
   {
+    account: { type: mongoose.Schema.Types.ObjectId, ref: 'WhatsAppSettings', default: null },
     eventKey: { type: String, required: true },
     dedupeKey: { type: String, default: undefined },
     // 'ai-callback' | 'ai-inbound' | 'test' | missed-call event: 'telecmi-missed' | 'ai-callback-missed' | 'ai-inbound-missed'
@@ -42,6 +43,7 @@ const whatsappEventLogSchema = new mongoose.Schema(
 
 whatsappEventLogSchema.index({ dedupeKey: 1 }, { unique: true, sparse: true })
 whatsappEventLogSchema.index({ eventKey: 1, createdAt: -1 })
+whatsappEventLogSchema.index({ account: 1, eventKey: 1, createdAt: -1 })
 whatsappEventLogSchema.index({ telecmiCallLog: 1 })
 whatsappEventLogSchema.index({ zenxaiInboundCall: 1 })
 // "Once per customer every N hours" lookup of the missed-call event

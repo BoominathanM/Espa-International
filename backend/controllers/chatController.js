@@ -12,6 +12,7 @@ import {
   getPublicBaseUrl,
 } from '../services/chatService.js'
 import { sendAskEvaMessage } from '../services/askevaMessageService.js'
+import { accountForChat } from '../services/whatsappAccountService.js'
 import {
   isCloudinaryConfigured,
   uploadChatFileToCloudinary,
@@ -193,7 +194,9 @@ export const sendChatMessage = async (req, res) => {
     // AskEVA image/document require a publicly reachable link
     let askevaResult = null
     let sendError = null
+    let account = null
     try {
+      account = await accountForChat({ phone: to, branch: customer.branch })
       if (type !== 'text') {
         const problem = await findMediaUrlProblem(mediaUrl)
         if (problem) {
@@ -214,6 +217,7 @@ export const sendChatMessage = async (req, res) => {
         }
       }
       askevaResult = await sendAskEvaMessage({
+        account,
         to,
         type,
         text,
@@ -265,6 +269,7 @@ export const sendChatMessage = async (req, res) => {
       contactName: customer.name,
       customer: customer._id,
       sentBy: req.user?._id || null,
+      whatsappAccount: account?._id || null,
       raw: {
         askevaRequest: {
           to,

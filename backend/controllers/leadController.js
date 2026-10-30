@@ -531,6 +531,7 @@ export const syncAskEvaLeads = async (req, res) => {
       updated: result.updated,
       skipped: result.skipped,
       total: result.created + result.updated + result.skipped,
+      warning: result.warning,
     })
   } catch (error) {
     console.error('[AskEva Sync] ❌ Error:', error)
@@ -565,6 +566,7 @@ export const syncAskEvaAppointments = async (req, res) => {
       updated: result.updated,
       skipped: result.skipped,
       total: result.created + result.updated + result.skipped,
+      warning: result.warning,
     })
   } catch (error) {
     console.error('[AskEva Appointments Sync] ❌ Error:', error)

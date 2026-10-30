@@ -1,10 +1,13 @@
 import Chat from '../models/Chat.js'
 import ChatMessage from '../models/ChatMessage.js'
+import Customer from '../models/Customer.js'
+import Lead from '../models/Lead.js'
 import {
   processInboundWebhookPayload,
   findChatForCustomer,
 } from '../services/inboundMessageService.js'
-import { normalizePhoneDigits } from '../services/chatService.js'
+import { normalizePhoneDigits, toAskEvaRecipient } from '../services/chatService.js'
+import { accountForChat, accountFromWebhook, allAccountKeys } from '../services/whatsappAccountService.js'
 
 async function applyStatusUpdate(statusObj) {
   const wamid = statusObj?.id
@@ -36,13 +39,13 @@ async function applyStatusUpdate(statusObj) {
 /**
  * Meta WhatsApp Cloud API webhook verification (GET).
  */
-export const verifyMetaWebhook = (req, res) => {
+export const verifyMetaWebhook = async (req, res) => {
   const mode = req.query['hub.mode']
   const token = req.query['hub.verify_token']
   const challenge = req.query['hub.challenge']
-  const expected = process.env.WHATSAPP_VERIFY_TOKEN || process.env.WHATSAPP_API_KEY || ''
+  const expected = [process.env.WHATSAPP_VERIFY_TOKEN, ...(await allAccountKeys().catch(() => []))].filter(Boolean)
 
-  if (mode === 'subscribe' && token && expected && token === expected) {
+  if (mode === 'subscribe' && token && expected.includes(token)) {
     console.log('[WhatsApp Meta] Webhook verified')
     return res.status(200).send(String(challenge))
   }
@@ -56,7 +59,7 @@ export const verifyMetaWebhook = (req, res) => {
     })
   }
 
-  console.warn('[WhatsApp Meta] Webhook verification failed', { mode, tokenMatch: token === expected })
+  console.warn('[WhatsApp Meta] Webhook verification failed', { mode })
   return res.sendStatus(403)
 }
 
@@ -68,7 +71,8 @@ export const handleMetaWebhook = async (req, res) => {
 
   try {
     const payload = req.body || {}
-    const { handled, results, kind } = await processInboundWebhookPayload(payload)
+    const account = await accountFromWebhook(req)
+    const { handled, results, kind } = await processInboundWebhookPayload(payload, { account })
 
     // Also apply delivery statuses from Meta envelopes
     const statusResults = []
@@ -183,14 +187,26 @@ export const listChats = async (req, res) => {
   }
 }
 
+/** The WhatsApp account the next Live Chat message would go out on — name and number only. */
+const replyAccountFor = async ({ customerId, leadId, phone }) => {
+  const customer = customerId ? await Customer.findById(customerId).select('branch phone whatsapp').lean() : null
+  const contact = customer || (leadId ? await Lead.findById(leadId).select('branch phone whatsapp').lean() : null)
+  const account = await accountForChat({
+    phone: toAskEvaRecipient(contact?.whatsapp || contact?.phone || phone),
+    branch: contact?.branch,
+  })
+  return account ? { name: account.name, phoneNumber: account.phoneNumber } : null
+}
+
 export const listChatMessages = async (req, res) => {
   try {
-    const { chatId, waId, customerId, phone, limit = 100 } = req.query
+    const { chatId, waId, customerId, leadId, phone, limit = 100 } = req.query
 
     const chat = await findChatForCustomer({ chatId, waId, customerId, phone })
+    const replyAccount = await replyAccountFor({ customerId, leadId, phone })
 
     if (!chat) {
-      return res.json({ success: true, chat: null, messages: [] })
+      return res.json({ success: true, chat: null, messages: [], replyAccount })
     }
 
     // Also pull messages linked directly to this customer (covers split chats)
@@ -213,7 +229,7 @@ export const listChatMessages = async (req, res) => {
       unique.push(m)
     }
 
-    res.json({ success: true, chat, messages: unique })
+    res.json({ success: true, chat, messages: unique, replyAccount })
   } catch (error) {
     console.error('[WhatsApp] listChatMessages error:', error)
     res.status(500).json({ success: false, message: error.message || 'Failed to list messages' })

@@ -1,12 +1,13 @@
 /**
  * Settings → API & Integrations → WhatsApp API → "Sync Templates" and "Event Mapping" tabs.
  * Mounted under /api/whatsapp-settings (Super Admin only, like the WhatsApp configuration).
+ * Each WhatsApp account has its own templates and mappings: ?account=<id> on every request
+ * (withWhatsAppAccount), the default account when left out.
  */
 import WhatsAppTemplate from '../models/WhatsAppTemplate.js'
 import WhatsAppEventMapping from '../models/WhatsAppEventMapping.js'
 import WhatsAppEventLog from '../models/WhatsAppEventLog.js'
-import TeleCMICallLog from '../models/TeleCMICallLog.js'
-import ZenxaiInboundCall from '../models/ZenxaiInboundCall.js'
+import { accountForSettings } from '../services/whatsappAccountService.js'
 import { syncWhatsAppTemplates } from '../services/whatsappTemplateService.js'
 import {
   WHATSAPP_EVENTS,
@@ -14,6 +15,7 @@ import {
   isKnownSource,
   loadAiCallContext,
   prepareEventMessage,
+  recentAnsweredAiCalls,
   runAiCallConfirmation,
   sendEventTestMessage,
   AI_CALL_CONFIRMATION,
@@ -35,10 +37,27 @@ const isObjectId = (v) => /^[0-9a-fA-F]{24}$/.test(String(v || ''))
 const str = (v) => (v === null || v === undefined ? '' : String(v).trim())
 const URL_RE = /^https?:\/\/\S+$/i
 
+/** Route middleware: the WhatsApp account this request works on → req.whatsappAccount. */
+export const withWhatsAppAccount = async (req, res, next) => {
+  try {
+    const account = await accountForSettings(req.query.account)
+    if (!account) {
+      return res.status(404).json({ success: false, message: 'WhatsApp account not found — add one in WhatsApp Configuration' })
+    }
+    req.whatsappAccount = account
+    next()
+  } catch (error) {
+    console.error(LOG, 'account lookup error:', error.message)
+    res.status(500).json({ success: false, message: 'Failed to load the WhatsApp account' })
+  }
+}
+
 // @route GET /api/whatsapp-settings/templates
 export const listWhatsAppTemplates = async (req, res) => {
   try {
-    const templates = await WhatsAppTemplate.find({}).sort({ missingFromLastSync: 1, name: 1 }).lean()
+    const templates = await WhatsAppTemplate.find({ account: req.whatsappAccount._id })
+      .sort({ missingFromLastSync: 1, name: 1 })
+      .lean()
     const lastSyncedAt = templates.reduce((max, t) => (t.lastSyncedAt && (!max || t.lastSyncedAt > max) ? t.lastSyncedAt : max), null)
     res.json({ success: true, templates, lastSyncedAt })
   } catch (error) {
@@ -50,8 +69,8 @@ export const listWhatsAppTemplates = async (req, res) => {
 // @route POST /api/whatsapp-settings/templates/sync
 export const syncTemplatesFromAskEva = async (req, res) => {
   try {
-    const result = await syncWhatsAppTemplates()
-    res.json({ success: true, message: `Synced ${result.synced} template(s) from AskEVA`, ...result })
+    const result = await syncWhatsAppTemplates(req.whatsappAccount)
+    res.json({ success: true, message: `Synced ${result.synced} template(s) for ${req.whatsappAccount.name}`, ...result })
   } catch (error) {
     console.error(LOG, 'sync templates error:', error.message)
     const status = error.code === 'MISSING_TOKEN' ? 400 : 502
@@ -62,7 +81,7 @@ export const syncTemplatesFromAskEva = async (req, res) => {
 // @route GET /api/whatsapp-settings/events
 export const listWhatsAppEvents = async (req, res) => {
   try {
-    const mappings = await WhatsAppEventMapping.find({}).lean()
+    const mappings = await WhatsAppEventMapping.find({ account: req.whatsappAccount._id }).lean()
     const events = WHATSAPP_EVENTS.map((e) => ({
       ...e,
       mapping: mappings.find((m) => m.eventKey === e.key) || null,
@@ -82,7 +101,7 @@ export const listWhatsAppEvents = async (req, res) => {
  *  - activationProblems: what still stops the event from sending automatically (only checked
  *    when it is switched on). These never block a save — see saveWhatsAppEventMapping.
  */
-const mappingFromBody = (eventKey, body = {}) => {
+const mappingFromBody = (eventKey, body = {}, account) => {
   const variables = (Array.isArray(body.variables) ? body.variables : [])
     .filter((v) => v && ['header', 'body', 'button'].includes(v.component) && str(v.key))
     .map((v) => ({
@@ -94,6 +113,7 @@ const mappingFromBody = (eventKey, body = {}) => {
       fallback: str(v.fallback),
     }))
   const mapping = {
+    account: account._id,
     eventKey,
     isActive: !!body.isActive,
     templateId: str(body.templateId),
@@ -171,7 +191,8 @@ export const saveWhatsAppEventMapping = async (req, res) => {
   try {
     const { eventKey } = req.params
     if (!isKnownEvent(eventKey)) return res.status(404).json({ success: false, message: 'Unknown event' })
-    const { mapping, errors, activationProblems } = mappingFromBody(eventKey, req.body)
+    const account = req.whatsappAccount
+    const { mapping, errors, activationProblems } = mappingFromBody(eventKey, req.body, account)
     if (errors.length) return res.status(400).json({ success: false, message: errors.join('. '), errors })
 
     const wantedActive = mapping.isActive
@@ -179,11 +200,11 @@ export const saveWhatsAppEventMapping = async (req, res) => {
     // Remember when automatic sending was switched on (the missed-call event never messages
     // calls missed before that).
     if (mapping.isActive) {
-      const prev = await WhatsAppEventMapping.findOne({ eventKey }).select('isActive').lean()
+      const prev = await WhatsAppEventMapping.findOne({ account: account._id, eventKey }).select('isActive').lean()
       if (!prev?.isActive) mapping.activatedAt = new Date()
     }
     const saved = await WhatsAppEventMapping.findOneAndUpdate(
-      { eventKey },
+      { account: account._id, eventKey },
       { $set: { ...mapping, lastUpdatedBy: req.user?._id || null } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean()
@@ -211,7 +232,7 @@ export const deleteWhatsAppEventMapping = async (req, res) => {
   try {
     const { eventKey } = req.params
     if (!isKnownEvent(eventKey)) return res.status(404).json({ success: false, message: 'Unknown event' })
-    const result = await WhatsAppEventMapping.deleteOne({ eventKey })
+    const result = await WhatsAppEventMapping.deleteOne({ account: req.whatsappAccount._id, eventKey })
     res.json({ success: true, message: 'Event removed', deleted: result.deletedCount || 0 })
   } catch (error) {
     console.error(LOG, 'delete event mapping error:', error.message)
@@ -224,14 +245,15 @@ export const testWhatsAppEventMapping = async (req, res) => {
   try {
     const { eventKey } = req.params
     if (!isKnownEvent(eventKey)) return res.status(404).json({ success: false, message: 'Unknown event' })
-    const { mapping, errors } = mappingFromBody(eventKey, { ...req.body, isActive: false })
+    const account = req.whatsappAccount
+    const { mapping, errors } = mappingFromBody(eventKey, { ...req.body, isActive: false }, account)
     if (errors.length) return res.status(400).json({ success: false, message: errors.join('. '), errors })
     const isMissedText = eventKey === MISSED_CALL_MESSAGE && mapping.messageType === 'text'
     if (!mapping.templateName && !isMissedText) return res.status(400).json({ success: false, message: 'Select a template first' })
     if (!str(req.body?.to)) return res.status(400).json({ success: false, message: 'Enter the WhatsApp number to send the test to' })
 
     const send = eventKey === MISSED_CALL_MESSAGE ? sendMissedCallTestMessage : sendEventTestMessage
-    const result = await send(mapping, { to: req.body.to, sample: req.body.sample || {} }, req.user?._id || null)
+    const result = await send(mapping, { to: req.body.to, sample: req.body.sample || {}, account }, req.user?._id || null)
     res.status(result.sent ? 200 : 400).json({
       success: !!result.sent,
       message: result.sent
@@ -247,47 +269,12 @@ export const testWhatsAppEventMapping = async (req, res) => {
   }
 }
 
-/** Latest answered AI calls that have collected data — for the preview picker. */
-const recentAnsweredAiCalls = async (limit = 10) => {
-  const [callbacks, inbound] = await Promise.all([
-    TeleCMICallLog.find({ zenxaiCallStatus: 'completed', zenxaiCollectedData: { $ne: null } })
-      .sort({ zenxaiLastEventAt: -1, updatedAt: -1 })
-      .limit(limit)
-      .select('customerNumber customerName zenxaiEndedAt zenxaiLastEventAt updatedAt whatsappConfirmation')
-      .lean(),
-    ZenxaiInboundCall.find({ status: 'completed', collectedData: { $ne: null } })
-      .sort({ endedAt: -1, updatedAt: -1 })
-      .limit(limit)
-      .select('callerPhone callerName endedAt updatedAt whatsappConfirmation')
-      .lean(),
-  ])
-  return [
-    ...callbacks.map((c) => ({
-      source: 'ai-callback',
-      refId: c._id,
-      phone: c.customerNumber,
-      name: c.customerName,
-      at: c.zenxaiEndedAt || c.zenxaiLastEventAt || c.updatedAt,
-      whatsappStatus: c.whatsappConfirmation?.status || '',
-    })),
-    ...inbound.map((c) => ({
-      source: 'ai-inbound',
-      refId: c._id,
-      phone: c.callerPhone,
-      name: c.callerName,
-      at: c.endedAt || c.updatedAt,
-      whatsappStatus: c.whatsappConfirmation?.status || '',
-    })),
-  ]
-    .sort((a, b) => new Date(b.at) - new Date(a.at))
-    .slice(0, limit)
-}
-
 // @route GET /api/whatsapp-settings/events/:eventKey/recent-calls
 export const listRecentAiCallsForEvent = async (req, res) => {
   try {
-    if (req.params.eventKey === MISSED_CALL_MESSAGE) return res.json({ success: true, calls: await recentMissedCalls(15) })
-    res.json({ success: true, calls: await recentAnsweredAiCalls(15) })
+    const account = req.whatsappAccount
+    if (req.params.eventKey === MISSED_CALL_MESSAGE) return res.json({ success: true, calls: await recentMissedCalls(account, 15) })
+    res.json({ success: true, calls: await recentAnsweredAiCalls(account, 15) })
   } catch (error) {
     console.error(LOG, 'recent AI calls error:', error.message)
     res.status(500).json({ success: false, message: 'Failed to load recent AI calls' })
@@ -303,12 +290,12 @@ export const previewWhatsAppEventForCall = async (req, res) => {
     const { eventKey } = req.params
     if (eventKey === MISSED_CALL_MESSAGE) return await previewMissedCall(req, res)
     if (eventKey !== AI_CALL_CONFIRMATION) return res.status(404).json({ success: false, message: 'Unknown event' })
-    const { mapping, errors } = mappingFromBody(eventKey, { ...req.body, isActive: false })
+    const { mapping, errors } = mappingFromBody(eventKey, { ...req.body, isActive: false }, req.whatsappAccount)
     if (errors.length) return res.status(400).json({ success: false, message: errors.join('. '), errors })
 
     let { source, refId } = req.body || {}
     if (!isObjectId(refId)) {
-      const latest = (await recentAnsweredAiCalls(1))[0]
+      const latest = (await recentAnsweredAiCalls(req.whatsappAccount, 1))[0]
       if (!latest) return res.status(404).json({ success: false, message: 'No answered AI call with collected data yet' })
       source = latest.source
       refId = latest.refId
@@ -363,11 +350,11 @@ export const sendWhatsAppEventForCall = async (req, res) => {
 
 /** Preview for one recent missed call (body.source + body.refId; the latest one when omitted). */
 const previewMissedCall = async (req, res) => {
-  const { mapping, errors } = mappingFromBody(MISSED_CALL_MESSAGE, { ...req.body, isActive: false })
+  const { mapping, errors } = mappingFromBody(MISSED_CALL_MESSAGE, { ...req.body, isActive: false }, req.whatsappAccount)
   if (errors.length) return res.status(400).json({ success: false, message: errors.join('. '), errors })
   let { source, refId } = req.body || {}
   if (!isMissedSource(source) || !isObjectId(refId)) {
-    const latest = (await recentMissedCalls(1))[0]
+    const latest = (await recentMissedCalls(req.whatsappAccount, 1))[0]
     if (!latest) return res.status(404).json({ success: false, message: 'No missed call yet' })
     source = latest.source
     refId = latest.refId
@@ -415,7 +402,7 @@ export const listWhatsAppEventLogs = async (req, res) => {
   try {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20))
     const page = Math.max(1, parseInt(req.query.page, 10) || 1)
-    const filter = {}
+    const filter = { account: req.whatsappAccount._id }
     if (str(req.query.eventKey)) filter.eventKey = str(req.query.eventKey)
     const [logs, total] = await Promise.all([
       WhatsAppEventLog.find(filter)

@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import WebsiteSettings from '../models/WebsiteSettings.js'
+import { allAccountKeys } from '../services/whatsappAccountService.js'
 
 export const authenticate = async (req, res, next) => {
   try {
@@ -141,12 +142,12 @@ export const authenticateWhatsAppApiKey = async (req, res, next) => {
       })
     }
 
-    // Get WhatsApp API key from environment variable
-    const expectedApiKey = process.env.WHATSAPP_API_KEY
-    
-    if (!expectedApiKey) {
-      console.error('❌ WHATSAPP_API_KEY is not set in environment variables')
-      return res.status(500).json({ 
+    // The API key of any WhatsApp account saved in Settings → WhatsApp API
+    const expectedApiKeys = await allAccountKeys()
+
+    if (!expectedApiKeys.length) {
+      console.error('❌ No WhatsApp account with an API key is configured')
+      return res.status(500).json({
         success: false,
         message: 'Server configuration error: WhatsApp API key not configured',
         error: 'Server misconfiguration'
@@ -155,11 +156,10 @@ export const authenticateWhatsAppApiKey = async (req, res, next) => {
 
     // Compare API keys (trim whitespace)
     const trimmedApiKey = apiKey.trim()
-    const trimmedExpectedKey = expectedApiKey.trim()
-    
-    if (trimmedApiKey !== trimmedExpectedKey) {
+
+    if (!expectedApiKeys.includes(trimmedApiKey)) {
       console.warn(`[WhatsApp Webhook] Invalid API key attempt from ${req.ip}`)
-      console.warn(`[WhatsApp Webhook] Received key length: ${trimmedApiKey.length}, Expected length: ${trimmedExpectedKey.length}`)
+      console.warn(`[WhatsApp Webhook] Received key length: ${trimmedApiKey.length}`)
       return res.status(401).json({ 
         success: false,
         message: 'Invalid WhatsApp API key',

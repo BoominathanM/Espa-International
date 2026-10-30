@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Card, Form, Input, Button, message, Tabs, Switch, Spin, Alert } from 'antd'
 import { SaveOutlined } from '@ant-design/icons'
 import { isSuperAdmin } from '../../utils/permissions'
@@ -8,10 +8,6 @@ import {
   useUpdateWebsiteSettingsMutation,
 } from '../../store/api/websiteSettingsApi'
 import {
-  useGetWhatsAppSettingsQuery,
-  useUpdateWhatsAppSettingsMutation,
-} from '../../store/api/whatsappSettingsApi'
-import {
   useGetOzonetelSettingsQuery,
   useUpdateOzonetelSettingsMutation,
 } from '../../store/api/ozonetelSettingsApi'
@@ -20,6 +16,7 @@ import {
   useUpdateTeleCMISettingsMutation,
 } from '../../store/api/telecmiSettingsApi'
 import { PageLayout, PageHeader } from '../../components/ds-layout'
+import WhatsAppAccounts, { WhatsAppAccountScope } from './WhatsAppAccounts'
 import WhatsAppTemplates from './WhatsAppTemplates'
 import WhatsAppEventMapping from './WhatsAppEventMapping'
 import WhatsAppQuickReplies from './WhatsAppQuickReplies'
@@ -29,7 +26,6 @@ const API = () => {
   const { isMobile } = useResponsive()
   const [ozonetelForm] = Form.useForm()
   const [telecmiForm] = Form.useForm()
-  const [whatsappForm] = Form.useForm()
   const [facebookForm] = Form.useForm()
   const [websiteForm] = Form.useForm()
 
@@ -37,11 +33,9 @@ const API = () => {
   const { data: settingsData, isLoading: isLoadingSettings, error: settingsError, refetch: refetchSettings } = useGetWebsiteSettingsQuery()
   const [updateWebsiteSettings, { isLoading: isUpdatingWebsite }] = useUpdateWebsiteSettingsMutation()
 
-  // WhatsApp integration API hooks
-  const { data: whatsappSettingsData, isLoading: isLoadingWhatsApp, error: whatsappError, refetch: refetchWhatsApp } = useGetWhatsAppSettingsQuery()
-  const [updateWhatsAppSettings, { isLoading: isUpdatingWhatsApp }] = useUpdateWhatsAppSettingsMutation()
   const websiteSettings = settingsData?.settings
-  const whatsappSettings = whatsappSettingsData?.settings
+  // WhatsApp account shown in the Sync Templates / Event Mapping tabs
+  const [whatsappAccountId, setWhatsappAccountId] = useState()
 
   // Ozonetel integration API hooks (only Super Admin can load/save)
   const isSuperAdminUser = isSuperAdmin()
@@ -64,16 +58,6 @@ const API = () => {
       })
     }
   }, [websiteSettings, websiteForm])
-
-  // Load WhatsApp settings into form when data is available
-  useEffect(() => {
-    if (whatsappSettings) {
-      whatsappForm.setFieldsValue({
-        backendUrl: whatsappSettings.backendUrl || '',
-        apiKey: whatsappSettings.apiKey || '',
-      })
-    }
-  }, [whatsappSettings, whatsappForm])
 
   const handleOzonetelSave = (values) => {
     message.success('Ozonetel API configuration saved')
@@ -104,23 +88,6 @@ const API = () => {
       if (result.success) {
         message.success('TeleCMI integration settings saved successfully')
         refetchTeleCMI()
-      }
-    } catch (error) {
-      console.error('Save error:', error)
-      message.error(error?.data?.message || 'Failed to save settings. Please try again.')
-    }
-  }
-
-  const handleWhatsAppSave = async (values) => {
-    try {
-      const result = await updateWhatsAppSettings({
-        backendUrl: values.backendUrl.trim(),
-        apiKey: values.apiKey.trim(),
-      }).unwrap()
-
-      if (result.success) {
-        message.success('WhatsApp API settings saved successfully')
-        refetchWhatsApp() // Refresh the data
       }
     } catch (error) {
       console.error('Save error:', error)
@@ -405,110 +372,21 @@ const API = () => {
             {
               key: 'whatsapp-config',
               label: 'WhatsApp Configuration',
-              children: (
-        <Card className="mgmt-settings-card">
-          {isLoadingWhatsApp ? (
-            <div style={{ textAlign: 'center', padding: '40px 0' }}>
-              <Spin size="large" />
-              <p className="mgmt-loading-text">Loading settings...</p>
-            </div>
-          ) : (
-            <>
-              {whatsappError && (
-                <Alert
-                  message="Error Loading Settings"
-                  description={whatsappError?.data?.message || 'Failed to load WhatsApp API settings. You can still enter and save new settings.'}
-                  type="warning"
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                />
-              )}
-              <Form
-                form={whatsappForm}
-                layout="vertical"
-                onFinish={handleWhatsAppSave}
-                initialValues={{
-                  backendUrl: '',
-                  apiKey: '',
-                }}
-              >
-                <Form.Item
-                  name="backendUrl"
-                  label="Backend URL"
-                  rules={[
-                    { required: true, message: 'Please enter Backend URL' },
-                    { type: 'url', message: 'Please enter a valid URL (e.g., https://api.example.com)' },
-                  ]}
-                >
-                  <Input 
-                    placeholder="Enter Backend URL (e.g., https://api.example.com)" 
-                  />
-                </Form.Item>
-
-                <Form.Item
-                  name="apiKey"
-                  label="WhatsApp API Key"
-                  rules={[{ required: true, message: 'Please enter WhatsApp API Key' }]}
-                  help="This API key will be used to authenticate WhatsApp API requests."
-                >
-                  <Input.Password placeholder="Enter WhatsApp API Key" />
-                </Form.Item>
-
-                <Form.Item>
-                  <div style={{ 
-                    display: 'flex', 
-                    flexDirection: isMobile ? 'column' : 'row',
-                    gap: 8,
-                    width: '100%'
-                  }}>
-                    {isSuperAdmin() && (
-                      <Button 
-                        type="primary" 
-                        htmlType="submit" 
-                        icon={<SaveOutlined />}
-                        loading={isUpdatingWhatsApp}
-                        style={{ width: isMobile ? '100%' : 'auto' }}
-                      >
-                        Save Configuration
-                      </Button>
-                    )}
-                    {!isSuperAdmin() && (
-                      <p className="mgmt-body-text">
-                        Only Super Admin can configure API settings.
-                      </p>
-                    )}
-                  </div>
-                </Form.Item>
-              </Form>
-
-              <div style={{ 
-                marginTop: 24, 
-                padding: 16, 
-                background: '#2a2a2a', 
-                borderRadius: 4,
-                border: '1px solid #444'
-              }}>
-                <h4 className="mgmt-card-title-text" style={{ marginBottom: 8 }}>Integration Information</h4>
-                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
-                  <strong>Backend URL:</strong> Used for WhatsApp API webhook configuration
-                </p>
-                <p style={{ color: '#ccc', margin: '4px 0', fontSize: '14px' }}>
-                  <strong>API Key:</strong> Used to authenticate WhatsApp API requests
-                </p>
-                <p style={{ color: '#ccc', margin: '8px 0 0 0', fontSize: '13px' }}>
-                  After saving, these settings will be used for WhatsApp API integration.
-                </p>
-              </div>
-            </>
-          )}
-        </Card>
+              children: isSuperAdminUser ? (
+                <WhatsAppAccounts />
+              ) : (
+                <Card className="mgmt-settings-card">
+                  <p className="mgmt-modal-hint">Only Super Admin can configure WhatsApp accounts.</p>
+                </Card>
               ),
             },
             {
               key: 'whatsapp-templates',
               label: 'Sync Templates',
               children: isSuperAdminUser ? (
-                <WhatsAppTemplates />
+                <WhatsAppAccountScope value={whatsappAccountId} onChange={setWhatsappAccountId}>
+                  {(account) => <WhatsAppTemplates key={account._id} account={account} />}
+                </WhatsAppAccountScope>
               ) : (
                 <Card className="mgmt-settings-card">
                   <p className="mgmt-modal-hint">Only Super Admin can sync WhatsApp templates.</p>
@@ -519,7 +397,9 @@ const API = () => {
               key: 'whatsapp-events',
               label: 'Event Mapping',
               children: isSuperAdminUser ? (
-                <WhatsAppEventMapping />
+                <WhatsAppAccountScope value={whatsappAccountId} onChange={setWhatsappAccountId}>
+                  {(account) => <WhatsAppEventMapping key={account._id} account={account} />}
+                </WhatsAppAccountScope>
               ) : (
                 <Card className="mgmt-settings-card">
                   <p className="mgmt-modal-hint">Only Super Admin can configure WhatsApp event mappings.</p>

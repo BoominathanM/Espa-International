@@ -4,6 +4,7 @@ import {
   findCustomerForWaId,
   upsertChat,
 } from './chatService.js'
+import { accountForBusinessNumber } from './whatsappAccountService.js'
 
 function extractMessageBody(message) {
   if (!message || typeof message !== 'object') {
@@ -97,6 +98,7 @@ export async function storeInboundMessage({
   phoneNumberId = '',
   displayPhoneNumber = '',
   wabaId = '',
+  account = null,
 }) {
   const waId = normalizePhoneDigits(message.from || message.wa_id || message.mobile || message.phone)
   if (!waId) return { skipped: true, reason: 'missing_from' }
@@ -116,7 +118,8 @@ export async function storeInboundMessage({
         ? new Date(message.createdAt)
         : new Date()
 
-  const customer = await findCustomerForWaId(waId)
+  const whatsappAccount = account || (await accountForBusinessNumber(displayPhoneNumber))
+  const customer = await findCustomerForWaId(waId, { branch: whatsappAccount?.branch })
   const chat = await upsertChat({
     waId,
     contactName: contactName || message.profileName || message.name || '',
@@ -145,6 +148,7 @@ export async function storeInboundMessage({
     to: displayPhoneNumber || phoneNumberId || '',
     contactName: contactName || message.profileName || message.name || chat.contactName || '',
     customer: customer?._id || null,
+    whatsappAccount: whatsappAccount?._id || null,
     raw: message,
   })
 
@@ -153,9 +157,11 @@ export async function storeInboundMessage({
 
 /**
  * Process Meta Cloud API envelope OR simplified AskEVA/message payloads.
+ * opts.account — the WhatsApp account the webhook said it is for (accountFromWebhook); without it
+ * the business number in the payload's metadata decides.
  * Returns { handled: boolean, results: [] }
  */
-export async function processInboundWebhookPayload(payload) {
+export async function processInboundWebhookPayload(payload, { account = null } = {}) {
   if (!payload || typeof payload !== 'object') {
     return { handled: false, results: [] }
   }
@@ -190,6 +196,7 @@ export async function processInboundWebhookPayload(payload) {
               phoneNumberId,
               displayPhoneNumber,
               wabaId,
+              account,
             })
           )
         }
@@ -209,6 +216,7 @@ export async function processInboundWebhookPayload(payload) {
           contactName,
           displayPhoneNumber: payload.metadata?.display_phone_number || '',
           phoneNumberId: payload.metadata?.phone_number_id || '',
+          account,
         })
       )
     }
@@ -277,6 +285,7 @@ export async function processInboundWebhookPayload(payload) {
       await storeInboundMessage({
         message,
         contactName: message.name || '',
+        account,
       })
     )
     return { handled: true, results, kind: 'askeva_event' }

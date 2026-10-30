@@ -41,9 +41,9 @@ export const TemplateText = ({ template }) => {
   )
 }
 
-const WhatsAppTemplates = () => {
+const WhatsAppTemplates = ({ account }) => {
   const { isMobile } = useResponsive()
-  const { data, isLoading, isFetching, error } = useGetWhatsAppTemplatesQuery()
+  const { data, isLoading, isFetching, error } = useGetWhatsAppTemplatesQuery(account._id)
   const [syncTemplates, { isLoading: isSyncing }] = useSyncWhatsAppTemplatesMutation()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
@@ -60,7 +60,7 @@ const WhatsAppTemplates = () => {
 
   const handleSync = async () => {
     try {
-      const result = await syncTemplates().unwrap()
+      const result = await syncTemplates(account._id).unwrap()
       message.success(result.message || 'Templates synced')
     } catch (err) {
       message.error(err?.data?.message || 'Template sync failed')
@@ -134,7 +134,7 @@ const WhatsAppTemplates = () => {
         }}
       >
         <div>
-          <h4 className="mgmt-card-title-text" style={{ margin: 0 }}>WhatsApp Templates (AskEVA)</h4>
+          <h4 className="mgmt-card-title-text" style={{ margin: 0 }}>WhatsApp Templates — {account.name}</h4>
           <span className="mgmt-muted" style={{ fontSize: 13 }}>
             {templates.length} template(s) · last synced {formatDateTime(data?.lastSyncedAt)}
           </span>
@@ -161,7 +161,7 @@ const WhatsAppTemplates = () => {
           showIcon
           style={{ marginBottom: 16 }}
           message="No templates yet"
-          description='Click "Sync Templates" to fetch your approved WhatsApp templates from AskEVA (uses the API key saved in WhatsApp Configuration).'
+          description={`Click "Sync Templates" to fetch the approved WhatsApp templates of ${account.name} from AskEVA.`}
         />
       )}
 

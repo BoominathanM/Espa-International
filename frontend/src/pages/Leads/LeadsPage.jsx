@@ -954,6 +954,7 @@ const Leads = () => {
       messageApi.success(
         `AskEva sync completed: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`
       )
+      if (result.warning) messageApi.warning(result.warning)
       refetchLeads()
     } catch (error) {
       console.error('AskEva sync error:', error)

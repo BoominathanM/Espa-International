@@ -71,6 +71,7 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
   } = useGetChatMessagesQuery(
     {
       customerId,
+      leadId,
       phone,
       limit: 200,
     },
@@ -117,6 +118,7 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
   }, [chatData?.messages, displayName])
 
   const hasDbMessages = dbMessages.length > 0
+  const replyAccount = chatData?.replyAccount
 
   useEffect(() => {
     if (!attachment) {
@@ -375,6 +377,7 @@ const LiveChatPanel = ({ name, phone, customerId, leadId, active = true }) => {
           <div className="cd-chat__status">
             <span className="cd-chat__online-dot" />
             Online via WhatsApp • {phone || '—'}
+            {replyAccount ? ` • Sending from ${replyAccount.name}${replyAccount.phoneNumber ? ` (${replyAccount.phoneNumber})` : ''}` : ''}
           </div>
         </div>
         <div className="cd-chat__actions">

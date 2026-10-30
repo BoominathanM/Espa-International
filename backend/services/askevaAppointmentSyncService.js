@@ -1,24 +1,18 @@
 /**
  * AskEva CRM Appointment Sync Service
- * Calls GET backend.askeva.net/v1/appointments?token=... (Bearer auth).
+ * Calls GET {Backend URL}/v1/appointments?token=... (Bearer auth) on every WhatsApp account.
  * Maps response to local Lead records with appointment_date, slot_time, spa_package.
  * Deduplicates by askevaAppointmentId or phone + appointment_date.
  */
-
-const ASKEVA_APPOINTMENTS_BASE = process.env.ASKEVA_SYNC_API_URL?.trim() || 'https://backend.askeva.net'
-
-function getAskevaApiToken() {
-  const a = process.env.ASKEVA_API_TOKEN?.trim() || ''
-  const w = process.env.WHATSAPP_API_KEY?.trim() || ''
-  return a || w || ''
-}
+import { getAskEvaCredentials } from './askevaMessageService.js'
+import { accountsForSync, leadBranchFor } from './whatsappAccountService.js'
 
 /**
  * Fetch appointments from AskEva v1/appointments API
  * Response: { success: true, data: [ { id, name, phone, appointmentDate, slot, ... } ] }
  */
-async function fetchAskEvaAppointments(token) {
-  const base = ASKEVA_APPOINTMENTS_BASE.replace(/\/$/, '')
+async function fetchAskEvaAppointments(account) {
+  const { base, token } = getAskEvaCredentials(account)
   const path = 'v1/appointments'
   const cacheBust = `_t=${Date.now()}`
   const url = `${base}/${path}?token=${encodeURIComponent(token)}&${cacheBust}`
@@ -38,7 +32,7 @@ async function fetchAskEvaAppointments(token) {
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     const hint = [401, 403].includes(res.status)
-      ? ' Check token in .env (ASKEVA_API_TOKEN or WHATSAPP_API_KEY) matches Postman Bearer.'
+      ? ` Check the API Key of "${account.name}" in WhatsApp Configuration.`
       : ''
     return {
       success: false,
@@ -68,28 +62,36 @@ function parseDate(val) {
 }
 
 /**
- * Sync AskEva appointments into local Lead collection (leads with appointment_date)
+ * Sync AskEva appointments of every WhatsApp account into local Lead collection (leads with
+ * appointment_date). New ones go to the branch of the account they came from. One account failing
+ * doesn't stop the others: result.warning names it.
  */
 export async function syncAskEvaAppointmentsToDb(deps) {
-  const { Lead, Branch, autoAssignLeadToBranchUser } = deps
   const result = { success: false, created: 0, updated: 0, skipped: 0 }
 
-  const token = getAskevaApiToken()
-  if (!token) {
-    result.error = 'Add WHATSAPP_API_KEY (or ASKEVA_API_TOKEN) in backend/.env — same token as in Postman (v1/appointments?token=).'
+  const accounts = await accountsForSync()
+  if (!accounts.length) {
+    result.error = 'Add a WhatsApp account (Backend URL + API Key) in Settings → WhatsApp API → WhatsApp Configuration.'
     return result
   }
 
-  const fetchResult = await fetchAskEvaAppointments(token)
-  if (!fetchResult.success) {
-    result.error = fetchResult.error
-    return result
+  const failures = []
+  for (const account of accounts) {
+    const fetchResult = await fetchAskEvaAppointments(account).catch((err) => ({ success: false, error: err.message }))
+    if (!fetchResult.success) {
+      failures.push(`${account.name}: ${fetchResult.error}`)
+      continue
+    }
+    await saveAppointments(fetchResult.data || [], await leadBranchFor(account), deps, result)
+    result.success = true
   }
 
-  const appointments = fetchResult.data || []
-  const defaultBranch = await Branch.findOne({ name: 'Anna Nagar' })
-  const defaultBranchId = defaultBranch?._id || null
+  if (!result.success) result.error = failures.join('; ')
+  else if (failures.length) result.warning = `Not synced — ${failures.join('; ')}`
+  return result
+}
 
+async function saveAppointments(appointments, defaultBranchId, { Lead, autoAssignLeadToBranchUser }, result) {
   for (const row of appointments) {
     const askevaId = String(row.id || row._id || '').trim()
     const name = pickField(row, 'name', 'fullName', 'customerName', 'firstName')
@@ -168,7 +170,4 @@ export async function syncAskEvaAppointmentsToDb(deps) {
       result.created++
     }
   }
-
-  result.success = true
-  return result
 }

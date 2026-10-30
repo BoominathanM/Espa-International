@@ -1,3 +1,11 @@
+> **Multiple WhatsApp accounts.** Accounts (Backend URL, API Key, WhatsApp number, branch) are saved in
+> Settings > API & Integrations > WhatsApp API > WhatsApp Configuration, not in `.env`. Each account has its
+> own templates and event mappings. A message goes out on the account of the customer's branch, or the Default
+> account when that branch has none. Live Chat replies from the number the customer wrote to in the last 24 hours.
+> Each account's webhook URL is shown in that tab: `/api/whatsapp/webhook?account=<id>`. Without `?account=`,
+> incoming messages are matched by the business number in the payload. Wherever this document says
+> `WHATSAPP_API_KEY`, the key of any saved account is accepted.
+
 # WhatsApp API Integration - Complete Guide
 
 Complete documentation for integrating WhatsApp API webhooks with E Spa International CRM system.

@@ -1,6 +1,6 @@
 /**
- * WhatsApp templates through AskEVA (same token + base URL as the Live Chat sender in
- * askevaMessageService.js). From AskEVA's "Consumer API Documentation" Postman collection:
+ * WhatsApp templates through AskEVA, each call on one WhatsApp account's own Backend URL + API Key
+ * (see askevaMessageService.getAskEvaCredentials). From AskEVA's "Consumer API Documentation" Postman collection:
  *
  *   GET  {base}/v1/templates?token=…&limit=&after=   → { total, data: [Meta template], paging: { before, after } }
  *   POST {base}/v1/message/send-message?token=…      → body { to, type: 'template', template: {
@@ -12,7 +12,7 @@
  * A Meta template's variables are {{1}}, {{2}} … (positional) or {{customer_name}} (named).
  */
 import WhatsAppTemplate from '../models/WhatsAppTemplate.js'
-import { getAskEvaToken, getMessageApiBase } from './askevaMessageService.js'
+import { getAskEvaCredentials } from './askevaMessageService.js'
 
 const LOG = '[WA-TEMPLATES]'
 const PAGE_LIMIT = 100
@@ -20,12 +20,6 @@ const MAX_PAGES = 50
 const PLACEHOLDER_RE = /\{\{\s*([^{}]+?)\s*\}\}/g
 // A hung AskEVA request must not leave Settings (Sync / Send Test) spinning for minutes.
 const FETCH_TIMEOUT_MS = 30000
-
-const missingTokenError = () => {
-  const err = new Error('AskEVA token missing. Save the WhatsApp API Key in WhatsApp Configuration (or set ASKEVA_API_TOKEN / WHATSAPP_API_KEY).')
-  err.code = 'MISSING_TOKEN'
-  return err
-}
 
 const parseJson = (text) => {
   try {
@@ -92,11 +86,30 @@ export const describeTemplate = (components) => {
   }
 }
 
-/** Every template on the AskEVA account (follows paging.after). */
-export const fetchAskEvaTemplates = async () => {
-  const token = await getAskEvaToken()
-  if (!token) throw missingTokenError()
-  const base = getMessageApiBase()
+/**
+ * "Test Connection" in WhatsApp Configuration: does this Backend URL + API Key answer?
+ * Resolves { ok, total, error } — a refused key or an unreachable URL is a result, not an exception.
+ */
+export const checkAskEvaConnection = async (account) => {
+  try {
+    const { base, token } = getAskEvaCredentials(account)
+    const res = await fetch(`${base}/v1/templates?${new URLSearchParams({ token, limit: '1' })}`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    const data = parseJson(await res.text())
+    if (!res.ok || data?.success === false || data?.raw !== undefined) {
+      return { ok: false, error: errorMessageOf(data, res.status) }
+    }
+    return { ok: true, total: Number(data?.total) || 0 }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+/** Every template on one AskEVA account (follows paging.after). */
+export const fetchAskEvaTemplates = async (account) => {
+  const { base, token } = getAskEvaCredentials(account)
 
   const all = []
   const seenCursors = new Set()
@@ -125,9 +138,9 @@ export const fetchAskEvaTemplates = async () => {
   return all
 }
 
-/** Pull templates from AskEVA into the whatsapptemplates collection. */
-export const syncWhatsAppTemplates = async () => {
-  const remote = await fetchAskEvaTemplates()
+/** Pull one account's templates from AskEVA into the whatsapptemplates collection. */
+export const syncWhatsAppTemplates = async (account) => {
+  const remote = await fetchAskEvaTemplates(account)
   const now = new Date()
   const seenIds = []
   for (const t of remote) {
@@ -135,9 +148,10 @@ export const syncWhatsAppTemplates = async () => {
     if (!t?.name) continue
     seenIds.push(templateId)
     await WhatsAppTemplate.updateOne(
-      { templateId },
+      { account: account._id, templateId },
       {
         $set: {
+          account: account._id,
           templateId,
           name: String(t.name),
           language: String(t.language || 'en'),
@@ -156,10 +170,10 @@ export const syncWhatsAppTemplates = async () => {
     )
   }
   const flagged = await WhatsAppTemplate.updateMany(
-    { templateId: { $nin: seenIds } },
+    { account: account._id, templateId: { $nin: seenIds } },
     { $set: { missingFromLastSync: true } }
   )
-  console.log(LOG, `synced ${seenIds.length} template(s) from AskEVA; ${flagged.modifiedCount || 0} no longer on AskEVA`)
+  console.log(LOG, `"${account.name}": synced ${seenIds.length} template(s) from AskEVA; ${flagged.modifiedCount || 0} no longer on AskEVA`)
   return { synced: seenIds.length, missing: flagged.modifiedCount || 0, syncedAt: now }
 }
 
@@ -236,14 +250,13 @@ export const buildTemplatePayload = ({ to, name, language, params = [], headerFo
 }
 
 /**
- * POST the template message to AskEVA. Resolves { ok, status, data, messageId } for any HTTP
+ * POST the template message to AskEVA on this account. Resolves { ok, status, data, messageId } for any HTTP
  * answer (ok=false when AskEVA refused it); throws only when there is no token or the request
  * itself fails.
  */
-export const sendAskEvaTemplate = async (payload) => {
-  const token = await getAskEvaToken()
-  if (!token) throw missingTokenError()
-  const url = `${getMessageApiBase()}/v1/message/send-message?token=${encodeURIComponent(token)}`
+export const sendAskEvaTemplate = async (payload, account) => {
+  const { base, token } = getAskEvaCredentials(account)
+  const url = `${base}/v1/message/send-message?token=${encodeURIComponent(token)}`
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

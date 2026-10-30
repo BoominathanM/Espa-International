@@ -22,21 +22,27 @@
  * missed after the event was switched on and within WHATSAPP_MISSED_CALL_LOOKBACK_HOURS (default 6).
  * Plain text only reaches customers who messaged us in the last 24 h — when AskEVA refuses it for
  * that reason, the selected template is sent instead.
+ *
+ * Each call goes through the WhatsApp account of its branch (accountForCall): that account's own
+ * event mapping decides whether, what and when; "once per customer" stays across all accounts.
  */
 import WhatsAppEventMapping from '../models/WhatsAppEventMapping.js'
 import WhatsAppEventLog from '../models/WhatsAppEventLog.js'
 import TeleCMICallLog from '../models/TeleCMICallLog.js'
 import ZenxaiInboundCall from '../models/ZenxaiInboundCall.js'
 import TeleCMISettings from '../models/TeleCMISettings.js'
-import { buildAskEvaSendPayload, getAskEvaToken, getMessageApiBase } from './askevaMessageService.js'
+import { buildAskEvaSendPayload, getAskEvaCredentials } from './askevaMessageService.js'
 import { sendAskEvaTemplate } from './whatsappTemplateService.js'
 import {
   MISSED_CALL_MESSAGE,
   MAX_ATTEMPTS,
+  accountForCall,
+  callsOfAccount,
   claimLogRow,
   clean,
   displayPhone,
   leadNameOf,
+  noAccountReason,
   prepareEventMessage,
   resolveEventValues,
   toRecipient,
@@ -50,6 +56,10 @@ const FIRST_SWEEP_DELAY_MS = 60000
 const DEFAULT_LOOKBACK_HOURS = 6
 const DEFAULT_COOLDOWN_HOURS = 24
 const SWEEP_BATCH = 50
+// Calls of branches whose account has the event off are passed over, so a check looks further
+// back than it sends: otherwise they'd fill the batch and keep every other branch waiting.
+const SWEEP_SCAN_LIMIT = 1000
+const RECENT_CALLS_SCAN = 45
 // "Customer answered another call": from a little before the missed call (a re-dial / the
 // other leg of the same dial) until now.
 const ANSWERED_WINDOW_BEFORE_MS = 5 * 60 * 1000
@@ -194,6 +204,7 @@ export const loadMissedCallContext = async (source, refId) => {
     collected: def.collectedOf(doc),
     crmName: def.nameOf(doc),
     crmBranch: doc.lead?.branch?.name || doc.branches?.[0]?.name || '',
+    crmBranchId: doc.lead?.branch?._id || doc.branches?.[0]?._id || null,
     lead: doc.lead?._id || null,
     zenxaiCallId: (source === 'ai-inbound-missed' ? doc.callId : doc.zenxaiCallId) || '',
     missedAt: def.missedAt(doc),
@@ -290,18 +301,13 @@ const SESSION_CLOSED_RE = /session|24[\s-]*h(ou)?rs?|re-?engage|131047|customer 
 export const isSessionClosedError = (text) => SESSION_CLOSED_RE.test(String(text || ''))
 
 /**
- * POST a plain text message to AskEVA. Resolves { ok, status, data, messageId, error } for any HTTP
- * answer; throws only when there is no token or the request itself fails.
+ * POST a plain text message to AskEVA on this account. Resolves { ok, status, data, messageId, error }
+ * for any HTTP answer; throws only when there is no token or the request itself fails.
  */
-export const sendAskEvaText = async (to, text) => {
-  const token = await getAskEvaToken()
-  if (!token) {
-    const err = new Error('AskEVA token missing. Save the WhatsApp API Key in WhatsApp Configuration (or set ASKEVA_API_TOKEN / WHATSAPP_API_KEY).')
-    err.code = 'MISSING_TOKEN'
-    throw err
-  }
+export const sendAskEvaText = async (to, text, account) => {
+  const { base, token } = getAskEvaCredentials(account)
   const payload = buildAskEvaSendPayload({ to, type: 'text', text })
-  const res = await fetch(`${getMessageApiBase()}/v1/message/send-message?token=${encodeURIComponent(token)}`, {
+  const res = await fetch(`${base}/v1/message/send-message?token=${encodeURIComponent(token)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
@@ -344,17 +350,17 @@ export const buildMissedCallMessage = async (mapping, ctx, { values, to } = {}) 
 }
 
 /** Send a built message. Never throws for an AskEVA refusal (only for no token / network). */
-const deliver = async (built, mapping) => {
+const deliver = async (built, mapping, account) => {
   if (built.mode === 'template') {
-    const r = await sendAskEvaTemplate(built.template.payload)
+    const r = await sendAskEvaTemplate(built.template.payload, account)
     return { ...r, via: 'template', requestPayload: built.template.payload }
   }
-  const t = await sendAskEvaText(built.to, built.text)
+  const t = await sendAskEvaText(built.to, built.text, account)
   if (t.ok) return { ...t, via: 'text', requestPayload: built.textPayload }
 
   const sessionClosed = isSessionClosedError(t.error)
   if (sessionClosed && built.fallbackReady) {
-    const r = await sendAskEvaTemplate(built.template.payload)
+    const r = await sendAskEvaTemplate(built.template.payload, account)
     const requestPayload = { text: built.textPayload, template: built.template.payload }
     if (r.ok) {
       return {
@@ -435,15 +441,21 @@ const isInactiveReason = (r) => !!r?.inactive
 export const runMissedCallMessage = async (source, refId, { manual = false, userId = null } = {}) => {
   const def = MISSED_SOURCES[source]
   if (!def) return { skipped: true, reason: 'unknown missed-call source' }
-  const mapping = await WhatsAppEventMapping.findOne({ eventKey: MISSED_CALL_MESSAGE }).lean()
-  if (!mapping) return { skipped: true, inactive: true, reason: 'the Missed Call Hi Message event is not added in Event Mapping' }
-  if (!manual) {
-    if (!mapping.isActive) return { skipped: true, inactive: true, reason: 'event is switched off' }
-    if (!triggerOn(mapping, def.trigger)) return { skipped: true, inactive: true, reason: `"${def.label}" is not ticked in Send when` }
-  }
 
   const ctx = await loadMissedCallContext(source, refId)
   if (!ctx) return { skipped: true, reason: 'call not found' }
+
+  const account = await accountForCall(ctx)
+  if (!account) return { skipped: true, inactive: true, reason: noAccountReason(ctx) }
+  const mapping = await WhatsAppEventMapping.findOne({ account: account._id, eventKey: MISSED_CALL_MESSAGE }).lean()
+  if (!mapping) {
+    return { skipped: true, inactive: true, reason: `the Missed Call Hi Message event is not added in Event Mapping of "${account.name}"` }
+  }
+  if (!manual) {
+    if (!mapping.isActive) return { skipped: true, inactive: true, reason: `event is switched off on "${account.name}"` }
+    if (!triggerOn(mapping, def.trigger)) return { skipped: true, inactive: true, reason: `"${def.label}" is not ticked in Send when` }
+  }
+
   if (!ctx.missed) return { skipped: true, reason: `call is not missed (status "${ctx.statusText || '—'}")` }
   if (!manual) {
     if (ctx.current?.final) return { skipped: true, reason: 'already handled for this call', already: true }
@@ -461,6 +473,7 @@ export const runMissedCallMessage = async (source, refId, { manual = false, user
     const built = await buildMissedCallMessage(mapping, ctx, { to })
     const usesTemplate = built.mode === 'template' || built.fallbackReady
     const base = {
+      account: account._id,
       eventKey: MISSED_CALL_MESSAGE,
       source,
       [ctx.refField]: ctx.refId,
@@ -535,7 +548,7 @@ export const runMissedCallMessage = async (source, refId, { manual = false, user
     }
 
     try {
-      const result = await deliver(built, mapping)
+      const result = await deliver(built, mapping, account)
       const templateName = result.via === 'text' ? '' : mapping.templateName || ''
       if (result.ok) {
         await finishAttempt(
@@ -554,7 +567,7 @@ export const runMissedCallMessage = async (source, refId, { manual = false, user
           },
           { final: true, via: result.via, text: result.via === 'text' ? built.text : '' }
         )
-        console.log(LOG, `${source} ${ctx.refId}: ${result.via === 'text' ? `"${built.text}"` : `template "${templateName}"`} sent to ${to}`)
+        console.log(LOG, `${source} ${ctx.refId}: ${result.via === 'text' ? `"${built.text}"` : `template "${templateName}"`} sent to ${to} from "${account.name}"`)
         return { sent: true, to, via: result.via, logId: row._id, messageId: result.messageId }
       }
       await finishAttempt(
@@ -622,44 +635,52 @@ let sweepRunning = false
 let lastSweep = null
 
 /**
- * Look through recent missed calls of every ticked kind that have no final WhatsApp result yet
- * and run each one (same checks as the webhook path). Safe to run any time, in parallel with the
- * webhooks — the per-call claim and the per-customer lock stop doubles.
+ * Look through recent missed calls of every kind ticked on any account that have no final WhatsApp
+ * result yet and run each one (same checks as the webhook path — the call's own account decides).
+ * Safe to run any time, in parallel with the webhooks — the per-call claim and the per-customer
+ * lock stop doubles.
  */
 export const runMissedCallSweep = async ({ trigger = 'timer' } = {}) => {
   if (sweepRunning) return { busy: true, message: 'A check is already running' }
   sweepRunning = true
   const result = { at: new Date(), trigger, checked: 0, sent: 0, skipped: 0, failed: 0, errors: 0, note: '' }
   try {
-    const mapping = await WhatsAppEventMapping.findOne({ eventKey: MISSED_CALL_MESSAGE }).lean()
-    if (!mapping) {
+    const mappings = await WhatsAppEventMapping.find({ eventKey: MISSED_CALL_MESSAGE }).lean()
+    if (!mappings.length) {
       result.note = 'event not added'
       return result
     }
-    if (!mapping.isActive) {
+    const active = mappings.filter((m) => m.isActive)
+    if (!active.length) {
       result.note = 'event is switched off'
       return result
     }
-    const since = windowStart(mapping)
+    const since = new Date(Math.min(...active.map((m) => windowStart(m).getTime())))
     result.since = since
     for (const [source, def] of Object.entries(MISSED_SOURCES)) {
-      if (!triggerOn(mapping, def.trigger)) continue
+      if (!active.some((m) => triggerOn(m, def.trigger))) continue
       const rows = await def.model
         .find({ ...def.missedFilter, [def.timeField]: { $gte: since }, [`${def.summaryPath}.final`]: { $ne: true } })
         .sort({ [def.timeField]: 1 })
-        .limit(SWEEP_BATCH)
+        .limit(SWEEP_SCAN_LIMIT)
         .select('_id')
         .lean()
+      let checkedHere = 0
       for (const r of rows) {
+        if (checkedHere >= SWEEP_BATCH) break
         // A webhook timer for this call is still waiting — it will handle it.
         if (pendingTimers.has(`${source}:${r._id}`)) continue
-        result.checked++
         try {
           const out = await runMissedCallMessage(source, r._id)
+          if (out?.inactive) continue
+          checkedHere++
+          result.checked++
           if (out?.sent) result.sent++
           else if (out?.failed) result.failed++
           else result.skipped++
         } catch (err) {
+          checkedHere++
+          result.checked++
           result.errors++
           console.error(LOG, `check: ${source} ${r._id} error:`, err.message)
         }
@@ -712,14 +733,14 @@ export const startMissedCallMessageSweep = () => {
  * Settings helpers (preview / recent calls / test)
  * ------------------------------------------------------------------------------------------ */
 
-/** Latest missed calls of all three kinds — for the "Check against a recent missed call" picker. */
-export const recentMissedCalls = async (limit = 15) => {
+/** Latest missed calls of all three kinds on this account — for the "Check against a recent missed call" picker. */
+export const recentMissedCalls = async (account, limit = 15) => {
   const lists = await Promise.all(
     Object.entries(MISSED_SOURCES).map(async ([source, def]) => {
       const docs = await def.model
         .find(def.missedFilter)
         .sort({ [def.timeField]: -1 })
-        .limit(limit)
+        .limit(RECENT_CALLS_SCAN)
         .select(def.listSelect)
         .lean()
       return docs.map((d) => {
@@ -736,10 +757,8 @@ export const recentMissedCalls = async (limit = 15) => {
       })
     })
   )
-  return lists
-    .flat()
-    .sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0))
-    .slice(0, limit)
+  const calls = lists.flat().sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0))
+  return callsOfAccount(calls, account, limit, loadMissedCallContext)
 }
 
 /**
@@ -795,7 +814,7 @@ export const previewMissedCallMessage = async (mapping, source, refId) => {
  * Test send from Settings: the (possibly unsaved) mapping with sample values, to any number.
  * Logged with source "test" and no dedupeKey, so it never blocks a real message.
  */
-export const sendMissedCallTestMessage = async (mapping, { to, sample = {} }, userId = null) => {
+export const sendMissedCallTestMessage = async (mapping, { to, sample = {}, account }, userId = null) => {
   const values = {
     name: clean(sample.name),
     mobile: displayPhone(sample.mobile) || clean(sample.mobile),
@@ -807,6 +826,7 @@ export const sendMissedCallTestMessage = async (mapping, { to, sample = {} }, us
   }
   const built = await buildMissedCallMessage(mapping, {}, { values, to })
   const row = await WhatsAppEventLog.create({
+    account: account._id,
     eventKey: MISSED_CALL_MESSAGE,
     source: 'test',
     status: 'pending',
@@ -825,7 +845,7 @@ export const sendMissedCallTestMessage = async (mapping, { to, sample = {} }, us
     return { sent: false, reason, payload, values }
   }
   try {
-    const result = await deliver(built, mapping)
+    const result = await deliver(built, mapping, account)
     const templateName = result.via === 'text' ? '' : mapping.templateName || ''
     await WhatsAppEventLog.updateOne(
       { _id: row._id },

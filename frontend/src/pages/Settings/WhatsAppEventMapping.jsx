@@ -123,7 +123,7 @@ const EMPTY_SAMPLE = {
   to: '',
   name: 'Test Customer',
   mobile: '9876543210',
-  branch: 'Anna Nagar',
+  branch: '',
   therapy: 'body pain relief',
   appointment: 'tomorrow 10 a.m.',
 }
@@ -171,7 +171,7 @@ const withRetry = async (run, onRetry) => {
   }
 }
 
-const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = false }) => {
+const EventMappingCard = ({ account, event, templates, onRemove, removing, defaultOpen = false }) => {
   const { isMobile } = useResponsive()
   const [form] = Form.useForm()
   const mapping = event.mapping
@@ -179,7 +179,7 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
   const [variables, setVariables] = useState([])
   const [templateId, setTemplateId] = useState('')
   const [dirty, setDirty] = useState(false)
-  const [sample, setSample] = useState(EMPTY_SAMPLE)
+  const [sample, setSample] = useState({ ...EMPTY_SAMPLE, branch: account.branch?.name || '' })
   const [testResult, setTestResult] = useState(null)
   const [selectedCall, setSelectedCall] = useState(undefined)
   const [preview, setPreview] = useState(null)
@@ -207,11 +207,11 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
   const [runCheck, { isLoading: isRunningCheck }] = useRunWhatsAppEventCheckMutation()
   // Recent calls / message log load only once the card has been opened.
   const { data: recentData, isFetching: isFetchingRecent, refetch: refetchRecent } = useGetRecentAiCallsForEventQuery(
-    event.key,
+    { accountId: account._id, eventKey: event.key },
     { skip: !everOpened }
   )
   const { data: logsData, isFetching: isFetchingLogs, refetch: refetchLogs } = useGetWhatsAppEventLogsQuery(
-    { eventKey: event.key, page: logPage, limit: 10 },
+    { accountId: account._id, eventKey: event.key, page: logPage, limit: 10 },
     { skip: !everOpened }
   )
 
@@ -310,6 +310,7 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
   const buildBody = () => {
     const values = form.getFieldsValue()
     return {
+      accountId: account._id,
       eventKey: event.key,
       ...values,
       templateId: template?.templateId || templateId || mapping?.templateId || '',
@@ -1150,10 +1151,10 @@ const EventMappingCard = ({ event, templates, onRemove, removing, defaultOpen = 
  * away (switched off, no template yet) and its card opens; "Save Mapping" stores the rest. Only
  * events stored in the database are listed, so what you see is what survives a refresh.
  */
-const WhatsAppEventMapping = () => {
+const WhatsAppEventMapping = ({ account }) => {
   const { isMobile } = useResponsive()
-  const { data, isLoading, error } = useGetWhatsAppEventsQuery()
-  const { data: templatesData } = useGetWhatsAppTemplatesQuery()
+  const { data, isLoading, error } = useGetWhatsAppEventsQuery(account._id)
+  const { data: templatesData } = useGetWhatsAppTemplatesQuery(account._id)
   const [saveMapping] = useSaveWhatsAppEventMappingMutation()
   const [deleteMapping, { isLoading: isRemoving }] = useDeleteWhatsAppEventMappingMutation()
   const [addOpen, setAddOpen] = useState(false)
@@ -1178,7 +1179,7 @@ const WhatsAppEventMapping = () => {
     setAdding(true)
     setAddError('')
     try {
-      await withRetry(() => saveMapping({ eventKey: pickedKey, isActive: false }).unwrap())
+      await withRetry(() => saveMapping({ accountId: account._id, eventKey: pickedKey, isActive: false }).unwrap())
       setJustAddedKeys((keys) => [...keys.filter((k) => k !== pickedKey), pickedKey])
       message.success(`"${picked?.name || 'Event'}" added — choose its template, then Save Mapping`)
       closeAdd()
@@ -1195,7 +1196,7 @@ const WhatsAppEventMapping = () => {
 
   const handleRemove = async (event) => {
     try {
-      await withRetry(() => deleteMapping(event.key).unwrap())
+      await withRetry(() => deleteMapping({ accountId: account._id, eventKey: event.key }).unwrap())
       setJustAddedKeys((keys) => keys.filter((k) => k !== event.key))
       message.success(`"${event.name}" removed`)
     } catch (err) {
@@ -1238,9 +1239,9 @@ const WhatsAppEventMapping = () => {
           }}
         >
           <div>
-            <h4 className="mgmt-card-title-text" style={{ margin: 0 }}>Event Mapping</h4>
+            <h4 className="mgmt-card-title-text" style={{ margin: 0 }}>Event Mapping — {account.name}</h4>
             <span className="mgmt-muted" style={{ fontSize: 13 }}>
-              Send a WhatsApp template automatically when an event happens.
+              Send a WhatsApp template automatically when an event happens for a customer of this account.
             </span>
           </div>
           {isSuperAdmin() && (
@@ -1261,7 +1262,8 @@ const WhatsAppEventMapping = () => {
 
       {shownEvents.map((event) => (
         <EventMappingCard
-          key={event.key}
+          key={`${account._id}:${event.key}`}
+          account={account}
           event={event}
           templates={templatesData?.templates || []}
           onRemove={() => handleRemove(event)}

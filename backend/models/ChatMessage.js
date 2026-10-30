@@ -64,12 +64,20 @@ const chatMessageSchema = new mongoose.Schema(
       ref: 'User',
       default: null,
     },
+    // The WhatsApp account that carried the message (null: older messages / number not configured)
+    whatsappAccount: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WhatsAppSettings',
+      default: null,
+    },
     raw: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 )
 
 chatMessageSchema.index({ chat: 1, timestamp: 1 })
+// Live Chat: which number did this customer write to last (accountForChat)
+chatMessageSchema.index({ from: 1, direction: 1, timestamp: -1 })
 chatMessageSchema.index(
   { wamid: 1 },
   { unique: true, partialFilterExpression: { wamid: { $type: 'string', $gt: '' } } }

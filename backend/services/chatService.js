@@ -14,14 +14,33 @@ export function toAskEvaRecipient(phone) {
   return digits
 }
 
-export async function findCustomerForWaId(waId) {
+/**
+ * The customer behind a WhatsApp number. One number can be a customer at several branches:
+ * opts.branch (the branch of the number they wrote to) picks that branch's record first.
+ */
+export async function findCustomerForWaId(waId, { branch } = {}) {
   const digits = normalizePhoneDigits(waId)
   if (!digits) return null
+
+  const last10 = digits.slice(-10)
+  const anyNumber = [
+    { phoneNormalized: digits },
+    ...(last10.length === 10
+      ? [
+          { phoneNormalized: { $regex: `${last10}$` } },
+          { whatsapp: { $regex: `${last10}$` } },
+          { phone: { $regex: `${last10}$` } },
+        ]
+      : []),
+  ]
+  if (branch) {
+    const own = await Customer.findOne({ branch, $or: anyNumber }).sort({ updatedAt: -1 })
+    if (own) return own
+  }
 
   let customer = await Customer.findOne({ phoneNormalized: digits }).sort({ updatedAt: -1 })
   if (customer) return customer
 
-  const last10 = digits.slice(-10)
   if (last10.length === 10) {
     customer = await Customer.findOne({
       $or: [

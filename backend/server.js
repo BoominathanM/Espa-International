@@ -35,6 +35,7 @@ import Branch from './models/Branch.js'
 import LeadStage from './models/LeadStage.js'
 import { ensureDefaultRoles } from './utils/defaultRoles.js'
 import { startMissedCallMessageSweep } from './services/whatsappMissedCallService.js'
+import { migrateWhatsAppAccounts } from './services/whatsappAccountService.js'
 import { startGoogleCalendarSync } from './services/googleCalendar/index.js'
 
 dotenv.config()
@@ -517,6 +518,9 @@ mongoose
 
     // Seed default lead stages if needed
     await seedDefaultLeadStagesIfNeeded()
+
+    // WhatsApp: single settings document → first account (safe to repeat)
+    await migrateWhatsAppAccounts()
 
     const server = app.listen(PORT, () => {
       const timestamp = new Date().toISOString()

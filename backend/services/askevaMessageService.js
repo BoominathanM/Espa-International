@@ -1,28 +1,20 @@
-import WhatsAppSettings from '../models/WhatsAppSettings.js'
-
-export function getMessageApiBase() {
-  const fromEnv =
-    process.env.ASKEVA_MESSAGE_API_URL ||
-    process.env.ASKEVA_SYNC_API_URL ||
-    ''
-  if (fromEnv) return String(fromEnv).replace(/\/$/, '')
-  // Postman Interactive API collection uses backend.askeva.io
-  return 'https://backend.askeva.io'
-}
-
-export async function getAskEvaToken() {
-  const fromEnv =
-    (process.env.ASKEVA_API_TOKEN || '').trim() ||
-    (process.env.WHATSAPP_API_KEY || '').trim()
-  if (fromEnv) return fromEnv
-
-  try {
-    const settings = await WhatsAppSettings.getSettings()
-    if (settings?.apiKey) return String(settings.apiKey).trim()
-  } catch {
-    /* ignore */
+/**
+ * The AskEVA base URL + token of one WhatsApp account (Settings → WhatsApp API).
+ * Throws MISSING_TOKEN when there is no account or it isn't filled in.
+ */
+export function getAskEvaCredentials(account) {
+  const base = String(account?.backendUrl || '').trim().replace(/\/+$/, '')
+  const token = String(account?.apiKey || '').trim()
+  if (!base || !token) {
+    const err = new Error(
+      account
+        ? `WhatsApp account "${account.name}" has no Backend URL / API Key. Save them in Settings → WhatsApp API → WhatsApp Configuration.`
+        : 'No WhatsApp account for this branch. Add one in Settings → WhatsApp API → WhatsApp Configuration.'
+    )
+    err.code = 'MISSING_TOKEN'
+    throw err
   }
-  return ''
+  return { base, token }
 }
 
 /**
@@ -83,17 +75,11 @@ export function buildAskEvaSendPayload(opts) {
 }
 
 /**
- * POST https://backend.askeva.io/v1/message/send-message?token=...
+ * POST {account Backend URL}/v1/message/send-message?token=...
+ * @param {object} opts see buildAskEvaSendPayload, plus opts.account (the WhatsApp account to send from)
  */
 export async function sendAskEvaMessage(opts) {
-  const token = await getAskEvaToken()
-  if (!token) {
-    const err = new Error(
-      'AskEVA token missing. Set ASKEVA_API_TOKEN or WHATSAPP_API_KEY in backend/.env (or WhatsApp API settings).'
-    )
-    err.code = 'MISSING_TOKEN'
-    throw err
-  }
+  const { base, token } = getAskEvaCredentials(opts.account)
 
   const payload = buildAskEvaSendPayload(opts)
   if (!payload.to) {
@@ -108,7 +94,6 @@ export async function sendAskEvaMessage(opts) {
     throw err
   }
 
-  const base = getMessageApiBase()
   const url = `${base}/v1/message/send-message?token=${encodeURIComponent(token)}`
 
   const res = await fetch(url, {

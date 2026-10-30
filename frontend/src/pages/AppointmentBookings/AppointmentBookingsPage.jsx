@@ -1151,6 +1151,7 @@ const AppointmentBookingsPage = () => {
       messageApi.success(
         `AskEva appointments synced: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`
       )
+      if (result.warning) messageApi.warning(result.warning)
       refetchLeads()
     } catch (error) {
       console.error('AskEva appointments sync error:', error)

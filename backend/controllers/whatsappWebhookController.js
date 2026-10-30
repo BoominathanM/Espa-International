@@ -4,6 +4,7 @@ import ChatDeletionLog from '../models/ChatDeletionLog.js'
 import { autoAssignLeadToBranchUser } from '../utils/leadAssignment.js'
 import { syncAskEvaLeadsToDb } from '../services/askevaSyncService.js'
 import { processInboundWebhookPayload } from '../services/inboundMessageService.js'
+import { accountFromWebhook, leadBranchFor } from '../services/whatsappAccountService.js'
 
 // Throttle: run full AskEva sync at most once per 90 seconds when webhook is triggered
 const WEBHOOK_SYNC_THROTTLE_MS = 90 * 1000
@@ -61,6 +62,8 @@ export const handleWebhook = async (req, res) => {
       })
     }
 
+    req.whatsappAccount = await accountFromWebhook(req)
+
     const { event, timestamp, message } = req.body
     // AskEva sends lead inside message.data; some senders use top-level data
     const data = req.body.data || (message && message.data) || null
@@ -76,7 +79,7 @@ export const handleWebhook = async (req, res) => {
     // ── Inbound WhatsApp chat messages (Meta / AskEVA message events) ───────
     // Store in Chat + ChatMessage before lead handling; leads still process if present.
     try {
-      const inbound = await processInboundWebhookPayload(req.body)
+      const inbound = await processInboundWebhookPayload(req.body, { account: req.whatsappAccount })
       if (inbound.handled) {
         console.log('[WhatsApp Webhook] Stored inbound chat message(s)', inbound.results)
         // If this payload is ONLY a chat message (not a lead event), acknowledge and stop
@@ -250,12 +253,11 @@ const handleLeadCreated = async (req, res, data, timestamp) => {
       }
     }
 
-    // Default to HO - Tambaram if no branch found
+    // No branch by name: the branch of the WhatsApp account the lead came from
     if (!branchId) {
-      const defaultBranch = await Branch.findOne({ name: 'HO - Tambaram' })
-      if (defaultBranch) {
-        branchId = defaultBranch._id
-        console.log('[WhatsApp Webhook] Default branch selected → HO - Tambaram')
+      branchId = await leadBranchFor(req.whatsappAccount)
+      if (branchId) {
+        console.log(`[WhatsApp Webhook] Branch taken from the WhatsApp account → ${branchId}`)
       }
     }
 
