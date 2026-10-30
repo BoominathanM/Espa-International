@@ -43,29 +43,62 @@ export const toTeleCMINumber = (raw) => {
   return Number.isSafeInteger(num) ? num : null
 }
 
+/** TeleCMI app id: TELECMI_APP_ID, else the suffix of a CHUB user id ("1003_33338459"). */
+export const teleCMIAppId = (agentId) => {
+  const appid = Number(process.env.TELECMI_APP_ID || String(agentId || '').split('_').pop())
+  return Number.isSafeInteger(appid) && appid > 0 ? appid : null
+}
+
+/** POST /v2/balance as-is — throws with TeleCMI's own message (e.g. "Authentication Failed"). */
+export const fetchTeleCMIBalance = async (secret, appid) => {
+  const { data } = await axios.post(`${CHUB_BASE_URL}/v2/balance`, { appid, secret }, { timeout: 5000 })
+  if (Number(data?.code) !== 200 || data?.balance === undefined) {
+    throw new TeleCMIAgentCallError(`TeleCMI balance check failed: ${data?.msg || 'unexpected response'}`, 502)
+  }
+  return { balance: Number(data.balance), sms: Number(data.sms) || 0, expire: data.expire ? Number(data.expire) : null }
+}
+
+/**
+ * POST /v2/user/get (doc.telecmi.com/chub/docs/agent-agent-info) — null when the user id is not
+ * in this app. Only the name and whether a follow-me phone is set leave this function; the
+ * agent's password and phone number never do.
+ */
+export const fetchTeleCMIUser = async (secret, appid, id) => {
+  const { data } = await axios.post(`${CHUB_BASE_URL}/v2/user/get`, { appid, secret, id }, { timeout: 5000 })
+  if (data?.status !== 'success' || !data?.agent) return null
+  return { name: data.agent.name || '', hasPhone: !!String(data.agent.phone || '').trim() }
+}
+
 /**
  * The TeleCMI app's prepaid call balance — POST /v2/balance {appid, secret}
  * (doc.telecmi.com/chub/docs/app-balance). With 0 balance TeleCMI still answers click2call with
  * "Call initiated" but then rejects the staff leg (`sent_reject`), so nothing rings at all.
- * The appid is the suffix of every CHUB user id ("1003_33338459"). Returns null when the balance
- * can't be read — a failed check never blocks a call. TELECMI_BALANCE_CHECK=false turns the
- * check off (e.g. a postpaid TeleCMI plan that keeps dialling at 0 balance).
+ * This is the APP's balance: money added to the TeleCMI account wallet ("Total voice balance")
+ * can show there while the app still reads 0. Returns null when the balance can't be read — a
+ * failed check never blocks a call. TELECMI_BALANCE_CHECK=false turns the check off (e.g. a
+ * postpaid TeleCMI plan that keeps dialling at 0 balance).
  */
 export const getTeleCMIBalance = async (settings, agentId) => {
   if (String(process.env.TELECMI_BALANCE_CHECK || '').trim().toLowerCase() === 'false') return null
-  const appid = Number(process.env.TELECMI_APP_ID || String(agentId || '').split('_').pop())
-  if (!settings?.clickToCallSecret || !Number.isSafeInteger(appid) || appid <= 0) return null
+  const appid = teleCMIAppId(agentId)
+  if (!settings?.clickToCallSecret || !appid) return null
   try {
-    const { data } = await axios.post(
-      `${CHUB_BASE_URL}/v2/balance`,
-      { appid, secret: settings.clickToCallSecret },
-      { timeout: 5000 }
-    )
-    if (Number(data?.code) !== 200 || data?.balance === undefined) return null
-    return { balance: Number(data.balance), expire: data.expire ? Number(data.expire) : null }
+    return { appid, ...(await fetchTeleCMIBalance(settings.clickToCallSecret, appid)) }
   } catch {
     return null
   }
+}
+
+/** TeleCMI's click2call failure text → what to do about it in the CRM / TeleCMI dashboard. */
+const explainClickToCallFailure = (msg, agentId) => {
+  if (/follow-?\s?me/i.test(msg)) {
+    const appid = teleCMIAppId(agentId)
+    return (
+      `TeleCMI ${appid ? `app ${appid}` : 'app'} does not allow follow-me calls, so it cannot ring the staff member's mobile ` +
+      `(TeleCMI said: "${msg}"). Ask TeleCMI support to enable follow-me for this app, then try again.`
+    )
+  }
+  return `TeleCMI call failed: ${msg}`
 }
 
 /**
@@ -85,6 +118,15 @@ export const placeAgentCall = async (settings, user, toNumber, extraParams) => {
       400
     )
   }
+  // CHUB user ids are "<extension>_<appid>"; anything else (e.g. an autofilled email) makes TeleCMI
+  // answer "invalid user_id" — say whose id is wrong instead.
+  if (!/^\d+_\d+$/.test(String(user.telecmiAgentId).trim())) {
+    throw new TeleCMIAgentCallError(
+      `${user.name || 'This user'}'s TeleCMI User ID "${user.telecmiAgentId}" is not a TeleCMI User ID — it must look like ` +
+        '5019_33338459 (TeleCMI → app → Users). Fix it in Settings → User Management.',
+      400
+    )
+  }
 
   const to = toTeleCMINumber(toNumber)
   if (!to) {
@@ -95,7 +137,9 @@ export const placeAgentCall = async (settings, user, toNumber, extraParams) => {
   const account = await getTeleCMIBalance(settings, user.telecmiAgentId)
   if (account && account.balance <= 0) {
     throw new TeleCMIAgentCallError(
-      'TeleCMI call balance is 0, so TeleCMI rejects every call before the staff phone rings. Recharge the TeleCMI account, then try again.',
+      `TeleCMI reports a call balance of 0 for app ${account.appid}, so TeleCMI rejects every call before the staff phone rings. ` +
+        `If you already recharged, the money is in the TeleCMI account wallet but not credited to app ${account.appid} yet — ` +
+        'ask TeleCMI support to credit this app, then try again (Settings → API & Integrations → TeleCMI Integration → Check TeleCMI account shows the live figure).',
       402
     )
   }
@@ -124,13 +168,13 @@ export const placeAgentCall = async (settings, user, toNumber, extraParams) => {
     // (e.g. {code:400, msg:"to parameter missing"}) — axios won't throw on that by itself.
     const code = response.data?.code
     if (code !== undefined && Number(code) !== 200) {
-      throw new TeleCMIAgentCallError(`TeleCMI call failed: ${response.data?.msg || 'unknown error'}`, 502)
+      throw new TeleCMIAgentCallError(explainClickToCallFailure(response.data?.msg || 'unknown error', user.telecmiAgentId), 502)
     }
     return response.data
   } catch (error) {
     if (error instanceof TeleCMIAgentCallError) throw error
     const msg = error.response?.data?.msg || error.response?.data?.message || error.message
-    throw new TeleCMIAgentCallError(`TeleCMI call failed: ${msg}`, error.response?.status || 502)
+    throw new TeleCMIAgentCallError(explainClickToCallFailure(msg, user.telecmiAgentId), error.response?.status || 502)
   }
 }
 

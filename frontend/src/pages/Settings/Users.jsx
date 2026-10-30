@@ -1017,9 +1017,15 @@ const Users = () => {
           <Form.Item
             name="telecmiAgentId"
             label="TeleCMI User ID"
-            extra="Optional. Required to call leads as this agent. Get this from TeleCMI Dashboard → Team → User (the 'User ID' shown on each agent's card, e.g. 1001_33338459)."
+            extra="Optional. Required to call leads as this agent. Get this from TeleCMI Dashboard → Team → User (the 'User ID' shown on each agent's card, e.g. 5019_33338459)."
+            rules={[
+              {
+                pattern: /^\s*(\d+_\d+)?\s*$/,
+                message: 'TeleCMI User ID looks like 5019_33338459 (extension_appid) — not an email. Leave empty if this user has none.',
+              },
+            ]}
           >
-            <Input placeholder="e.g. 1001_33338459" />
+            <Input placeholder="e.g. 5019_33338459" autoComplete="off" />
           </Form.Item>
 
           <Form.Item>

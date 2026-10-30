@@ -21,6 +21,7 @@ import WhatsAppTemplates from './WhatsAppTemplates'
 import WhatsAppEventMapping from './WhatsAppEventMapping'
 import WhatsAppQuickReplies from './WhatsAppQuickReplies'
 import GoogleCalendarSettings from './GoogleCalendarSettings'
+import TeleCMIAccountCheck from './TeleCMIAccountCheck'
 
 const API = () => {
   const { isMobile } = useResponsive()
@@ -287,7 +288,7 @@ const API = () => {
                 <Form.Item
                   name="fromPhoneNumber"
                   label="From Phone Number"
-                  help="TeleCMI outbound calling number, e.g. +917943446788"
+                  help="The TeleCMI app's own number (TeleCMI → Apps card), e.g. +918031406508"
                 >
                   <Input placeholder="+91XXXXXXXXXX" />
                 </Form.Item>
@@ -342,6 +343,7 @@ const API = () => {
                   </div>
                 </Form.Item>
               </Form>
+              <TeleCMIAccountCheck />
             </>
           )}
         </Card>

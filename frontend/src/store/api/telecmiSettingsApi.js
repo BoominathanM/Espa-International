@@ -14,10 +14,16 @@ export const telecmiSettingsApi = apiSlice.injectEndpoints({
       }),
       invalidatesTags: ['TeleCMISettings'],
     }),
+    // Live read from TeleCMI (app balance, agents) — fetched on demand only.
+    getTeleCMIAccountStatus: builder.query({
+      query: () => '/telecmi-settings/account-status',
+      keepUnusedDataFor: 0,
+    }),
   }),
 })
 
 export const {
   useGetTeleCMISettingsQuery,
   useUpdateTeleCMISettingsMutation,
+  useLazyGetTeleCMIAccountStatusQuery,
 } = telecmiSettingsApi

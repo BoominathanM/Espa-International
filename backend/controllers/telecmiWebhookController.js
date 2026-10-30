@@ -603,8 +603,14 @@ const saveChubCallEvent = async (body, settings = {}) => {
   // omits one doesn't clobber a value an earlier event (or call-placement) already stored.
   // On an INCOMING call `to` is our own TeleCMI number and the customer is the caller — using
   // `to` there would make the AI call-back ring our own line. Outbound events are unchanged.
+  // TeleCMI's inbound CDR names our number in `virtual_number` instead, and `to` is then the
+  // follow-me phone of the staff member who took the call — the caller is still `from`.
   const ourTail = phoneTail(settings.fromPhoneNumber || process.env.TELECMI_FROM_NUMBER)
-  const inboundToUs = body.direction === 'inbound' && ourTail && phoneTail(body.to) === ourTail
+  const didTail = phoneTail(body.virtual_number)
+  const inboundToUs =
+    body.direction === 'inbound' &&
+    ((ourTail && phoneTail(body.to) === ourTail) ||
+      (!!didTail && phoneTail(body.from).length === 10 && phoneTail(body.from) !== didTail))
   const fields = {
     variant: body.direction === 'inbound' ? 'inbound' : 'outbound',
     customerNumber: cleanValue(inboundToUs ? body.from || body.callerid || body.to : body.to),
