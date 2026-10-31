@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Alert, Button, Descriptions, Spin, Table, Tag, message } from 'antd'
+import { Alert, Button, Descriptions, Spin, Table, Tag, Tooltip, message } from 'antd'
 import { ApiOutlined, SyncOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import {
@@ -10,11 +10,26 @@ import {
 import { useResponsive } from '../../hooks/useResponsive'
 
 const STATUS_LABELS = [
-  ['synced', 'In Google', 'green'],
-  ['pending', 'Waiting', 'blue'],
-  ['error', 'Failed', 'red'],
-  ['skipped', 'Not sent', 'default'],
-  ['deleted_in_google', 'Deleted in Google', 'orange'],
+  ['synced', 'In Google', 'green', 'The appointment is on the branch’s Google Calendar.'],
+  ['pending', 'Waiting', 'blue', 'Saved in the CRM and queued for Google. It normally goes at the next check.'],
+  [
+    'error',
+    'Failed',
+    'red',
+    'Google returned an error. Retried at each check, up to 8 times, then stops until the appointment is edited. See Recent failures below.',
+  ],
+  [
+    'skipped',
+    'Not sent',
+    'default',
+    'Left out on purpose: a past appointment, or one with no date, no branch, no calendar or an invalid date. Checked again only when the appointment is edited.',
+  ],
+  [
+    'deleted_in_google',
+    'Deleted in Google',
+    'orange',
+    'The event was deleted in Google Calendar, so an open appointment is cancelled in the CRM. It stays deleted unless reopened in the CRM.',
+  ],
 ]
 
 const fmt = (value) => (value ? dayjs(value).format('DD/MM/YYYY hh:mm A') : '—')
@@ -154,10 +169,12 @@ const GoogleCalendarSettings = () => {
           {data.reminderMinutes > 0 ? `Pop-up ${data.reminderMinutes} min before` : 'None'}
         </Descriptions.Item>
         <Descriptions.Item label="Appointments">
-          {STATUS_LABELS.map(([key, label, color]) => (
-            <Tag key={key} color={color} style={{ marginBottom: 4 }}>
-              {label}: {data.counts?.[key] || 0}
-            </Tag>
+          {STATUS_LABELS.map(([key, label, color, hint]) => (
+            <Tooltip key={key} title={hint}>
+              <Tag color={color} style={{ marginBottom: 4, cursor: 'help' }}>
+                {label}: {data.counts?.[key] || 0}
+              </Tag>
+            </Tooltip>
           ))}
         </Descriptions.Item>
       </Descriptions>
