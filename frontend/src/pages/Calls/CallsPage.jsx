@@ -109,6 +109,30 @@ const normalizeCallRecordStatus = (raw) => {
 }
 
 // ZenXAI Public Voice API call statuses (see backend handleZenxaiApiEvent)
+// Below this the staff phone was not really rung: it was busy on another call or the call was cut.
+const STAFF_FULL_RING_SEC = 15
+
+/** What happened on the staff phone (click-to-call leg "a") when the customer never got through. */
+const staffLegNote = (log) => {
+  const leg = log.agentLeg
+  if (leg?.status === 'missed') {
+    if (leg.ringSec === null || leg.ringSec === undefined) return { label: "Staff didn't answer" }
+    return leg.ringSec >= STAFF_FULL_RING_SEC
+      ? { label: `Staff didn't answer (rang ${leg.ringSec}s)`, title: 'The staff phone rang and nobody picked up.' }
+      : {
+          label: `Staff phone busy or cut (${leg.ringSec}s)`,
+          title: 'The call ended within seconds: the staff phone was busy on another call, switched off, or rejected it.',
+        }
+  }
+  if (leg?.status === 'answered' && leg.hangupReason === 'sent_bye' && log.status === 'missed') {
+    return {
+      label: `Staff hung up (${leg.answeredSec ?? 0}s)`,
+      title: 'Staff answered, then ended the call before the customer picked up, so the customer stopped ringing.',
+    }
+  }
+  return null
+}
+
 const ZENXAI_STATUS_LABELS = {
   requested: 'Requested',
   skipped: 'Skipped',
@@ -320,7 +344,7 @@ const Calls = () => {
         agentCode: log.agentCode || '-',
         // Click-to-call rings the staff phone first (leg "a"); missed there = customer never dialled.
         agentNumber: log.agentLeg?.number || '',
-        staffMissed: log.agentLeg?.status === 'missed',
+        staffNote: staffLegNote(log),
         duration: formatDuration(log.duration),
         recordingFile: log.recordingFile || '',
         recordingUrl: log.recordingUrl || '',
@@ -421,8 +445,8 @@ const Calls = () => {
       render: (s, record) => (
         <>
           {s ? <Tag color="cyan">{s}</Tag> : '-'}
-          {record.staffMissed && (
-            <Tag color="orange" style={{ marginTop: 4 }}>Staff didn&apos;t answer</Tag>
+          {record.staffNote && (
+            <Tag color="orange" style={{ marginTop: 4 }} title={record.staffNote.title}>{record.staffNote.label}</Tag>
           )}
           {record.zenxai && (
             <Tag color={ZENXAI_STATUS_COLORS[record.zenxai.status] || 'default'} style={{ marginTop: 4 }}>

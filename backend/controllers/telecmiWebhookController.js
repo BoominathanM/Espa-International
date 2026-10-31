@@ -502,6 +502,7 @@ const saveChubAgentLegEvent = async (body, settings) => {
   const rawStatus = cleanValue(body.status)
   const legStatus = isFinal ? (rawStatus === 'answered' ? 'answered' : 'missed') : rawStatus || 'started'
   const talkRaw = [body.answeredsec, body.duration, body.billedsec].find((v) => v !== undefined && v !== null && v !== '')
+  const calledAt = toDateFromEpoch(body.time)
 
   const set = {
     agentLeg: {
@@ -510,7 +511,7 @@ const saveChubAgentLegEvent = async (body, settings) => {
       number: cleanValue(body.to),
       hangupReason: cleanValue(body.hangup_reason),
       answeredSec: talkRaw !== undefined ? Number(talkRaw) || 0 : null,
-      at: toDateFromEpoch(body.time),
+      at: calledAt,
       rawPayload: body,
     },
   }
@@ -525,12 +526,20 @@ const saveChubAgentLegEvent = async (body, settings) => {
     return
   }
   const query = orConditions.length === 1 ? orConditions[0] : { $or: orConditions }
-  const prev = await TeleCMICallLog.findOne(query).select('_id status recordingFile callTimestamp callId agentLeg.status').lean()
+  const prev = await TeleCMICallLog.findOne(query)
+    .select('_id status recordingFile callTimestamp callId agentLeg.status agentLeg.ringSec')
+    .lean()
 
   // A live "hangup" can land after this leg's final record; keep the final answered/missed.
   if (!isFinal && CUSTOMER_LEG_OUTCOMES.includes(prev?.agentLeg?.status)) {
     console.log(LOG, `CHUB agent leg: late "${rawStatus}" ignored, leg already ${prev.agentLeg.status} (row ${prev._id})`)
     return
+  }
+
+  // A missed leg's CDR arrives as the leg ends and `time` is when it started, so the gap is how
+  // long the staff phone rang. A redelivered CDR arrives later, so the first figure is kept.
+  if (isFinal && legStatus === 'missed' && calledAt) {
+    set.agentLeg.ringSec = prev?.agentLeg?.ringSec ?? Math.max(0, Math.round((Date.now() - calledAt.getTime()) / 1000))
   }
 
   // Keep a call time on rows that only ever get the agent leg (staff never answered).

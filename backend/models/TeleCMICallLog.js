@@ -57,6 +57,8 @@ const telecmiCallLogSchema = new mongoose.Schema(
       number: { type: String, default: '' },
       hangupReason: { type: String, default: '' },
       answeredSec: { type: Number, default: null },
+      // Seconds the staff phone rang before a missed leg ended: a few seconds means busy or cut off.
+      ringSec: { type: Number, default: null },
       at: { type: Date, default: null },
       rawPayload: { type: mongoose.Schema.Types.Mixed, default: null },
     },

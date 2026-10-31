@@ -139,6 +139,41 @@ export const streamRecording = async (req, res) => {
 }
 
 /**
+ * A second click-to-call to a staff phone that is still ringing or on a call is cut within
+ * seconds, so that customer's call is lost as "missed". A call is over once its final CDR landed;
+ * the window frees the phone if TeleCMI never sends one. Staff can share one follow-me phone, so
+ * every TeleCMI user seen on this user's phone counts.
+ */
+const AGENT_BUSY_WINDOW_MS = 3 * 60 * 1000
+
+const assertAgentPhoneFree = async (agentUser) => {
+  const agentId = agentUser?.telecmiAgentId
+  if (!agentId) return
+  const lastCall = await TeleCMICallLog.findOne({ agentCode: agentId, 'agentLeg.number': { $nin: ['', null] } })
+    .sort({ createdAt: -1 })
+    .select('agentLeg.number')
+    .lean()
+  const samePhone = lastCall
+    ? await TeleCMICallLog.distinct('agentCode', { 'agentLeg.number': lastCall.agentLeg.number })
+    : []
+  const busy = await TeleCMICallLog.findOne({
+    agentCode: { $in: [agentId, ...samePhone] },
+    variant: 'outbound',
+    createdAt: { $gte: new Date(Date.now() - AGENT_BUSY_WINDOW_MS) },
+    'rawPayload.type': { $ne: 'cdr' },
+    'agentLeg.rawPayload.type': { $ne: 'cdr' },
+  })
+    .select('_id')
+    .lean()
+  if (busy) {
+    throw new TeleCMIAgentCallError(
+      `${agentUser.name || 'This staff member'}'s phone is still on the previous call. Wait for it to end, then call again.`,
+      409
+    )
+  }
+}
+
+/**
  * The "initiated" row for a placed call. TeleCMI's live "started" event can land before click2call
  * returns and create the row first (same requestId), so fill that row in instead of inserting.
  */
@@ -203,6 +238,7 @@ export const makeAgentCall = async (req, res) => {
         `| agent ${agentUser.name} (TeleCMI id ${agentUser.telecmiAgentId})`
     )
 
+    await assertAgentPhoneFree(agentUser)
     const callResult = await placeAgentCall(settings, agentUser, lead.phone.trim(), {
       crm: 'true',
       leadId: String(lead._id),
@@ -381,6 +417,7 @@ export const makeNumberCall = async (req, res) => {
         `| customer ${t.customer?._id || '—'} | agent ${t.agentUser.name} (TeleCMI id ${t.agentUser.telecmiAgentId}, ${t.agentSource})`
     )
 
+    await assertAgentPhoneFree(t.agentUser)
     const callResult = await placeAgentCall(settings, t.agentUser, t.toPhone, {
       crm: 'true',
       ...(t.lead ? { leadId: String(t.lead._id) } : {}),
