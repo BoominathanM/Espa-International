@@ -84,6 +84,12 @@ const Branch = () => {
       key: 'phone',
     },
     {
+      title: 'TeleCMI Number',
+      dataIndex: 'telecmiNumber',
+      key: 'telecmiNumber',
+      render: (value) => value || <span style={{ opacity: 0.6 }}>Not set</span>,
+    },
+    {
       title: 'Max at a time',
       dataIndex: 'maxConcurrentAppointments',
       key: 'maxConcurrentAppointments',
@@ -410,6 +416,20 @@ const Branch = () => {
                 />
               </Form.Item>
             </Space.Compact>
+          </Form.Item>
+
+          <Form.Item
+            name="telecmiNumber"
+            label="TeleCMI Number"
+            tooltip="The TeleCMI DID for this branch. Inbound calls to this number are linked to this branch. One number per branch."
+            rules={[
+              {
+                pattern: /^\+?[0-9 ]{10,18}$/,
+                message: 'Enter the number with digits only, like +917949817534',
+              },
+            ]}
+          >
+            <Input placeholder="+917949817534" type="tel" autoComplete="off" />
           </Form.Item>
 
           <Form.Item

@@ -21,7 +21,7 @@ import ZenxaiSendData from '../models/ZenxaiSendData.js'
 import ZenxaiWebhookEvent from '../models/ZenxaiWebhookEvent.js'
 import ZenxaiFeedbackCall from '../models/ZenxaiFeedbackCall.js'
 import Lead from '../models/Lead.js'
-import { createOrUpdateLeadFromPhone } from '../services/telecmiCallService.js'
+import { createOrUpdateLeadFromPhone, linkInboundCall } from '../services/telecmiCallService.js'
 import {
   pushMissedCallToZenxai,
   callLogFieldsFromPush,
@@ -625,8 +625,10 @@ const saveChubAgentLegEvent = async (body, settings) => {
 const saveChubCallEvent = async (body, settings = {}) => {
   if (isChubAgentLeg(body)) return saveChubAgentLegEvent(body, settings)
 
-  const rawCallId = body.call_id || (isInboundCallEvent(body) ? body.conversation_uuid || body.cmiuuid : '')
+  const inboundEvent = isInboundCallEvent(body)
+  const rawCallId = body.call_id || (inboundEvent ? body.conversation_uuid || body.cmiuuid : '')
   const callId = rawCallId ? String(rawCallId) : undefined
+  const conversationUuid = inboundEvent && body.conversation_uuid ? String(body.conversation_uuid) : undefined
   const requestId = body.request_id ? String(body.request_id) : undefined
   const isFinal = isFinalChubEvent(body)
   const rawStatus = cleanValue(body.status)
@@ -640,13 +642,15 @@ const saveChubCallEvent = async (body, settings = {}) => {
   // On an INCOMING call `to` is our own TeleCMI number and the customer is the caller — using
   // `to` there would make the AI call-back ring our own line. Outbound events are unchanged.
   // TeleCMI's inbound CDR names our number in `virtual_number` instead, and `to` is then the
-  // follow-me phone of the staff member who took the call — the caller is still `from`.
+  // follow-me phone of the staff member who took the call — the caller is still `from`. The app
+  // has several DIDs and live events carry the one called in `to`, so a real `from` is enough:
+  // the configured number alone would make the other DIDs the "customer".
   const ourTail = phoneTail(settings.fromPhoneNumber || process.env.TELECMI_FROM_NUMBER)
   const didTail = phoneTail(body.virtual_number)
+  const fromTail = phoneTail(body.from)
   const inboundToUs =
     body.direction === 'inbound' &&
-    ((ourTail && phoneTail(body.to) === ourTail) ||
-      (!!didTail && phoneTail(body.from).length === 10 && phoneTail(body.from) !== didTail))
+    ((ourTail && phoneTail(body.to) === ourTail) || (fromTail.length === 10 && fromTail !== didTail))
   const fields = {
     variant: body.direction === 'inbound' ? 'inbound' : 'outbound',
     customerNumber: cleanValue(inboundToUs ? body.from || body.callerid || body.to : body.to),
@@ -659,6 +663,7 @@ const saveChubCallEvent = async (body, settings = {}) => {
   }
   if (callId) fields.callId = callId
   if (requestId) fields.requestId = requestId
+  if (conversationUuid) fields.conversationUuid = conversationUuid
 
   // On the final event resolve a definitive answered/missed outcome and pull in the
   // recording filename + talk time. Every field below is guarded so an earlier non-final
@@ -685,11 +690,12 @@ const saveChubCallEvent = async (body, settings = {}) => {
   const orConditions = []
   if (callId) orConditions.push({ callId })
   if (requestId) orConditions.push({ requestId })
+  if (conversationUuid) orConditions.push({ conversationUuid })
 
   let saved
   if (orConditions.length) {
     const query = orConditions.length === 1 ? orConditions[0] : { $or: orConditions }
-    const prev = await TeleCMICallLog.findOne(query).select('status callId requestId rawPayload.type').lean()
+    const prev = await TeleCMICallLog.findOne(query).select('status callId requestId lead rawPayload.type').lean()
 
     // Live events can land after the final record: a late "hangup" must not undo answered/missed
     // (a row stuck on "hangup" never gets its AI call-back), nor a late live "answered" undo a CDR.
@@ -697,6 +703,22 @@ const saveChubCallEvent = async (body, settings = {}) => {
     if (hasOutcome && (!isFinal || (body.type === 'event' && prev.rawPayload?.type === 'cdr'))) {
       console.log(LOG, `CHUB event: late "${rawStatus}" ignored, row ${prev._id} already ${prev.status}`)
       return
+    }
+
+    // The call's one final record ties it to a branch and Lead; a redelivered one finds `lead` set.
+    if (inboundEvent && inboundToUs && body.type === 'cdr' && !prev?.lead) {
+      const { branch, lead } = await linkInboundCall({
+        did: body.virtual_number,
+        caller: fields.customerNumber,
+        status: fields.status,
+        seconds: answeredSec,
+      })
+      const branchId = branch?._id || lead?.branch
+      if (branchId) fields.branches = [branchId]
+      if (lead) {
+        fields.lead = lead._id
+        if (lead.first_name && lead.first_name !== 'Unknown') fields.customerName = lead.first_name
+      }
     }
 
     // Same rule when a live event races the final record: its status is applied afterwards,

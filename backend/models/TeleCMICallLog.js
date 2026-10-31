@@ -47,6 +47,9 @@ const telecmiCallLogSchema = new mongoose.Schema(
     // TeleCMI real click-to-call (CHUB) agent-call lifecycle fields
     requestId: { type: String, trim: true, default: undefined },
     status: { type: String, default: '' },
+    // Inbound only: live events carry no call_id and the final CDR's call_id differs from their
+    // cmiuuid, so this is what ties one inbound call's events to the same row.
+    conversationUuid: { type: String, trim: true, default: undefined },
 
     // Click-to-call leg "a": TeleCMI rings the staff member's own follow-me phone first and only
     // dials the customer (leg "b") once that is answered. Leg "a"'s `to` is the STAFF number, so
@@ -133,5 +136,6 @@ telecmiCallLogSchema.index({ zenxaiCallId: 1 })
 telecmiCallLogSchema.index({ 'zenxaiFeedback.callId': 1 })
 telecmiCallLogSchema.index({ callId: 1 }, { unique: true, sparse: true })
 telecmiCallLogSchema.index({ requestId: 1 }, { unique: true, sparse: true })
+telecmiCallLogSchema.index({ conversationUuid: 1 }, { sparse: true })
 
 export default mongoose.model('TeleCMICallLog', telecmiCallLogSchema)

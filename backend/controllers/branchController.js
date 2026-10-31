@@ -14,6 +14,26 @@ const parseMaxConcurrentAppointments = (raw) => {
   return { value: n }
 }
 
+// TeleCMI number: empty = none, else one branch only, stored as +<country code><number>.
+// Returns { value } (undefined when not sent) or { error }.
+const parseTelecmiNumber = async (raw, branchId) => {
+  if (raw === undefined) return {}
+  const digits = String(raw ?? '').replace(/\D/g, '').replace(/^0+/, '')
+  if (!digits) return { value: '' }
+  if (digits.length < 10 || digits.length > 15) {
+    return { error: 'TeleCMI number must be 10 to 15 digits (leave empty for none)' }
+  }
+  const others = await Branch.find({
+    telecmiNumber: { $nin: ['', null] },
+    ...(branchId ? { _id: { $ne: branchId } } : {}),
+  })
+    .select('name telecmiNumber')
+    .lean()
+  const taken = others.find((b) => b.telecmiNumber.replace(/\D/g, '').slice(-10) === digits.slice(-10))
+  if (taken) return { error: `This TeleCMI number is already set on ${taken.name}` }
+  return { value: `+${digits.length === 10 ? `91${digits}` : digits}` }
+}
+
 // @desc    Get all branches
 // @route   GET /api/branches
 // @access  Private
@@ -56,9 +76,11 @@ export const getBranch = async (req, res) => {
 // @access  Private (Super Admin only)
 export const createBranch = async (req, res) => {
   try {
-    const { name, address, phone, email, assignedUsers, maxConcurrentAppointments } = req.body
+    const { name, address, phone, email, assignedUsers, maxConcurrentAppointments, telecmiNumber } = req.body
     const maxConcurrent = parseMaxConcurrentAppointments(maxConcurrentAppointments)
     if (maxConcurrent.error) return res.status(400).json({ message: maxConcurrent.error })
+    const didNumber = await parseTelecmiNumber(telecmiNumber)
+    if (didNumber.error) return res.status(400).json({ message: didNumber.error })
 
     // Check if branch with same email already exists (only if email is provided)
     if (email) {
@@ -75,6 +97,7 @@ export const createBranch = async (req, res) => {
       email: email ? email.toLowerCase() : undefined,
       assignedUsers: assignedUsers || [],
       maxConcurrentAppointments: maxConcurrent.value ?? null,
+      telecmiNumber: didNumber.value ?? '',
     })
 
     // Validate and assign users
@@ -120,9 +143,11 @@ export const createBranch = async (req, res) => {
 // @access  Private (Super Admin only)
 export const updateBranch = async (req, res) => {
   try {
-    const { name, address, phone, email, assignedUsers, maxConcurrentAppointments } = req.body
+    const { name, address, phone, email, assignedUsers, maxConcurrentAppointments, telecmiNumber } = req.body
     const maxConcurrent = parseMaxConcurrentAppointments(maxConcurrentAppointments)
     if (maxConcurrent.error) return res.status(400).json({ message: maxConcurrent.error })
+    const didNumber = await parseTelecmiNumber(telecmiNumber, req.params.id)
+    if (didNumber.error) return res.status(400).json({ message: didNumber.error })
 
     const branch = await Branch.findById(req.params.id)
     if (!branch) {
@@ -149,6 +174,7 @@ export const updateBranch = async (req, res) => {
     if (address) branch.address = address
     if (phone) branch.phone = phone
     if (maxConcurrent.value !== undefined) branch.maxConcurrentAppointments = maxConcurrent.value
+    if (didNumber.value !== undefined) branch.telecmiNumber = didNumber.value
 
     // Handle user assignments
     if (assignedUsers !== undefined) {

@@ -42,6 +42,13 @@ const branchSchema = new mongoose.Schema(
       default: null,
       min: 1,
     },
+    // This branch's TeleCMI DID. An inbound call belongs to the branch whose number was dialled
+    // (call flow teams can't tell: every DID shares AOH). Not the same as `phone` above.
+    telecmiNumber: {
+      type: String,
+      trim: true,
+      default: '',
+    },
   },
   {
     timestamps: true,

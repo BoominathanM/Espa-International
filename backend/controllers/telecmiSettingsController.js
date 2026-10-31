@@ -147,9 +147,19 @@ export const getTeleCMIAccountStatus = async (req, res) => {
     const appIds = appId ? [appId, String(appId)] : []
     const lastWebhook = await TeleCMICallLog.findOne(appIds.length ? { 'rawPayload.appid': { $in: appIds } } : { rawPayload: { $ne: null } })
       .sort({ updatedAt: -1 })
-      .select('updatedAt variant status rawPayload.virtual_number rawPayload.appid')
+      .select('updatedAt variant status rawPayload.appid')
       .lean()
-    const appNumber = lastWebhook?.rawPayload?.virtual_number ? String(lastWebhook.rawPayload.virtual_number) : ''
+    // Only an outgoing call shows the caller ID in use: an incoming one names whichever of the
+    // app's DIDs was dialled, which is not a wrong From Phone Number.
+    const lastOutbound = await TeleCMICallLog.findOne({
+      ...(appIds.length ? { 'rawPayload.appid': { $in: appIds } } : {}),
+      variant: 'outbound',
+      'rawPayload.virtual_number': { $exists: true },
+    })
+      .sort({ updatedAt: -1 })
+      .select('rawPayload.virtual_number')
+      .lean()
+    const appNumber = lastOutbound?.rawPayload?.virtual_number ? String(lastOutbound.rawPayload.virtual_number) : ''
 
     const warnings = []
     const balanceEnforced = isTeleCMIBalanceEnforced()
