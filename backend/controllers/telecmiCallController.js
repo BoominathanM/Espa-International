@@ -139,6 +139,25 @@ export const streamRecording = async (req, res) => {
 }
 
 /**
+ * The "initiated" row for a placed call. TeleCMI's live "started" event can land before click2call
+ * returns and create the row first (same requestId), so fill that row in instead of inserting.
+ */
+const saveCallPlaceholder = async (row) => {
+  if (!row.requestId) return TeleCMICallLog.create(row)
+  const { variant, status, rawPayload, ...details } = row
+  const upsert = () =>
+    TeleCMICallLog.findOneAndUpdate(
+      { requestId: row.requestId },
+      { $set: details, $setOnInsert: { variant, status, rawPayload } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    )
+  return upsert().catch((err) => {
+    if (err?.code === 11000) return upsert()
+    throw err
+  })
+}
+
+/**
  * Real TeleCMI click-to-call (CHUB): rings the lead's assigned staff member's own
  * TeleCMI softphone first, then bridges to the lead's number.
  */
@@ -192,7 +211,7 @@ export const makeAgentCall = async (req, res) => {
     const requestId = callResult?.request_id ? String(callResult.request_id) : undefined
     console.log(`[TELECMI] <= click2call API response:`, JSON.stringify(callResult))
 
-    const placeholderRow = await TeleCMICallLog.create({
+    const placeholderRow = await saveCallPlaceholder({
       variant: 'outbound',
       customerName: lead.first_name || '',
       // Exactly the number TeleCMI dials (lead phones may be "63925 46658" / "0994…" / "a/b"):
@@ -370,7 +389,7 @@ export const makeNumberCall = async (req, res) => {
     const requestId = callResult?.request_id ? String(callResult.request_id) : undefined
     console.log(`[TELECMI] <= click2call API response:`, JSON.stringify(callResult))
 
-    const placeholderRow = await TeleCMICallLog.create({
+    const placeholderRow = await saveCallPlaceholder({
       variant: 'outbound',
       customerName: t.customerName,
       customerNumber: String(t.dialNumber),

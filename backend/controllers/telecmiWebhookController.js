@@ -475,6 +475,26 @@ const isChubAgentLeg = (body) =>
 /** Row statuses set from the customer leg — an agent-leg event never overrides these. */
 const CUSTOMER_LEG_OUTCOMES = ['answered', 'missed']
 
+/** TeleCMI sends extra_params as a JSON string ('{"crm":"true"}'), not an object. */
+const parseExtraParams = (value) => {
+  if (value && typeof value === 'object') return value
+  try {
+    return JSON.parse(String(value ?? '')) || {}
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Inbound events carry no call_id (TeleCMI docs): the caller's side has no `leg` or leg "a" and
+ * identifies the call by conversation_uuid / cmiuuid. Leg "b" is one staff member's ring: a
+ * "User Missed" there is not the call's outcome, another staff member may still answer.
+ */
+const isInboundCallEvent = (body) =>
+  body?.direction === 'inbound' &&
+  !!(body.conversation_uuid || body.cmiuuid) &&
+  String(body.leg ?? '').trim().toLowerCase() !== 'b'
+
 const saveChubAgentLegEvent = async (body, settings) => {
   const callId = body.call_id ? String(body.call_id) : undefined
   const requestId = body.request_id ? String(body.request_id) : undefined
@@ -505,7 +525,13 @@ const saveChubAgentLegEvent = async (body, settings) => {
     return
   }
   const query = orConditions.length === 1 ? orConditions[0] : { $or: orConditions }
-  const prev = await TeleCMICallLog.findOne(query).select('_id status recordingFile callTimestamp callId').lean()
+  const prev = await TeleCMICallLog.findOne(query).select('_id status recordingFile callTimestamp callId agentLeg.status').lean()
+
+  // A live "hangup" can land after this leg's final record; keep the final answered/missed.
+  if (!isFinal && CUSTOMER_LEG_OUTCOMES.includes(prev?.agentLeg?.status)) {
+    console.log(LOG, `CHUB agent leg: late "${rawStatus}" ignored, leg already ${prev.agentLeg.status} (row ${prev._id})`)
+    return
+  }
 
   // Keep a call time on rows that only ever get the agent leg (staff never answered).
   if (prev && !prev.callTimestamp && body.time) set.callTimestamp = toDateFromEpoch(body.time)
@@ -523,7 +549,7 @@ const saveChubAgentLegEvent = async (body, settings) => {
   if (requestId) onInsert.requestId = requestId
   if (!prev && callId) onInsert.callId = callId
   if (!prev) {
-    const leadId = String(body.extra_params?.leadId || '')
+    const leadId = String(parseExtraParams(body.extra_params).leadId || '')
     const lead = /^[0-9a-fA-F]{24}$/.test(leadId)
       ? await Lead.findById(leadId).select('first_name phone branch').lean()
       : null
@@ -590,7 +616,8 @@ const saveChubAgentLegEvent = async (body, settings) => {
 const saveChubCallEvent = async (body, settings = {}) => {
   if (isChubAgentLeg(body)) return saveChubAgentLegEvent(body, settings)
 
-  const callId = body.call_id ? String(body.call_id) : undefined
+  const rawCallId = body.call_id || (isInboundCallEvent(body) ? body.conversation_uuid || body.cmiuuid : '')
+  const callId = rawCallId ? String(rawCallId) : undefined
   const requestId = body.request_id ? String(body.request_id) : undefined
   const isFinal = isFinalChubEvent(body)
   const rawStatus = cleanValue(body.status)
@@ -653,13 +680,24 @@ const saveChubCallEvent = async (body, settings = {}) => {
   let saved
   if (orConditions.length) {
     const query = orConditions.length === 1 ? orConditions[0] : { $or: orConditions }
-    const prev = await TeleCMICallLog.findOne(query).select('status callId requestId').lean()
+    const prev = await TeleCMICallLog.findOne(query).select('status callId requestId rawPayload.type').lean()
+
+    // Live events can land after the final record: a late "hangup" must not undo answered/missed
+    // (a row stuck on "hangup" never gets its AI call-back), nor a late live "answered" undo a CDR.
+    const hasOutcome = CUSTOMER_LEG_OUTCOMES.includes(prev?.status)
+    if (hasOutcome && (!isFinal || (body.type === 'event' && prev.rawPayload?.type === 'cdr'))) {
+      console.log(LOG, `CHUB event: late "${rawStatus}" ignored, row ${prev._id} already ${prev.status}`)
+      return
+    }
+
+    // Same rule when a live event races the final record: its status is applied afterwards,
+    // only to a row that still has no outcome.
+    const liveStatus = isFinal ? undefined : fields.status
+    if (!isFinal) delete fields.status
+    const update = { $set: fields, ...(liveStatus ? { $setOnInsert: { status: liveStatus } } : {}) }
+
     try {
-      saved = await TeleCMICallLog.findOneAndUpdate(
-        query,
-        { $set: fields },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      )
+      saved = await TeleCMICallLog.findOneAndUpdate(query, update, { upsert: true, new: true, setDefaultsOnInsert: true })
     } catch (err) {
       // A followme/double-dial run produces sibling rows with different callId/requestId; a
       // $set that would move one row's unique key onto another's value throws E11000. Retry
@@ -669,7 +707,7 @@ const saveChubCallEvent = async (body, settings = {}) => {
         const fallbackQuery = callId ? { callId } : requestId ? { requestId } : query
         saved = await TeleCMICallLog.findOneAndUpdate(
           fallbackQuery,
-          { $set: safeFields },
+          { ...update, $set: safeFields },
           { upsert: true, new: true, setDefaultsOnInsert: true }
         )
         console.warn(LOG, `CHUB event => E11000 on key move; retried without callId/requestId $set (row ${saved?._id})`)
@@ -677,10 +715,16 @@ const saveChubCallEvent = async (body, settings = {}) => {
         throw err
       }
     }
+    if (liveStatus && saved) {
+      await TeleCMICallLog.updateOne(
+        { _id: saved._id, status: { $nin: CUSTOMER_LEG_OUTCOMES } },
+        { $set: { status: liveStatus } }
+      )
+    }
     console.log(
       LOG,
       `CHUB event => ${prev ? `matched row ${prev._id}` : `created row ${saved?._id}`}: ` +
-        `status "${prev?.status ?? '(new)'}" => "${fields.status}" ` +
+        `status "${prev?.status ?? '(new)'}" => "${liveStatus || fields.status}" ` +
         `| callId=${callId || '—'} requestId=${requestId || '—'} to=${fields.customerNumber || '—'} agent=${fields.agentCode || '—'}`
     )
   } else {
@@ -751,8 +795,9 @@ export const handleTeleCMIWebhook = async (req, res) => {
       })
     }
 
-    // Shape 2: TeleCMI click-to-call (CHUB) call-lifecycle event, e.g. "Outgoing Call Started".
-    if (body.call_id !== undefined) {
+    // Shape 2: TeleCMI click-to-call (CHUB) call-lifecycle event, e.g. "Outgoing Call Started",
+    // or an inbound call event, which identifies the call by conversation_uuid/cmiuuid instead.
+    if (body.call_id !== undefined || isInboundCallEvent(body)) {
       console.log(LOG, `CHUB call-lifecycle event received (status: ${body.status}):`, body)
       try {
         await saveChubCallEvent(body, settings)
@@ -760,6 +805,13 @@ export const handleTeleCMIWebhook = async (req, res) => {
         console.error(LOG, 'CHUB event processing failed (acknowledged anyway):', err)
       }
       // TeleCMI's CHUB docs show a plain "got it" acknowledgment for these events, not JSON.
+      return res.status(200).send('got it')
+    }
+
+    // One staff member's side of an inbound call (live leg "b", "User Missed"): the caller's own
+    // events carry the outcome. Acknowledged, or TeleCMI retries and may disable the webhook.
+    if (body.cmiuuid !== undefined) {
+      console.log(LOG, `CHUB staff-side leg acknowledged, not stored (status: ${body.status})`)
       return res.status(200).send('got it')
     }
 

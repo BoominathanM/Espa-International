@@ -67,8 +67,10 @@ const TeleCMIAccountCheck = () => {
             <Descriptions.Item label="App call balance">
               {data.balance?.ok ? (
                 <span data-testid="telecmi-account-balance">
-                  <Tag color={data.balance.balance > 0 ? 'green' : 'red'}>₹{Number(data.balance.balance).toFixed(2)}</Tag>
-                  {!data.balanceCheckEnabled && <Tag>pre-call check off (TELECMI_BALANCE_CHECK=false)</Tag>}
+                  <Tag color={data.balance.balance > 0 ? 'green' : data.balanceCheckEnabled ? 'red' : 'default'}>
+                    ₹{Number(data.balance.balance).toFixed(2)}
+                  </Tag>
+                  {!data.balanceCheckEnabled && <Tag>not blocking calls (block only with TELECMI_BALANCE_CHECK=true)</Tag>}
                 </span>
               ) : (
                 <span style={{ color: '#ff4d4f' }}>{data.balance?.message || '—'}</span>

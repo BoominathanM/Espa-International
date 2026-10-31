@@ -4,6 +4,7 @@ import User from '../models/User.js'
 import {
   fetchTeleCMIBalance,
   fetchTeleCMIUser,
+  isTeleCMIBalanceEnforced,
   teleCMIAppId,
 } from '../services/telecmiAgentCallService.js'
 
@@ -83,7 +84,8 @@ export const updateTeleCMISettings = async (req, res) => {
 /**
  * Live, read-only check of the TeleCMI side of click-to-call for Settings → TeleCMI Integration:
  * the app's call balance + validity exactly as TeleCMI reports them (the account wallet can show
- * money while the app still reads 0 — the CRM blocks calls on the app figure), whether each CRM
+ * money while the app still reads 0 — the CRM only blocks on that figure when
+ * TELECMI_BALANCE_CHECK=true), whether each CRM
  * user's TeleCMI User ID exists in that app, and the last webhook TeleCMI delivered.
  * No secrets, passwords or agent phone numbers are returned.
  */
@@ -150,14 +152,13 @@ export const getTeleCMIAccountStatus = async (req, res) => {
     const appNumber = lastWebhook?.rawPayload?.virtual_number ? String(lastWebhook.rawPayload.virtual_number) : ''
 
     const warnings = []
-    const balanceCheckOff = String(process.env.TELECMI_BALANCE_CHECK || '').trim().toLowerCase() === 'false'
+    const balanceEnforced = isTeleCMIBalanceEnforced()
     if (!settings.isActive) warnings.push('Integration Status is Inactive.')
     if (!balance.ok) warnings.push(`Could not read the TeleCMI app balance: ${balance.message}.`)
-    else if (balance.balance <= 0) {
+    else if (balance.balance <= 0 && balanceEnforced) {
       warnings.push(
-        `TeleCMI reports a call balance of 0 for app ${appId}. TeleCMI rejects outbound calls until this app shows a balance` +
-          (balanceCheckOff ? '' : ', so the CRM blocks click-to-call') +
-          `. The TeleCMI account wallet ("Total voice balance") is not this app's balance — if you recharged, ask TeleCMI support to credit app ${appId}.`
+        `TeleCMI reports a call balance of 0 for app ${appId}, so the CRM blocks click-to-call (TELECMI_BALANCE_CHECK=true). ` +
+          `The TeleCMI account wallet ("Total voice balance") is not this app's balance — if you recharged, ask TeleCMI support to credit app ${appId}.`
       )
     }
     if (balance.ok && balance.expire && balance.expire < Date.now()) warnings.push(`TeleCMI app ${appId} expired.`)
@@ -173,7 +174,7 @@ export const getTeleCMIAccountStatus = async (req, res) => {
       checkedAt: new Date(),
       ready: warnings.length === 0,
       appId,
-      balanceCheckEnabled: !balanceCheckOff,
+      balanceCheckEnabled: balanceEnforced,
       balance,
       appNumber,
       fromPhoneNumber: settings.fromPhoneNumber,

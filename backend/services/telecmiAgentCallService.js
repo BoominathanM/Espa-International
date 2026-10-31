@@ -74,10 +74,14 @@ export const fetchTeleCMIUser = async (secret, appid, id) => {
  * (doc.telecmi.com/chub/docs/app-balance). With 0 balance TeleCMI still answers click2call with
  * "Call initiated" but then rejects the staff leg (`sent_reject`), so nothing rings at all.
  * This is the APP's balance: money added to the TeleCMI account wallet ("Total voice balance")
- * can show there while the app still reads 0. Returns null when the balance can't be read — a
- * failed check never blocks a call. TELECMI_BALANCE_CHECK=false turns the check off (e.g. a
- * postpaid TeleCMI plan that keeps dialling at 0 balance).
+ * can show there while the app still reads 0, and an unlimited-plan app reads 0 yet still dials,
+ * so a 0 balance only blocks a call when TELECMI_BALANCE_CHECK=true. An expired app always blocks.
+ * Returns null when the balance can't be read — a failed check never blocks a call.
+ * TELECMI_BALANCE_CHECK=false skips the read altogether.
  */
+export const isTeleCMIBalanceEnforced = () =>
+  String(process.env.TELECMI_BALANCE_CHECK || '').trim().toLowerCase() === 'true'
+
 export const getTeleCMIBalance = async (settings, agentId) => {
   if (String(process.env.TELECMI_BALANCE_CHECK || '').trim().toLowerCase() === 'false') return null
   const appid = teleCMIAppId(agentId)
@@ -135,7 +139,7 @@ export const placeAgentCall = async (settings, user, toNumber, extraParams) => {
   const callerid = toTeleCMINumber(settings.fromPhoneNumber)
 
   const account = await getTeleCMIBalance(settings, user.telecmiAgentId)
-  if (account && account.balance <= 0) {
+  if (isTeleCMIBalanceEnforced() && account && account.balance <= 0) {
     throw new TeleCMIAgentCallError(
       `TeleCMI reports a call balance of 0 for app ${account.appid}, so TeleCMI rejects every call before the staff phone rings. ` +
         `If you already recharged, the money is in the TeleCMI account wallet but not credited to app ${account.appid} yet — ` +
